@@ -591,6 +591,8 @@ body.is-calendar-page .page-main{
 }
 
 .calendar-board-card{
+    --calendar-board-padding: 1.5rem;
+    --calendar-board-gap: 1rem;
     position: relative;
     z-index: 1;
     isolation: isolate;
@@ -623,9 +625,9 @@ body.is-calendar-page .page-main{
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
-    gap: 0.85rem;
+    gap: var(--calendar-board-gap);
     min-height: 0;
-    padding: 1.5rem 1.5rem 0;
+    padding: var(--calendar-board-padding) var(--calendar-board-padding) 0;
     border-bottom: 0;
     flex-shrink: 0;
 }
@@ -753,8 +755,10 @@ body.is-calendar-page .page-main{
 .calendar-legend__dot--request-rejected{ background: #ff5f91; }
 
 .calendar-board-scroll{
-    --calendar-left-gutter: 1.5rem;
-    --calendar-top-gutter: 0.75rem;
+    --calendar-left-gutter: var(--calendar-board-padding);
+    --calendar-top-gutter: var(--calendar-board-gap);
+    --calendar-row-gap: 0.58rem;
+    --calendar-scrollbar-width: 0px;
     --calendar-panel-bg: rgba(58, 64, 80, 0.96);
     --calendar-panel-border: rgba(255, 255, 255, 0.06);
     --calendar-occlusion-bg: rgba(47, 53, 67, 1);
@@ -762,21 +766,18 @@ body.is-calendar-page .page-main{
     --calendar-row-height: var(--calendar-cell-size);
     --calendar-year-tile-size: var(--calendar-row-height);
     --calendar-day-height: clamp(2.1rem, 3.3vw, 2.75rem);
-    --calendar-card-radius: clamp(var(--ui-radius-min), calc(var(--calendar-row-height) * 0.22), var(--ui-radius-panel-inner));
+    --calendar-card-radius: var(--ui-radius-panel-inner);
     --calendar-day-radius: clamp(var(--ui-radius-min), calc(var(--calendar-day-height) * var(--ui-radius-size-factor)), var(--ui-radius-status));
     --calendar-track-radius: var(--ui-radius-track);
     --calendar-card-padding: clamp(0.26rem, 0.46vw, 0.5rem);
     --calendar-card-font: clamp(0.66rem, 0.62vw, 0.82rem);
     --calendar-card-meta-font: clamp(0.56rem, 0.54vw, 0.68rem);
-    --calendar-header-gap-mask: 0.58rem;
-    --calendar-header-gap-mask-negative: -0.58rem;
-    --calendar-header-mask-overlap: 2px;
-    --calendar-header-mask-overlap-negative: -2px;
-    --calendar-top-gutter-negative: -0.75rem;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
     min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    padding: var(--calendar-top-gutter) 1.5rem 1.5rem var(--calendar-left-gutter);
+    overflow: hidden;
+    padding: var(--calendar-top-gutter) var(--calendar-board-padding) var(--calendar-board-padding) var(--calendar-left-gutter);
     isolation: isolate;
     position: relative;
 }
@@ -786,41 +787,43 @@ html.is-calendar-sizing .calendar-board-scroll{
     pointer-events: none;
 }
 
-.calendar-board-scroll::before,
-.calendar-board-scroll::after{
-    content: "";
-    position: absolute;
-    pointer-events: none;
-    z-index: 15;
-    background: var(--calendar-occlusion-bg);
-}
-
-.calendar-board-scroll::before{
-    top: 0;
-    left: 0;
-    right: 0;
-    height: var(--calendar-top-gutter);
-    border-radius: var(--ui-radius-panel) var(--ui-radius-panel) 0 0;
-}
-
-.calendar-board-scroll::after{
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: calc(var(--calendar-left-gutter) + 1px);
-    border-radius: var(--ui-radius-panel) 0 0 var(--ui-radius-panel);
-    background: var(--calendar-occlusion-bg);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-}
-
 .timeline-board,
 .year-board{
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: var(--calendar-row-gap);
+    height: 100%;
+    width: 100%;
+    min-height: 0;
+    min-width: 0;
+}
+
+.calendar-grid-head{
+    flex-shrink: 0;
+    min-width: 0;
+    overflow: hidden;
+    padding-right: var(--calendar-scrollbar-width);
+    position: relative;
+    z-index: 2;
+}
+
+.calendar-grid-body{
+    min-height: 0;
+    min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    position: relative;
+    z-index: 1;
+}
+
+.calendar-grid-rows{
     display: flex;
     flex-direction: column;
-    gap: var(--calendar-header-gap-mask);
-    width: 100%;
+    gap: var(--calendar-row-gap);
     min-width: 0;
+    width: 100%;
 }
 
 .timeline-grid{
@@ -835,40 +838,18 @@ html.is-calendar-sizing .calendar-board-scroll{
     min-width: 0;
 }
 
-.timeline-grid--header{
-    position: sticky;
-    top: 0;
-    z-index: 18;
+.timeline-grid--head{
+    position: relative;
+    z-index: 1;
     padding-bottom: 0;
-    background: var(--calendar-occlusion-bg);
     isolation: isolate;
 }
 
-.timeline-grid--header::before{
-    content: "";
-    position: absolute;
-    inset: calc(var(--calendar-top-gutter-negative) + var(--calendar-header-mask-overlap-negative)) -0.8rem var(--calendar-header-mask-overlap-negative) -0.8rem;
-    background: var(--calendar-occlusion-bg);
-    z-index: 0;
-}
-
-.timeline-grid--header::after{
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: calc(var(--calendar-header-gap-mask-negative) + var(--calendar-header-mask-overlap-negative));
-    height: calc(var(--calendar-header-gap-mask) + var(--calendar-header-mask-overlap) + var(--calendar-header-mask-overlap));
-    background: var(--calendar-occlusion-bg);
-    pointer-events: none;
-    z-index: 0;
-}
-
-.timeline-grid--header .timeline-head{
+.timeline-grid--head .timeline-head{
     z-index: 1;
 }
 
-.timeline-grid--header .timeline-head--employee{
+.timeline-grid--head .timeline-head--employee{
     z-index: 2;
 }
 
@@ -1285,40 +1266,18 @@ html.is-calendar-sizing .calendar-board-scroll{
     min-width: 0;
 }
 
-.year-grid--header{
-    position: sticky;
-    top: 0;
-    z-index: 18;
+.year-grid--head{
+    position: relative;
+    z-index: 1;
     padding-bottom: 0;
-    background: var(--calendar-occlusion-bg);
     isolation: isolate;
 }
 
-.year-grid--header::before{
-    content: "";
-    position: absolute;
-    inset: calc(var(--calendar-top-gutter-negative) + var(--calendar-header-mask-overlap-negative)) -0.8rem var(--calendar-header-mask-overlap-negative) -0.8rem;
-    background: var(--calendar-occlusion-bg);
-    z-index: 0;
-}
-
-.year-grid--header::after{
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: calc(var(--calendar-header-gap-mask-negative) + var(--calendar-header-mask-overlap-negative));
-    height: calc(var(--calendar-header-gap-mask) + var(--calendar-header-mask-overlap) + var(--calendar-header-mask-overlap));
-    background: var(--calendar-occlusion-bg);
-    pointer-events: none;
-    z-index: 0;
-}
-
-.year-grid--header .year-head{
+.year-grid--head .year-head{
     z-index: 1;
 }
 
-.year-grid--header .year-head--employee{
+.year-grid--head .year-head--employee{
     z-index: 2;
 }
 
@@ -1736,6 +1695,10 @@ html.is-calendar-sizing .calendar-board-scroll{
 }
 
 @media (max-width: 900px){
+    .calendar-board-card{
+        --calendar-board-padding: 1.1rem;
+    }
+
     .calendar-page{
         overflow: auto;
         height: auto;
@@ -1747,21 +1710,32 @@ html.is-calendar-sizing .calendar-board-scroll{
     }
 
     .calendar-board-scroll{
-        --calendar-left-gutter: 1.1rem;
         --calendar-cell-size: 5.8rem;
         --calendar-day-height: 2rem;
         --calendar-card-padding: 0.45rem;
         --calendar-card-font: 0.78rem;
         --calendar-card-meta-font: 0.66rem;
-        padding: var(--calendar-top-gutter) 1.1rem 1.1rem var(--calendar-left-gutter);
+        padding: var(--calendar-top-gutter) var(--calendar-board-padding) var(--calendar-board-padding) var(--calendar-left-gutter);
+        overflow: hidden;
+    }
+
+    .calendar-grid-head,
+    .calendar-grid-body{
         overflow-x: auto;
-        overflow-y: auto;
+    }
+
+    .calendar-grid-head{
+        scrollbar-width: none;
+    }
+
+    .calendar-grid-head::-webkit-scrollbar{
+        display: none;
     }
 
     .timeline-board,
     .year-board{
-        width: auto;
-        min-width: max-content;
+        width: 100%;
+        min-width: 0;
     }
 
     .timeline-grid{
@@ -1787,7 +1761,7 @@ html.is-calendar-sizing .calendar-board-scroll{
     .calendar-board-card__header{
         min-height: 0;
         grid-template-columns: 1fr;
-        padding: 1.1rem 1.1rem 0;
+        padding: var(--calendar-board-padding) var(--calendar-board-padding) 0;
     }
 
     .calendar-board-card__header .calendar-toolbar__controls{
