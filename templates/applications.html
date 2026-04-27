@@ -31,54 +31,7 @@
 
                             <div class="applications-cards-shell" data-profile-overview-scroll data-applications-transfer-scroll>
                                 <div class="applications-cards-list" id="changeRequestsCardsList">
-                                    {% for change_request in change_requests %}
-                                    <article class="application-card application-card--transfer" data-change-request-id="{{ change_request.id }}">
-                                        <div class="application-card__primary">
-                                            <span class="application-card__label">Сотрудник</span>
-                                            <strong class="application-card__value application-card__value--name">{{ change_request.employee.full_name }}</strong>
-                                            <span class="application-card__muted">{{ change_request.employee.department.name|default:'Не указан' }}</span>
-                                        </div>
-
-                                        <div class="application-card__meta application-card__meta--transfer">
-                                            <div class="application-card__cell">
-                                                <span class="application-card__label">Старый период</span>
-                                                <span class="application-card__value">{{ change_request.old_period_label }}</span>
-                                            </div>
-                                            <div class="application-card__cell">
-                                                <span class="application-card__label">Новый период</span>
-                                                <span class="application-card__value">{{ change_request.new_period_label }}</span>
-                                            </div>
-                                            <div class="application-card__cell">
-                                                <span class="application-card__label">Риск</span>
-                                                <span class="application-card__value">{{ change_request.risk_label }} · {{ change_request.risk_score }}%</span>
-                                            </div>
-                                        </div>
-
-                                        <div class="application-card__status">
-                                            <span class="application-card__label">Статус</span>
-                                            {% include 'includes/status_badge.html' with status_css_class=change_request.status_css_class status_icon=change_request.status_icon status_label=change_request.status_label %}
-                                        </div>
-
-                                        <div class="application-card__actions">
-                                            {% if change_request.can_approve %}
-                                            <form method="post" action="{% url 'schedule_change_approve' change_request.id %}">
-                                                {% csrf_token %}
-                                                <button type="submit" class="applications-transfer-action applications-transfer-action--approve">Одобрить</button>
-                                            </form>
-                                            <form method="post" action="{% url 'schedule_change_reject' change_request.id %}">
-                                                {% csrf_token %}
-                                                <button type="submit" class="applications-transfer-action applications-transfer-action--reject">Отклонить</button>
-                                            </form>
-                                            {% else %}
-                                            <span class="applications-transfer-muted">Нет действий</span>
-                                            {% endif %}
-                                        </div>
-                                    </article>
-                                    {% empty %}
-                                    <div class="applications-cards-empty">
-                                        <p class="table-empty">Переносы графика по выбранным фильтрам не найдены.</p>
-                                    </div>
-                                    {% endfor %}
+                                    {% include 'includes/applications/change_requests_list.html' %}
                                 </div>
                             </div>
                         </section>
@@ -103,39 +56,7 @@
 
                             <div class="applications-cards-shell" data-profile-requests-scroll data-applications-request-scroll>
                                 <div class="applications-cards-list" id="vacationsCardsList">
-                                    {% for vacation in vacations %}
-                                    <article class="application-card application-card--request is-clickable" data-href="{% url 'vacation_detail' vacation.id %}" data-vacation-id="{{ vacation.id }}" tabindex="0" role="link">
-                                        <div class="application-card__primary">
-                                            <span class="application-card__label">Сотрудник</span>
-                                            <strong class="application-card__value application-card__value--name">{{ vacation.employee.full_name }}</strong>
-                                            <span class="application-card__muted">{{ vacation.employee.department.name|default:'Не указан' }}</span>
-                                        </div>
-
-                                        <div class="application-card__meta">
-                                            <div class="application-card__cell">
-                                                <span class="application-card__label">Период</span>
-                                                <span class="application-card__value">{{ vacation.start_date_formatted }} - {{ vacation.end_date_formatted }}</span>
-                                            </div>
-                                            <div class="application-card__cell">
-                                                <span class="application-card__label">Тип</span>
-                                                <span class="application-card__value">{{ vacation.vacation_type_display_label }}</span>
-                                            </div>
-                                            <div class="application-card__cell">
-                                                <span class="application-card__label">Риск</span>
-                                                <span class="application-card__value">{{ vacation.risk_label }} · {{ vacation.risk_score }}%</span>
-                                            </div>
-                                        </div>
-
-                                        <div class="application-card__status">
-                                            <span class="application-card__label">Статус</span>
-                                            {% include 'includes/status_badge.html' with status_css_class=vacation.status_css_class status_icon=vacation.status_icon status_label=vacation.status_label %}
-                                        </div>
-                                    </article>
-                                    {% empty %}
-                                    <div class="applications-cards-empty">
-                                        <p class="table-empty">Заявки по выбранным фильтрам не найдены.</p>
-                                    </div>
-                                    {% endfor %}
+                                    {% include 'includes/applications/vacations_list.html' %}
                                 </div>
                             </div>
                         </section>

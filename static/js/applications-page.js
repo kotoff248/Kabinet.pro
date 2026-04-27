@@ -241,201 +241,16 @@ function initApplicationsPage() {
         syncHeaderSearchInput();
     }
 
-    function createLabel(text) {
-        const label = document.createElement("span");
-        label.className = "application-card__label";
-        label.textContent = text;
-        return label;
+    function replaceListHtml(listNode, html) {
+        listNode.innerHTML = html || "";
     }
 
-    function createValue(text, extraClass) {
-        const value = document.createElement("span");
-        value.className = "application-card__value" + (extraClass ? " " + extraClass : "");
-        value.textContent = text || "Не указано";
-        return value;
+    function renderChangeRequests(html) {
+        replaceListHtml(transferList, html);
     }
 
-    function createMuted(text) {
-        const muted = document.createElement("span");
-        muted.className = "application-card__muted";
-        muted.textContent = text || "Не указан";
-        return muted;
-    }
-
-    function createCell(labelText, valueText) {
-        const cell = document.createElement("div");
-        cell.className = "application-card__cell";
-        cell.appendChild(createLabel(labelText));
-        cell.appendChild(createValue(valueText));
-        return cell;
-    }
-
-    function createPrimary(employeeName, departmentName) {
-        const primary = document.createElement("div");
-        primary.className = "application-card__primary";
-        primary.appendChild(createLabel("Сотрудник"));
-
-        const nameNode = document.createElement("strong");
-        nameNode.className = "application-card__value application-card__value--name";
-        nameNode.textContent = employeeName;
-        primary.appendChild(nameNode);
-        primary.appendChild(createMuted(departmentName));
-        return primary;
-    }
-
-    function createStatusBadge(item) {
-        const badge = document.createElement("span");
-        badge.className = item.status_css_class || "";
-
-        if (item.status_icon) {
-            const icon = document.createElement("span");
-            icon.className = "material-icons-sharp";
-            icon.textContent = item.status_icon;
-            badge.appendChild(icon);
-            badge.appendChild(document.createTextNode(" "));
-        }
-
-        badge.appendChild(document.createTextNode(item.status_label || item.status || ""));
-        return badge;
-    }
-
-    function createStatus(item) {
-        const status = document.createElement("div");
-        status.className = "application-card__status";
-        status.appendChild(createLabel("Статус"));
-        status.appendChild(createStatusBadge(item));
-        return status;
-    }
-
-    function createEmptyState(text) {
-        const empty = document.createElement("div");
-        empty.className = "applications-cards-empty";
-
-        const paragraph = document.createElement("p");
-        paragraph.className = "table-empty";
-        paragraph.textContent = text;
-        empty.appendChild(paragraph);
-        return empty;
-    }
-
-    function getCsrfToken() {
-        const tokenInput = document.querySelector('input[name="csrfmiddlewaretoken"]');
-        if (tokenInput) {
-            return tokenInput.value;
-        }
-
-        const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
-        return match ? decodeURIComponent(match[1]) : "";
-    }
-
-    function createTransferActions(changeRequest) {
-        const actions = document.createElement("div");
-        actions.className = "application-card__actions";
-
-        if (!changeRequest.can_approve) {
-            const muted = document.createElement("span");
-            muted.className = "applications-transfer-muted";
-            muted.textContent = "Нет действий";
-            actions.appendChild(muted);
-            return actions;
-        }
-
-        [
-            ["approve_url", "Одобрить", "applications-transfer-action applications-transfer-action--approve"],
-            ["reject_url", "Отклонить", "applications-transfer-action applications-transfer-action--reject"],
-        ].forEach(function (config) {
-            const form = document.createElement("form");
-            form.method = "post";
-            form.action = changeRequest[config[0]];
-
-            const token = document.createElement("input");
-            token.type = "hidden";
-            token.name = "csrfmiddlewaretoken";
-            token.value = getCsrfToken();
-
-            const button = document.createElement("button");
-            button.type = "submit";
-            button.className = config[2];
-            button.textContent = config[1];
-
-            form.appendChild(token);
-            form.appendChild(button);
-            actions.appendChild(form);
-        });
-
-        return actions;
-    }
-
-    function formatRisk(item) {
-        const score = Number(item.risk_score);
-        if (Number.isNaN(score)) {
-            return item.risk_label || "Не рассчитан";
-        }
-        return (item.risk_label || "Риск") + " · " + score + "%";
-    }
-
-    function createTransferCard(changeRequest) {
-        const article = document.createElement("article");
-        article.className = "application-card application-card--transfer";
-        article.dataset.changeRequestId = changeRequest.id;
-
-        const meta = document.createElement("div");
-        meta.className = "application-card__meta application-card__meta--transfer";
-        meta.appendChild(createCell("Старый период", changeRequest.old_period_label));
-        meta.appendChild(createCell("Новый период", changeRequest.new_period_label));
-        meta.appendChild(createCell("Риск", formatRisk(changeRequest)));
-
-        article.appendChild(createPrimary(changeRequest.employee_name, changeRequest.employee_department));
-        article.appendChild(meta);
-        article.appendChild(createStatus(changeRequest));
-        article.appendChild(createTransferActions(changeRequest));
-        return article;
-    }
-
-    function createRequestCard(vacation) {
-        const article = document.createElement("article");
-        article.className = "application-card application-card--request is-clickable";
-        article.dataset.href = vacation.detail_url;
-        article.dataset.vacationId = vacation.id;
-        article.tabIndex = 0;
-        article.setAttribute("role", "link");
-
-        const meta = document.createElement("div");
-        meta.className = "application-card__meta";
-        meta.appendChild(createCell("Период", vacation.period_label || (vacation.start_date_formatted + " - " + vacation.end_date_formatted)));
-        meta.appendChild(createCell("Тип", vacation.vacation_type_label));
-        meta.appendChild(createCell("Риск", formatRisk(vacation)));
-
-        article.appendChild(createPrimary(vacation.employee_name, vacation.employee_department));
-        article.appendChild(meta);
-        article.appendChild(createStatus(vacation));
-        return article;
-    }
-
-    function renderChangeRequests(changeRequests) {
-        transferList.innerHTML = "";
-
-        if (!changeRequests.length) {
-            transferList.appendChild(createEmptyState("Переносы графика по выбранным фильтрам не найдены."));
-            return;
-        }
-
-        changeRequests.forEach(function (changeRequest) {
-            transferList.appendChild(createTransferCard(changeRequest));
-        });
-    }
-
-    function renderVacationRequests(vacations) {
-        requestList.innerHTML = "";
-
-        if (!vacations.length) {
-            requestList.appendChild(createEmptyState("Заявки по выбранным фильтрам не найдены."));
-            return;
-        }
-
-        vacations.forEach(function (vacation) {
-            requestList.appendChild(createRequestCard(vacation));
-        });
+    function renderVacationRequests(html) {
+        replaceListHtml(requestList, html);
     }
 
     function updateUrl(status, department, search) {
@@ -497,8 +312,8 @@ function initApplicationsPage() {
                 if (requestId !== requestSequence) {
                     return;
                 }
-                renderChangeRequests(data.change_requests || []);
-                renderVacationRequests(data.vacations || []);
+                renderChangeRequests(data.change_requests_html);
+                renderVacationRequests(data.vacations_html);
                 updateUrl(currentStatus, selectedDepartment, currentSearch);
                 resetListScroll();
                 clearScrollState();

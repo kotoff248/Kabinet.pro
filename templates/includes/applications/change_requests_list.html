@@ -1,0 +1,5 @@
+{% for change_request in change_requests %}
+{% include 'includes/applications/change_request_card.html' %}
+{% empty %}
+{% include 'includes/applications/empty_state.html' with message='Переносы графика по выбранным фильтрам не найдены.' %}
+{% endfor %}

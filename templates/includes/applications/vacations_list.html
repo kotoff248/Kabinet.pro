@@ -1,0 +1,5 @@
+{% for vacation in vacations %}
+{% include 'includes/applications/vacation_card.html' %}
+{% empty %}
+{% include 'includes/applications/empty_state.html' with message='Заявки по выбранным фильтрам не найдены.' %}
+{% endfor %}

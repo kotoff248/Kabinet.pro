@@ -113,12 +113,25 @@ def applications(request):
     context = update_context_with_departments(request, context)
     page_context = build_applications_page_context(current_employee, request.GET)
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
-        return JsonResponse(
-            build_applications_json_payload(
-                page_context["vacations"],
-                page_context["change_requests"],
-            )
+        payload = build_applications_json_payload(
+            page_context["vacations"],
+            page_context["change_requests"],
         )
+        payload.update(
+            {
+                "change_requests_html": render_to_string(
+                    "includes/applications/change_requests_list.html",
+                    page_context,
+                    request=request,
+                ),
+                "vacations_html": render_to_string(
+                    "includes/applications/vacations_list.html",
+                    page_context,
+                    request=request,
+                ),
+            }
+        )
+        return JsonResponse(payload)
 
     context.update(page_context)
     return render(request, "applications.html", context)
