@@ -217,6 +217,28 @@ document.addEventListener("DOMContentLoaded", function () {
         updateSidebarIndicator(nav, activeLink);
     }
 
+    function primeSidebarIndicator(nav) {
+        if (!nav) {
+            return;
+        }
+
+        const indicator = nav.querySelector(".sidebar__active-indicator");
+        if (!indicator) {
+            updateSidebarIndicator(nav);
+            nav.classList.add("is-ready");
+            return;
+        }
+
+        indicator.style.transition = "none";
+        updateSidebarIndicator(nav);
+        nav.classList.add("is-ready");
+        indicator.getBoundingClientRect();
+
+        window.requestAnimationFrame(function () {
+            indicator.style.transition = "";
+        });
+    }
+
     function syncSidebarLink(currentLink, nextLink) {
         currentLink.href = nextLink.href;
         currentLink.classList.toggle("active", nextLink.classList.contains("active"));
@@ -361,7 +383,9 @@ document.addEventListener("DOMContentLoaded", function () {
         const nav = document.querySelector("[data-sidebar-nav]");
         if (nav) {
             nav.classList.toggle("is-navigating", isBusy);
-            nav.classList.add("is-ready");
+            if (isBusy) {
+                nav.classList.add("is-ready");
+            }
         }
     }
 
@@ -417,6 +441,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         const links = Array.from(nav.querySelectorAll("[data-sidebar-link]"));
+        const shouldPrimeIndicator = nav.dataset.sidebarInitialized !== "true";
         const previousController = window.__sidebarNavigationController;
         if (previousController) {
             previousController.abort();
@@ -456,8 +481,13 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         setNavigationBusy(false, null);
-        updateSidebarIndicator(nav);
-        nav.classList.add("is-ready");
+        if (shouldPrimeIndicator) {
+            primeSidebarIndicator(nav);
+            nav.dataset.sidebarInitialized = "true";
+        } else {
+            updateSidebarIndicator(nav);
+            nav.classList.add("is-ready");
+        }
 
         window.addEventListener("pageshow", function () {
             setNavigationBusy(false, null);
