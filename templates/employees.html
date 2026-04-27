@@ -16,22 +16,31 @@
     {% endif %}
 
     <section class="staff_main">
-        <div class="staff_nav staff_nav--segmented">
-            <form method="get" id="employees-status-form" data-filter-form class="employees-segmented" data-active-status="{% if selected_status == 'True' %}working{% elif selected_status == 'False' %}vacation{% else %}all{% endif %}" role="tablist" aria-label="Статус сотрудников">
-                {% if selected_department %}
-                <input type="hidden" name="department" value="{{ selected_department }}">
-                {% endif %}
-                <span class="employees-segmented__thumb" aria-hidden="true"></span>
-                <button type="button" id="allButton" name="status" value="None" data-status-key="all" class="employees-segmented__item {% if selected_status == 'None' %}active{% endif %}">
-                    <span>Все</span>
-                </button>
-                <button type="button" id="workingButton" name="status" value="True" data-status-key="working" class="employees-segmented__item {% if selected_status == 'True' %}active{% endif %}">
-                    <span>Работают</span>
-                </button>
-                <button type="button" id="vacationButton" name="status" value="False" data-status-key="vacation" class="employees-segmented__item {% if selected_status == 'False' %}active{% endif %}">
-                    <span>В отпуске</span>
-                </button>
-            </form>
+        <div class="panel-heading panel-heading--with-controls">
+            <div class="panel-heading__copy">
+                <h2>Состав команды</h2>
+                <p>Список сотрудников с отделами, должностями, остатком дней и текущим статусом.</p>
+            </div>
+            <div class="panel-heading__controls">
+                <div class="staff_nav staff_nav--segmented">
+                    <form method="get" id="employees-status-form" data-filter-form class="segmented-control segmented-control--count-3 employees-segmented" data-segmented-index="{% if selected_status == 'True' %}1{% elif selected_status == 'False' %}2{% else %}0{% endif %}" role="tablist" aria-label="Статус сотрудников">
+                        {% if selected_department %}
+                        <input type="hidden" name="department" value="{{ selected_department }}">
+                        {% endif %}
+                        <span class="segmented-control__indicator" aria-hidden="true"></span>
+                        <button type="button" id="allButton" name="status" value="None" data-status-key="all" class="segmented-control__item {% if selected_status == 'None' %}active{% endif %}">
+                            <span>Все</span>
+                        </button>
+                        <button type="button" id="workingButton" name="status" value="True" data-status-key="working" class="segmented-control__item {% if selected_status == 'True' %}active{% endif %}">
+                            <span>Работают</span>
+                        </button>
+                        <button type="button" id="vacationButton" name="status" value="False" data-status-key="vacation" class="segmented-control__item {% if selected_status == 'False' %}active{% endif %}">
+                            <span>В отпуске</span>
+                        </button>
+                    </form>
+                </div>
+                {% include 'includes/search_control.html' with search_id='employees-search' search_label='Поиск сотрудника' search_placeholder='Найти сотрудника' %}
+            </div>
         </div>
 
         <div class="employee-cards-shell">

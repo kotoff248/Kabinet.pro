@@ -1,0 +1,16 @@
+<form method="get" class="toolbar-search{% if search_query %} is-open{% endif %}" data-live-search-form role="search">
+    {% if selected_status %}
+    <input type="hidden" name="status" value="{{ selected_status }}">
+    {% endif %}
+    {% if selected_department and selected_department != 'all' %}
+    <input type="hidden" name="department" value="{{ selected_department }}">
+    {% endif %}
+    <label class="visually-hidden" for="{{ search_id }}">{{ search_label }}</label>
+    <button type="button" class="toolbar-search__toggle" data-live-search-toggle aria-label="{{ search_label }}" aria-expanded="{% if search_query %}true{% else %}false{% endif %}" aria-controls="{{ search_id }}">
+        <span class="material-icons-sharp" aria-hidden="true">search</span>
+    </button>
+    <input id="{{ search_id }}" class="toolbar-search__input" data-live-search-input type="search" name="search" value="{{ search_query }}" placeholder="{{ search_placeholder }}" autocomplete="off" spellcheck="false">
+    <button type="button" class="toolbar-search__clear" data-live-search-clear aria-label="Очистить поиск"{% if not search_query %} hidden{% endif %}>
+        <span class="material-icons-sharp" aria-hidden="true">close</span>
+    </button>
+</form>

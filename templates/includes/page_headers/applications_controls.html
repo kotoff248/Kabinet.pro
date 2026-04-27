@@ -2,6 +2,7 @@
     {% if show_department_filter %}
     <form id="applications-department-form" method="get" class="employee-hero-filter employee-hero-filter--toolbar">
         <input type="hidden" name="status" value="{{ selected_status }}">
+        <input type="hidden" name="search" value="{{ search_query }}">
         <div class="employee-select employee-select--toolbar employee-select--floating" data-employee-select>
             <select id="department" name="department" class="employee-select__native">
                 <option value="all" {% if selected_department == 'all' or not selected_department %}selected{% endif %}>Все отделы</option>

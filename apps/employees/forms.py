@@ -5,6 +5,9 @@ from apps.accounts.services import normalize_employee_login, sync_department_hea
 from apps.employees.models import Departments, Employees
 
 
+NORILSK_ANNUAL_PAID_LEAVE_DAYS = 52
+
+
 class EmployeeBaseForm(forms.ModelForm):
     login = forms.CharField(max_length=150, label="Логин")
     date_joined = forms.DateField(
@@ -26,9 +29,11 @@ class EmployeeBaseForm(forms.ModelForm):
         widget=forms.PasswordInput(render_value=False),
     )
     annual_paid_leave_days = forms.IntegerField(
-        min_value=0,
-        max_value=52,
-        initial=52,
+        min_value=NORILSK_ANNUAL_PAID_LEAVE_DAYS,
+        max_value=NORILSK_ANNUAL_PAID_LEAVE_DAYS,
+        initial=NORILSK_ANNUAL_PAID_LEAVE_DAYS,
+        required=False,
+        disabled=True,
         label="Годовая норма оплачиваемого отпуска",
     )
     role = forms.ChoiceField(choices=Employees.EDITABLE_ROLE_CHOICES, label="Роль в системе")
@@ -85,6 +90,9 @@ class EmployeeBaseForm(forms.ModelForm):
             raise forms.ValidationError("Введите должность сотрудника.")
         return value
 
+    def clean_annual_paid_leave_days(self):
+        return NORILSK_ANNUAL_PAID_LEAVE_DAYS
+
     def clean(self):
         cleaned_data = super().clean()
         role = cleaned_data.get("role")
@@ -103,6 +111,7 @@ class EmployeeBaseForm(forms.ModelForm):
 
     def save(self, commit=True):
         employee = super().save(commit=False)
+        employee.annual_paid_leave_days = NORILSK_ANNUAL_PAID_LEAVE_DAYS
         if commit:
             employee.save()
             sync_employee_user(employee, raw_password=self.cleaned_data.get("password") or None)

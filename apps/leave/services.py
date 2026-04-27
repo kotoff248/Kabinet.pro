@@ -318,6 +318,32 @@ def get_vacation_day_cost(vacation_type, start_date, end_date):
     return get_chargeable_leave_days(start_date, end_date, vacation_type)
 
 
+def get_converted_paid_request_ids_queryset(employee_ids=None, start_date=None, end_date=None):
+    queryset = VacationScheduleItem.objects.filter(
+        created_from_vacation_request__isnull=False,
+    )
+    if employee_ids is not None:
+        queryset = queryset.filter(employee_id__in=employee_ids)
+    if start_date is not None:
+        queryset = queryset.filter(end_date__gte=start_date)
+    if end_date is not None:
+        queryset = queryset.filter(start_date__lte=end_date)
+    return queryset.values_list("created_from_vacation_request_id", flat=True)
+
+
+def exclude_converted_paid_requests(queryset, employee_ids=None, start_date=None, end_date=None):
+    converted_request_ids = get_converted_paid_request_ids_queryset(
+        employee_ids=employee_ids,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    return queryset.exclude(
+        vacation_type="paid",
+        status=VacationRequest.STATUS_APPROVED,
+        id__in=converted_request_ids,
+    )
+
+
 def _get_schedule_approval_cutoff(schedule):
     if schedule and schedule.approved_at:
         return timezone.localtime(schedule.approved_at).date()
@@ -514,6 +540,7 @@ def _collect_paid_ledger_sources(employee):
         vacation_type__in=BALANCE_AFFECTING_TYPES,
         status__in=ACTIVE_REQUEST_STATUSES,
     )
+    requests = exclude_converted_paid_requests(requests, employee_ids=[employee.id])
     for request_obj in requests:
         start_date = normalize_date_value(request_obj.start_date)
         end_date = normalize_date_value(request_obj.end_date)
@@ -759,12 +786,14 @@ def get_employee_list_leave_summaries(employees, as_of_date=None):
         return {}
 
     employee_ids = [employee.id for employee in employees]
+    request_sources = VacationRequest.objects.filter(
+        employee_id__in=employee_ids,
+        vacation_type__in=BALANCE_AFFECTING_TYPES,
+        status__in=ACTIVE_REQUEST_STATUSES,
+    )
+    request_sources = exclude_converted_paid_requests(request_sources, employee_ids=employee_ids)
     employees_with_sources = set(
-        VacationRequest.objects.filter(
-            employee_id__in=employee_ids,
-            vacation_type__in=BALANCE_AFFECTING_TYPES,
-            status__in=ACTIVE_REQUEST_STATUSES,
-        ).values_list("employee_id", flat=True)
+        request_sources.values_list("employee_id", flat=True)
     )
     employees_with_sources.update(
         VacationScheduleItem.objects.filter(
@@ -926,6 +955,12 @@ def get_overlapping_requests(employee, start_date, end_date, exclude_request_id=
     )
     if exclude_request_id is not None:
         queryset = queryset.exclude(pk=exclude_request_id)
+    queryset = exclude_converted_paid_requests(
+        queryset,
+        employee_ids=[employee.id],
+        start_date=start_date,
+        end_date=end_date,
+    )
     return queryset
 
 
@@ -1024,16 +1059,21 @@ def calculate_vacation_request_risk(
         .values_list("id", flat=True)
     )
 
-    request_employee_ids = set(
-        VacationRequest.objects.filter(
-            employee_id__in=department_employee_ids,
-            status__in=ACTIVE_REQUEST_STATUSES,
-            start_date__lte=end_date,
-            end_date__gte=start_date,
-        )
-        .exclude(pk=exclude_request_id)
-        .values_list("employee_id", flat=True)
+    overlapping_requests = VacationRequest.objects.filter(
+        employee_id__in=department_employee_ids,
+        status__in=ACTIVE_REQUEST_STATUSES,
+        start_date__lte=end_date,
+        end_date__gte=start_date,
     )
+    if exclude_request_id is not None:
+        overlapping_requests = overlapping_requests.exclude(pk=exclude_request_id)
+    overlapping_requests = exclude_converted_paid_requests(
+        overlapping_requests,
+        employee_ids=department_employee_ids,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    request_employee_ids = set(overlapping_requests.values_list("employee_id", flat=True))
     schedule_employee_ids = set(
         VacationScheduleItem.objects.filter(
             employee_id__in=department_employee_ids,
@@ -1196,6 +1236,51 @@ def sync_employee_vacation_metrics(employee):
     rebuild_employee_leave_ledger(employee)
 
 
+def create_schedule_item_from_paid_vacation_request(vacation, risk_payload=None):
+    if vacation.vacation_type != "paid" or vacation.status != VacationRequest.STATUS_APPROVED:
+        return None
+
+    existing_item = VacationScheduleItem.objects.filter(
+        created_from_vacation_request=vacation,
+    ).order_by("id").first()
+    if existing_item is not None:
+        return existing_item
+
+    start_date = normalize_date_value(vacation.start_date)
+    end_date = normalize_date_value(vacation.end_date)
+    schedule = VacationSchedule.objects.filter(year=start_date.year).first()
+    if schedule is None:
+        raise ValidationError("Для года оплачиваемой заявки не найден утверждённый график отпусков.")
+    if schedule.status not in {VacationSchedule.STATUS_APPROVED, VacationSchedule.STATUS_ARCHIVED}:
+        raise ValidationError("Оплачиваемую заявку можно добавить только в утверждённый график отпусков.")
+
+    if risk_payload is None:
+        risk_payload = calculate_vacation_request_risk(
+            employee=vacation.employee,
+            start_date=start_date,
+            end_date=end_date,
+            vacation_type=vacation.vacation_type,
+            exclude_request_id=vacation.id,
+        )
+
+    return VacationScheduleItem.objects.create(
+        schedule=schedule,
+        employee=vacation.employee,
+        start_date=start_date,
+        end_date=end_date,
+        vacation_type=vacation.vacation_type,
+        chargeable_days=get_chargeable_leave_days(start_date, end_date, vacation.vacation_type),
+        status=VacationScheduleItem.STATUS_APPROVED,
+        source=VacationScheduleItem.SOURCE_MANUAL,
+        risk_score=risk_payload["risk_score"],
+        risk_level=risk_payload["risk_level"],
+        generated_by_ai=False,
+        was_changed_by_manager=False,
+        manager_comment="Создано после одобрения оплачиваемой заявки вне графика.",
+        created_from_vacation_request=vacation,
+    )
+
+
 @transaction.atomic
 def approve_vacation_request(vacation_id, reviewer=None, review_comment=""):
     vacation = VacationRequest.objects.select_related("employee").select_for_update().get(pk=vacation_id)
@@ -1238,6 +1323,8 @@ def approve_vacation_request(vacation_id, reviewer=None, review_comment=""):
             "balance_after_request",
         ]
     )
+    if vacation.vacation_type == "paid":
+        create_schedule_item_from_paid_vacation_request(vacation, risk_payload=risk_payload)
     return vacation
 
 
@@ -1521,6 +1608,16 @@ def get_calendar_redirect_url(request):
     return f"{request.path}?view={next_view}&year={next_year}&month={next_month}"
 
 
+def _schedule_item_source_label(item):
+    if item.status == VacationScheduleItem.STATUS_TRANSFERRED:
+        return "Перенос"
+    if item.source == VacationScheduleItem.SOURCE_MANUAL:
+        return "Дополнение к графику"
+    if item.source == VacationScheduleItem.SOURCE_TRANSFER:
+        return "Перенос"
+    return "Годовой график"
+
+
 def build_calendar_base_data(year, employee_ids=None):
     year_start = date(year, 1, 1)
     year_end = date(year, 12, 31)
@@ -1546,6 +1643,12 @@ def build_calendar_base_data(year, employee_ids=None):
     )
     if employee_ids is not None:
         records = records.filter(employee_id__in=employee_ids)
+    records = exclude_converted_paid_requests(
+        records,
+        employee_ids=employee_ids,
+        start_date=year_start,
+        end_date=year_end,
+    )
 
     for record in records:
         clipped_period = clip_period_to_range(record.start_date, record.end_date, year_start, year_end)
@@ -1619,7 +1722,7 @@ def build_calendar_base_data(year, employee_ids=None):
             "display_type": display_meta["display_type"],
             "display_label": display_meta["label"],
             "status_label": display_meta["label"],
-            "source_label": display_meta["source_label"],
+            "source_label": _schedule_item_source_label(item),
             "css_class": display_meta["css_class"],
             "status_icon": REQUEST_STATUS_UI[calendar_status]["icon"],
             "vacation_type_label": item.get_vacation_type_display(),
@@ -1978,14 +2081,19 @@ def build_analytics_payload(employee_ids=None):
 
     total_employees = len(employees)
     employee_id_set = {employee.id for employee in employees}
-    absent_employee_ids = set(
-        VacationRequest.objects.filter(
-            employee_id__in=employee_id_set,
-            status=VacationRequest.STATUS_APPROVED,
-            start_date__lte=today,
-            end_date__gte=today,
-        ).values_list("employee_id", flat=True)
+    approved_absence_requests = VacationRequest.objects.filter(
+        employee_id__in=employee_id_set,
+        status=VacationRequest.STATUS_APPROVED,
+        start_date__lte=today,
+        end_date__gte=today,
     )
+    approved_absence_requests = exclude_converted_paid_requests(
+        approved_absence_requests,
+        employee_ids=employee_id_set,
+        start_date=today,
+        end_date=today,
+    )
+    absent_employee_ids = set(approved_absence_requests.values_list("employee_id", flat=True))
     absent_employee_ids.update(
         VacationScheduleItem.objects.filter(
             employee_id__in=employee_id_set,

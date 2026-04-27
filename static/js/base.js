@@ -1,3 +1,19 @@
+(function () {
+    window.KabinetSegmented = window.KabinetSegmented || {};
+    window.KabinetSegmented.sync = function (control, activeItem) {
+        if (!control) {
+            return;
+        }
+
+        const items = Array.from(control.querySelectorAll(".segmented-control__item"));
+        const currentItem = activeItem || items.find(function (item) {
+            return item.classList.contains("active") || item.classList.contains("is-active");
+        });
+        const index = Math.max(0, items.indexOf(currentItem));
+        control.dataset.segmentedIndex = String(index);
+    };
+}());
+
 document.addEventListener("DOMContentLoaded", function () {
     const CORE_STYLE_MATCHERS = ["css/reset.css", "css/main.css"];
     const CORE_SCRIPT_MATCHERS = ["js/base.js"];
@@ -56,38 +72,120 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    function replaceAppContainer(nextDocument) {
-        const currentContainer = document.querySelector("[data-app-container]");
-        const nextContainer = nextDocument.querySelector("[data-app-container]");
+    function syncBodyClass(nextDocument) {
+        if (!nextDocument.body) {
+            return;
+        }
 
-        if (!currentContainer || !nextContainer) {
+        const nextBodyClass = nextDocument.body.getAttribute("class");
+        if (nextBodyClass) {
+            document.body.setAttribute("class", nextBodyClass);
+        } else {
+            document.body.removeAttribute("class");
+        }
+    }
+
+    function updateSidebarIndicator(nav, activeLink) {
+        if (!nav) {
+            return;
+        }
+
+        const currentActive = activeLink || nav.querySelector("[data-sidebar-link].active, [data-sidebar-link][aria-current='page']");
+        if (!currentActive) {
+            nav.dataset.sidebarHasActive = "false";
+            return;
+        }
+
+        const navRect = nav.getBoundingClientRect();
+        const activeRect = currentActive.getBoundingClientRect();
+        const activeTop = activeRect.top - navRect.top;
+
+        if (!Number.isFinite(activeTop) || !Number.isFinite(activeRect.height) || activeRect.height <= 0) {
+            nav.dataset.sidebarHasActive = "false";
+            return;
+        }
+
+        nav.style.setProperty("--sidebar-active-y", activeTop + "px");
+        nav.style.setProperty("--sidebar-active-h", activeRect.height + "px");
+        nav.dataset.sidebarHasActive = "true";
+    }
+
+    function setSidebarActiveLink(nav, activeLink) {
+        if (!nav) {
+            return;
+        }
+
+        Array.from(nav.querySelectorAll("[data-sidebar-link]")).forEach(function (link) {
+            const isActive = link === activeLink;
+            link.classList.toggle("active", isActive);
+            if (isActive) {
+                link.setAttribute("aria-current", "page");
+            } else {
+                link.removeAttribute("aria-current");
+            }
+        });
+
+        updateSidebarIndicator(nav, activeLink);
+    }
+
+    function syncSidebarLink(currentLink, nextLink) {
+        currentLink.href = nextLink.href;
+        currentLink.classList.toggle("active", nextLink.classList.contains("active"));
+
+        if (nextLink.hasAttribute("aria-current")) {
+            currentLink.setAttribute("aria-current", nextLink.getAttribute("aria-current") || "page");
+        } else {
+            currentLink.removeAttribute("aria-current");
+        }
+
+        const currentSide = currentLink.querySelector(".sidebar__link-side");
+        const nextSide = nextLink.querySelector(".sidebar__link-side");
+
+        if (currentSide && nextSide) {
+            currentSide.replaceWith(nextSide.cloneNode(true));
+        } else if (nextSide) {
+            currentLink.appendChild(nextSide.cloneNode(true));
+        } else if (currentSide) {
+            currentSide.remove();
+        }
+    }
+
+    function syncSidebarNavigation(nextDocument) {
+        const currentNav = document.querySelector("[data-sidebar-nav]");
+        const nextNav = nextDocument.querySelector("[data-sidebar-nav]");
+
+        if (!currentNav || !nextNav) {
+            return;
+        }
+
+        const nextLinks = Array.from(nextNav.querySelectorAll("[data-sidebar-link][data-sidebar-key]"));
+        Array.from(currentNav.querySelectorAll("[data-sidebar-link][data-sidebar-key]")).forEach(function (currentLink) {
+            const key = currentLink.dataset.sidebarKey;
+            const nextLink = nextLinks.find(function (link) {
+                return link.dataset.sidebarKey === key;
+            });
+
+            if (nextLink) {
+                syncSidebarLink(currentLink, nextLink);
+            }
+        });
+
+        applyRememberedCalendarHref(currentNav.querySelector('[data-sidebar-key="calendar"]'));
+        updateSidebarIndicator(currentNav);
+    }
+
+    function replacePageMain(nextDocument) {
+        const currentMain = document.querySelector(".page-main");
+        const nextMain = nextDocument.querySelector(".page-main");
+
+        if (!currentMain || !nextMain) {
             return false;
         }
 
-        currentContainer.replaceWith(nextContainer);
-        if (window.__sidebarPanelHovered) {
-            const nextSidebar = nextContainer.querySelector("[data-sidebar-nav]");
-            if (nextSidebar) {
-                nextSidebar.classList.add("is-panel-hovered");
-                const nextActiveLink = nextSidebar.querySelector("[data-sidebar-link].active, [data-sidebar-link][aria-current='page']");
-                if (
-                    nextActiveLink
-                    && getPathFromHref(nextActiveLink.href) === window.__sidebarActiveHoverPath
-                    && isStoredPointerOverElement(nextActiveLink)
-                ) {
-                    nextSidebar.classList.add("is-active-hover", "is-restored-active-hover");
-                }
-            }
-        }
+        currentMain.replaceWith(nextMain);
         document.title = nextDocument.title;
-        if (nextDocument.body) {
-            const nextBodyClass = nextDocument.body.getAttribute("class");
-            if (nextBodyClass) {
-                document.body.setAttribute("class", nextBodyClass);
-            } else {
-                document.body.removeAttribute("class");
-            }
-        }
+        syncBodyClass(nextDocument);
+        syncSidebarNavigation(nextDocument);
         return true;
     }
 
@@ -98,38 +196,6 @@ document.addEventListener("DOMContentLoaded", function () {
         } catch (error) {
             return "";
         }
-    }
-
-    function rememberSidebarPointerPosition(event) {
-        if (!event || typeof event.clientX !== "number" || typeof event.clientY !== "number") {
-            return;
-        }
-
-        window.__sidebarPointerPosition = {
-            x: event.clientX,
-            y: event.clientY,
-        };
-    }
-
-    function isStoredPointerOverElement(element) {
-        const pointerPosition = window.__sidebarPointerPosition;
-        if (!element || !pointerPosition) {
-            return false;
-        }
-
-        const x = Number(pointerPosition.x);
-        const y = Number(pointerPosition.y);
-        if (!Number.isFinite(x) || !Number.isFinite(y)) {
-            return false;
-        }
-
-        const hitElement = document.elementFromPoint(x, y);
-        if (hitElement) {
-            return element.contains(hitElement);
-        }
-
-        const rect = element.getBoundingClientRect();
-        return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
     }
 
     function applyRememberedCalendarHref(link) {
@@ -185,7 +251,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
             ensureDocumentStyles(nextDocument);
 
-            if (!replaceAppContainer(nextDocument)) {
+            if (!replacePageMain(nextDocument)) {
                 throw new Error("Navigation shell mismatch");
             }
 
@@ -208,12 +274,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        const thumb = nav.querySelector(".sidebar__thumb");
         const links = Array.from(nav.querySelectorAll("[data-sidebar-link]"));
-        const activeLink = nav.querySelector("[data-sidebar-link].active, [data-sidebar-link][aria-current='page']");
-        const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        let transitionTimeoutId = null;
-        let navigationTimeoutId = null;
         let navigationController = window.__sidebarNavigationController;
 
         if (navigationController) {
@@ -224,96 +285,18 @@ document.addEventListener("DOMContentLoaded", function () {
         window.__sidebarNavigationController = navigationController;
         const signal = navigationController.signal;
 
-        if (!thumb || !links.length || !activeLink) {
+        if (!links.length) {
             return;
         }
 
-        function setPanelHoverState(isHovered) {
-            window.__sidebarPanelHovered = Boolean(isHovered);
-            nav.classList.toggle("is-panel-hovered", window.__sidebarPanelHovered);
-            if (!window.__sidebarPanelHovered) {
-                window.__sidebarActiveHoverPath = "";
-                nav.classList.remove("is-restored-active-hover");
-            }
-        }
-
-        function syncActiveHoverState() {
-            const currentActive = nav.querySelector("[data-sidebar-link].active, [data-sidebar-link][aria-current='page']") || activeLink;
-            const activeIsHovered = Boolean(
-                window.__sidebarPanelHovered
-                && currentActive
-                && (currentActive.matches(":hover") || isStoredPointerOverElement(currentActive))
-            );
-            const shouldRestoreActiveHover = (
-                window.__sidebarPanelHovered
-                && currentActive
-                && getPathFromHref(currentActive.href) === window.__sidebarActiveHoverPath
-                && isStoredPointerOverElement(currentActive)
-            );
-            const isActiveHover = activeIsHovered || shouldRestoreActiveHover;
-            nav.classList.toggle("is-active-hover", isActiveHover);
-            if (!isActiveHover) {
-                nav.classList.remove("is-restored-active-hover");
-            }
-        }
-
-        function getLinkMetrics(link) {
-            const navRect = nav.getBoundingClientRect();
-            const linkRect = link.getBoundingClientRect();
-
-            return {
-                top: linkRect.top - navRect.top,
-                height: linkRect.height,
-            };
-        }
-
-        function setTransitionState(isTransitioning) {
-            nav.classList.toggle("is-transitioning", isTransitioning);
-
-            if (transitionTimeoutId) {
-                clearTimeout(transitionTimeoutId);
-                transitionTimeoutId = null;
-            }
-
-            if (isTransitioning) {
-                transitionTimeoutId = window.setTimeout(function () {
-                    nav.classList.remove("is-transitioning");
-                    transitionTimeoutId = null;
-                }, 360);
-            }
-        }
-
-        function applyThumb(metrics, immediate) {
-            if (immediate) {
-                thumb.style.transition = "none";
-            }
-
-            thumb.style.setProperty("--sidebar-thumb-top", Math.round(metrics.top) + "px");
-            thumb.style.height = Math.round(metrics.height) + "px";
-
-            if (immediate) {
-                requestAnimationFrame(function () {
-                    thumb.style.transition = "";
-                });
-            }
-        }
-
         function resetNavigationState() {
-            nav.classList.remove("is-navigating", "is-pointer-down", "is-active-hover");
-            links.forEach(function (link) {
-                link.classList.remove("is-current-from", "is-current-to");
-            });
-            setTransitionState(false);
-            syncActiveHoverState();
-
-            if (navigationTimeoutId) {
-                clearTimeout(navigationTimeoutId);
-                navigationTimeoutId = null;
-            }
+            nav.classList.remove("is-navigating");
         }
 
-        function setPointerDownState(isPointerDown) {
-            nav.classList.toggle("is-pointer-down", isPointerDown);
+        function scheduleSidebarIndicatorUpdate() {
+            window.requestAnimationFrame(function () {
+                updateSidebarIndicator(nav);
+            });
         }
 
         function getTargetPath(link) {
@@ -324,10 +307,9 @@ document.addEventListener("DOMContentLoaded", function () {
             return window.location.pathname + window.location.search + window.location.hash;
         }
 
-        function shouldAnimateNavigation(event, link) {
+        function isPlainLeftClick(event, link) {
             if (
-                prefersReducedMotion
-                || !link
+                !link
                 || !link.href
                 || event.defaultPrevented
                 || event.button !== 0
@@ -339,6 +321,14 @@ document.addEventListener("DOMContentLoaded", function () {
                 || (link.target && link.target !== "_self")
                 || link.hasAttribute("download")
             ) {
+                return false;
+            }
+
+            return true;
+        }
+
+        function shouldHandleNavigation(event, link) {
+            if (!isPlainLeftClick(event, link)) {
                 return false;
             }
 
@@ -354,129 +344,43 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         }
 
-        function positionThumbOnActive(immediate) {
-            const currentActive = nav.querySelector("[data-sidebar-link].active, [data-sidebar-link][aria-current='page']") || activeLink;
-            applyThumb(getLinkMetrics(currentActive), immediate);
-        }
-
         links.forEach(function (link) {
             if (!link.href) {
                 return;
             }
 
-            link.addEventListener("pointerdown", function (event) {
-                if (
-                    prefersReducedMotion
-                    || event.button !== 0
-                    || event.metaKey
-                    || event.ctrlKey
-                    || event.shiftKey
-                    || event.altKey
-                    || (link.target && link.target !== "_self")
-                    || link.hasAttribute("download")
-                ) {
+            link.addEventListener("click", function (event) {
+                if (nav.classList.contains("is-navigating")) {
+                    event.preventDefault();
                     return;
                 }
 
-                nav.classList.remove("is-restored-active-hover");
-                rememberSidebarPointerPosition(event);
-                setPointerDownState(true);
-                window.__sidebarActiveHoverPath = getTargetPath(link);
-                syncActiveHoverState();
-                link.blur();
-            });
-
-            link.addEventListener("mouseenter", function (event) {
-                rememberSidebarPointerPosition(event);
-                if (getTargetPath(link) !== window.__sidebarActiveHoverPath) {
-                    nav.classList.remove("is-restored-active-hover");
-                }
-                syncActiveHoverState();
-            }, { signal: signal });
-
-            link.addEventListener("mouseleave", function (event) {
-                rememberSidebarPointerPosition(event);
-                nav.classList.remove("is-restored-active-hover");
-                syncActiveHoverState();
-            }, { signal: signal });
-
-            link.addEventListener("click", function (event) {
                 applyRememberedCalendarHref(link);
 
-                if (!shouldAnimateNavigation(event, link)) {
-                    setPointerDownState(false);
-                    syncActiveHoverState();
+                if (!shouldHandleNavigation(event, link)) {
                     return;
                 }
 
                 event.preventDefault();
-                window.__sidebarActiveHoverPath = getTargetPath(link);
-                link.blur();
-                nav.classList.remove("is-restored-active-hover");
                 resetNavigationState();
                 nav.classList.add("is-ready", "is-navigating");
+                setSidebarActiveLink(nav, link);
 
-                const currentActive = nav.querySelector("[data-sidebar-link].active, [data-sidebar-link][aria-current='page']") || activeLink;
-                if (currentActive) {
-                    currentActive.classList.add("is-current-from");
-                }
-                link.classList.add("is-current-to");
-
-                requestAnimationFrame(function () {
-                    setTransitionState(true);
-                    applyThumb(getLinkMetrics(link), false);
-                });
-
-                navigationTimeoutId = window.setTimeout(function () {
-                    navigateWithFetch(link.href, true);
-                }, 240);
+                navigateWithFetch(link.href, true);
             }, { signal: signal });
         });
 
-        setPanelHoverState(Boolean(window.__sidebarPanelHovered || nav.matches(":hover")));
-
-        nav.addEventListener("pointerenter", function () {
-            setPanelHoverState(true);
-        }, { signal: signal });
-
-        nav.addEventListener("pointermove", function (event) {
-            rememberSidebarPointerPosition(event);
-            syncActiveHoverState();
-        }, { passive: true, signal: signal });
-
-        nav.addEventListener("pointerleave", function (event) {
-            rememberSidebarPointerPosition(event);
-            setPanelHoverState(false);
-            syncActiveHoverState();
-        }, { signal: signal });
-
-        window.addEventListener("pointerup", function () {
-            if (!nav.classList.contains("is-navigating")) {
-                setPointerDownState(false);
-            }
-        }, { signal: signal });
-
-        window.addEventListener("pointercancel", function () {
-            if (!nav.classList.contains("is-navigating")) {
-                setPointerDownState(false);
-            }
-        }, { signal: signal });
-
         resetNavigationState();
-        positionThumbOnActive(true);
-        syncActiveHoverState();
+        updateSidebarIndicator(nav);
         nav.classList.add("is-ready");
-
-        window.addEventListener("resize", function () {
-            positionThumbOnActive(true);
-            syncActiveHoverState();
-        }, { signal: signal });
 
         window.addEventListener("pageshow", function () {
             resetNavigationState();
-            positionThumbOnActive(true);
+            updateSidebarIndicator(nav);
             nav.classList.add("is-ready");
         }, { signal: signal });
+
+        window.addEventListener("resize", scheduleSidebarIndicatorUpdate, { signal: signal });
 
         window.addEventListener("popstate", function () {
             navigateWithFetch(window.location.href, false);

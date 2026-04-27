@@ -51,9 +51,6 @@
 }
 
 .applications-board__topline {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
     gap: 1rem;
     min-width: 0;
 }
@@ -64,7 +61,6 @@
     min-width: 0;
 }
 
-.applications-board__eyebrow,
 .application-card__label {
     color: var(--color-info-dark);
     text-transform: uppercase;
@@ -73,162 +69,18 @@
     line-height: 1.35;
 }
 
-.applications-board__heading h2 {
-    margin: 0;
-    color: var(--color-white);
-    font-size: 1.18rem;
-    line-height: 1.2;
-}
-
-.applications-board__heading p {
-    margin: 0;
-    max-width: 42rem;
-    color: var(--color-info-dark);
-    font-size: 0.92rem;
-    line-height: 1.45;
-}
-
 .applications-status-nav {
     flex: 0 0 auto;
 }
 
 .applications-segmented {
-    --seg-pad: 0.35rem;
-    --seg-gap: 0.45rem;
-    --seg-radius-shell: var(--ui-radius-control-shell);
-    --seg-radius-thumb: max(var(--ui-radius-min), calc(var(--seg-radius-shell) - var(--seg-pad)));
-    --applications-thumb-y: -1px;
-    position: relative;
-    display: inline-grid;
-    grid-template-columns: repeat(4, minmax(7.2rem, 1fr));
-    gap: var(--seg-gap);
-    padding: var(--seg-pad);
-    width: auto;
-    border-radius: var(--seg-radius-shell);
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    align-self: start;
-    justify-content: start;
-    isolation: isolate;
-    overflow: hidden;
-}
-
-.applications-segmented__thumb {
-    position: absolute;
-    top: var(--seg-pad);
-    left: var(--seg-pad);
-    width: calc((100% - ((var(--seg-pad) * 2) + (var(--seg-gap) * 3))) / 4);
-    height: calc(100% - (var(--seg-pad) * 2));
-    border-radius: var(--seg-radius-thumb);
-    background:
-        linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
-        linear-gradient(135deg, rgba(0, 175, 245, 0.9), rgba(39, 199, 255, 0.68));
-    box-shadow:
-        0 0.7rem 1.35rem rgba(0, 175, 245, 0.22),
-        inset 0 1px 0 rgba(255, 255, 255, 0.18);
-    transform: translate3d(0, var(--applications-thumb-y), 0);
-    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease, filter 0.22s ease;
-    pointer-events: none;
-    z-index: 0;
-}
-
-.applications-segmented[data-active-status="pending"] .applications-segmented__thumb {
-    transform: translate3d(calc(100% + var(--seg-gap)), var(--applications-thumb-y), 0);
-}
-
-.applications-segmented[data-active-status="approved"] .applications-segmented__thumb {
-    transform: translate3d(calc((100% + var(--seg-gap)) * 2), var(--applications-thumb-y), 0);
-}
-
-.applications-segmented[data-active-status="rejected"] .applications-segmented__thumb {
-    transform: translate3d(calc((100% + var(--seg-gap)) * 3), var(--applications-thumb-y), 0);
-}
-
-.applications-segmented__item {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    border: 0;
-    background: transparent;
-    padding: 0;
-    cursor: pointer;
-}
-
-.applications-segmented__item span {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 7.2rem;
-    min-height: 2.8rem;
-    width: 100%;
-    padding: 0.65rem 0.9rem;
-    border-radius: var(--seg-radius-thumb);
-    border: 1px solid transparent;
-    position: relative;
-    overflow: hidden;
-    color: rgba(219, 228, 242, 0.72);
-    font-size: 0.9rem;
-    font-weight: 600;
-    transition: color 0.22s ease, transform 0.22s ease, background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, filter 0.22s ease;
-}
-
-.applications-segmented__item span::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(120deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0));
-    transform: translateX(-120%);
-    transition: transform 0.38s ease, opacity 0.22s ease;
-    opacity: 0;
-    pointer-events: none;
-}
-
-.applications-segmented__item.active span {
-    color: var(--color-white);
-    transform: translateY(-1px);
-}
-
-.applications-segmented__item:not(.active):hover span {
-    transform: translateY(-3px);
-}
-
-.applications-segmented__item:not(.active):hover span {
-    color: var(--color-white);
-    background: linear-gradient(135deg, rgba(0, 175, 245, 0.16), rgba(56, 200, 255, 0.12));
-    border-color: rgba(56, 200, 255, 0.24);
-    box-shadow: 0 0.9rem 1.8rem rgba(0, 175, 245, 0.18), inset 0 0 0 1px rgba(56, 200, 255, 0.16);
-    filter: brightness(1.03);
-}
-
-.applications-segmented__item:not(.active):hover span::before {
-    transform: translateX(120%);
-    opacity: 1;
-}
-
-.applications-segmented__item.active:hover span {
-    transform: translateY(-1px);
-}
-
-.applications-segmented.is-active-hover {
-    --applications-thumb-y: -3px;
-}
-
-.applications-segmented.is-active-hover .applications-segmented__thumb {
-    box-shadow: 0 1.15rem 2.2rem rgba(0, 175, 245, 0.28);
-    filter: brightness(1.04);
-}
-
-.applications-segmented.is-active-hover .applications-segmented__item.active span {
-    transform: translateY(var(--applications-thumb-y));
-}
-
-.applications-segmented__item:focus-visible {
-    outline: none;
-}
-
-.applications-segmented__item:focus-visible span {
-    box-shadow: 0 0 0 3px rgba(56, 200, 255, 0.22);
+    --seg-item-min: 7.2rem;
+    --seg-item-padding: 0.65rem 0.9rem;
+    --seg-item-font-size: 0.9rem;
+    --seg-indicator-duration: 0.42s;
+    --seg-indicator-ease: cubic-bezier(0.2, 0.9, 0.24, 1);
+    --seg-indicator-shadow-duration: 0.38s;
+    --seg-indicator-filter-duration: 0.32s;
 }
 
 .applications-cards-shell {
@@ -522,17 +374,6 @@
     border-radius: var(--ui-radius-panel);
 }
 
-.applications-segmented {
-    --seg-radius-shell: var(--ui-radius-control-shell);
-    --seg-radius-thumb: max(var(--ui-radius-min), calc(var(--seg-radius-shell) - var(--seg-pad)));
-    border-radius: var(--seg-radius-shell);
-}
-
-.applications-segmented__thumb,
-.applications-segmented__item span {
-    border-radius: var(--seg-radius-thumb);
-}
-
 .application-card {
     border-radius: var(--ui-radius-panel-inner);
 }
@@ -551,7 +392,21 @@
 
 @media (max-width: 1200px) {
     .applications-board__topline {
-        flex-direction: column;
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .applications-board__topline .panel-heading__controls {
+        grid-column: auto;
+        justify-self: stretch;
+        justify-content: stretch;
+        flex-wrap: wrap;
+    }
+
+    .applications-board__topline .panel-heading__controls > .toolbar-search {
+        position: relative;
+        top: auto;
+        left: auto;
     }
 
     .applications-status-nav,
@@ -578,6 +433,25 @@
     .application-card__meta--transfer {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .applications-segmented {
+        --seg-item-min: 0;
+        grid-template-columns: 1fr;
+        width: 100%;
+        overflow: visible;
+    }
+
+    .applications-segmented .segmented-control__indicator {
+        display: none;
+    }
+
+    .applications-segmented .segmented-control__item > span {
+        min-width: 0;
+    }
+
+    .applications-segmented .segmented-control__item.active > span {
+        background: linear-gradient(135deg, rgba(0, 175, 245, 0.9), rgba(39, 199, 255, 0.68));
+    }
 }
 
 @media (max-width: 768px) {
@@ -595,24 +469,6 @@
         padding: 1.1rem;
     }
 
-    .applications-segmented {
-        grid-template-columns: 1fr;
-        width: 100%;
-        overflow: visible;
-    }
-
-    .applications-segmented__thumb {
-        display: none;
-    }
-
-    .applications-segmented__item span {
-        min-width: 0;
-    }
-
-    .applications-segmented__item.active span {
-        background: linear-gradient(135deg, rgba(0, 175, 245, 0.9), rgba(39, 199, 255, 0.68));
-    }
-
     .application-card__meta,
     .application-card__meta--transfer {
         grid-template-columns: 1fr;
@@ -621,9 +477,6 @@
 
 @media (prefers-reduced-motion: reduce) {
     .applications-board,
-    .applications-segmented__thumb,
-    .applications-segmented__item span,
-    .applications-segmented__item span::before,
     .application-card,
     .applications-transfer-action {
         transition: none;

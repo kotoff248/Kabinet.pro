@@ -3,6 +3,7 @@ from datetime import date
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -145,6 +146,20 @@ def _restrict_change_requests_queryset_for_employee(queryset, current_employee):
     return queryset.filter(employee=current_employee)
 
 
+def _normalize_employee_search_query(value):
+    return " ".join((value or "").split())
+
+
+def _filter_by_employee_name(queryset, search_query):
+    for token in search_query.split():
+        queryset = queryset.filter(
+            Q(employee__last_name__icontains=token)
+            | Q(employee__first_name__icontains=token)
+            | Q(employee__middle_name__icontains=token)
+        )
+    return queryset
+
+
 def _get_calendar_available_years(current_year, selected_year=None):
     years = set(VacationRequest.objects.values_list("start_date__year", flat=True))
     years.update(VacationRequest.objects.values_list("end_date__year", flat=True))
@@ -244,10 +259,16 @@ def graphics(request):
         selected_employee_id = calendar_rows[0]["employee_id"]
 
     selected_employee_detail = calendar_details.get(str(selected_employee_id)) if selected_employee_id else None
+    selected_month_label = RUSSIAN_MONTH_NAMES[selected_month - 1]
     calendar_period_label = (
-        f"{RUSSIAN_MONTH_NAMES[selected_month - 1]} {selected_year}"
+        f"График отпусков на {selected_month_label.lower()} {selected_year}"
         if calendar_view_mode == "month"
         else f"График отпусков на {selected_year} год"
+    )
+    calendar_period_description = (
+        "Детали по сотруднику открываются кликом по строке."
+        if calendar_view_mode == "month"
+        else "Обзор отпусков по месяцам за выбранный год."
     )
     paid_request_allowed, paid_request_hint = get_paid_request_eligibility_for_year(current_user, selected_year)
 
@@ -265,6 +286,7 @@ def graphics(request):
             "paid_request_hint": paid_request_hint,
             "calendar_view_mode": calendar_view_mode,
             "calendar_period_label": calendar_period_label,
+            "calendar_period_description": calendar_period_description,
             "calendar_filters": {
                 "selected_year": selected_year,
                 "selected_month": selected_month,
@@ -298,7 +320,7 @@ def graphics(request):
             "calendar_details": calendar_details,
             "selected_employee_id": selected_employee_id,
             "selected_employee_detail": selected_employee_detail,
-            "selected_month_name": RUSSIAN_MONTH_NAMES[selected_month - 1],
+            "selected_month_name": selected_month_label,
             "year_short_headers": RUSSIAN_MONTH_SHORT_NAMES,
             "month_day_headers": [
                 {
@@ -316,7 +338,9 @@ def graphics(request):
     if request.method == "GET" and request.headers.get("x-requested-with") == "XMLHttpRequest":
         return JsonResponse(
             {
-                "html": render_to_string("includes/calendar/results.html", context, request=request),
+                "board_html": render_to_string("includes/calendar/board_content.html", context, request=request),
+                "period_label": calendar_period_label,
+                "period_description": calendar_period_description,
                 "calendar_details": calendar_details,
             }
         )
@@ -335,6 +359,7 @@ def applications(request):
     context = update_context_with_departments(request, context)
     status_filter = request.GET.get("status", "all")
     department_id = request.GET.get("department", "all")
+    search_query = _normalize_employee_search_query(request.GET.get("search", ""))
     requests_qs = _restrict_requests_queryset_for_employee(
         get_vacation_requests_queryset().order_by("-created_at"),
         current_employee,
@@ -366,6 +391,10 @@ def applications(request):
             else:
                 department_id = "all"
 
+    if search_query:
+        requests_qs = _filter_by_employee_name(requests_qs, search_query)
+        change_requests_qs = _filter_by_employee_name(change_requests_qs, search_query)
+
     vacations = [enrich_vacation_request(request_obj) for request_obj in requests_qs]
     change_requests = [enrich_schedule_change_request(change_request) for change_request in change_requests_qs]
     for change_request in change_requests:
@@ -391,6 +420,7 @@ def applications(request):
             "change_requests": change_requests,
             "selected_status": status_filter,
             "selected_department": str(department_id),
+            "search_query": search_query,
             "show_department_filter": not is_authorized_person_employee(current_employee),
         }
     )

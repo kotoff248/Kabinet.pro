@@ -165,157 +165,18 @@ body.is-calendar-page .page-main{
 }
 
 .calendar-segmented{
-    --seg-pad: 0.35rem;
-    --seg-gap: 0.45rem;
-    --seg-radius-shell: var(--ui-radius-control-shell);
-    --seg-radius-thumb: max(var(--ui-radius-min), calc(var(--seg-radius-shell) - var(--seg-pad)));
-    --calendar-thumb-x: 0px;
-    --calendar-thumb-y: -1px;
-    position: relative;
-    display: inline-grid;
-    grid-template-columns: repeat(2, minmax(8rem, 1fr));
-    gap: var(--seg-gap);
-    padding: var(--seg-pad);
-    width: auto;
-    border-radius: var(--seg-radius-shell);
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    align-self: start;
-    justify-content: start;
-    isolation: isolate;
-    overflow: hidden;
+    --seg-item-min: 8rem;
+    --seg-item-font-size: 0.92rem;
 }
 
 .calendar-board-card__header .calendar-segmented{
     flex: 0 1 auto;
 }
 
-.calendar-segmented__thumb{
-    position: absolute;
-    top: var(--seg-pad);
-    left: var(--seg-pad);
-    width: calc((100% - ((var(--seg-pad) * 2) + var(--seg-gap))) / 2);
-    height: calc(100% - (var(--seg-pad) * 2));
-    border-radius: var(--seg-radius-thumb);
-    background:
-        linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
-        linear-gradient(135deg, rgba(0, 175, 245, 0.9), rgba(39, 199, 255, 0.68));
-    box-shadow:
-        0 0.7rem 1.35rem rgba(0, 175, 245, 0.22),
-        inset 0 1px 0 rgba(255, 255, 255, 0.18);
-    transform: translate3d(var(--calendar-thumb-x), var(--calendar-thumb-y), 0);
-    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease, filter 0.22s ease;
-    pointer-events: none;
-    z-index: 0;
-}
-
-.calendar-segmented[data-active-view="year"]{
-    --calendar-thumb-x: calc(100% + var(--seg-gap));
-}
-
-.calendar-segmented__item{
-    display: flex;
-    position: relative;
-    min-width: 0;
-    cursor: pointer;
-    z-index: 1;
-}
-
-.calendar-segmented__item input{
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
-}
-
-.calendar-segmented__item span{
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    min-height: 2.8rem;
-    min-width: 8rem;
-    padding: 0.65rem 1rem;
-    border-radius: var(--seg-radius-thumb);
-    position: relative;
-    overflow: hidden;
-    color: var(--color-info-dark);
-    font-weight: 600;
-    border: 1px solid transparent;
-    background: transparent;
-    transition: color 0.22s ease, transform 0.22s ease, background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, filter 0.22s ease;
-}
-
-.calendar-segmented__item span::before{
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(120deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0));
-    transform: translateX(-120%);
-    transition: transform 0.38s ease, opacity 0.22s ease;
-    opacity: 0;
-    pointer-events: none;
-}
-
-.calendar-segmented__item.is-active span{
-    color: var(--color-white);
-    transform: translateY(-1px);
-}
-
-.calendar-segmented__item:not(.is-active) span{
-    color: rgba(219, 228, 242, 0.72);
-}
-
-.calendar-segmented__item:not(.is-active):hover span{
-    transform: translateY(-3px);
-}
-
-.calendar-segmented__item:not(.is-active):hover span{
-    color: var(--color-white);
-    background: linear-gradient(135deg, rgba(0, 175, 245, 0.16), rgba(56, 200, 255, 0.12));
-    border-color: rgba(56, 200, 255, 0.24);
-    box-shadow: 0 0.9rem 1.8rem rgba(0, 175, 245, 0.2), inset 0 0 0 1px rgba(56, 200, 255, 0.18);
-    filter: brightness(1.03);
-}
-
-.calendar-segmented__item:not(.is-active):hover span::before{
-    transform: translateX(120%);
-    opacity: 1;
-}
-
-.calendar-segmented__item.is-active:hover span{
-    transform: translateY(-1px);
-    box-shadow: 0 1rem 2rem rgba(0, 175, 245, 0.2);
-    filter: brightness(1.04);
-}
-
-.calendar-segmented.is-active-hover{
-    --calendar-thumb-y: -3px;
-}
-
-.calendar-segmented.is-active-hover .calendar-segmented__thumb{
-    box-shadow:
-        0 1rem 2rem rgba(0, 175, 245, 0.28),
-        inset 0 1px 0 rgba(255, 255, 255, 0.18);
-    filter: brightness(1.04);
-}
-
-.calendar-segmented.is-active-hover .calendar-segmented__item.is-active span{
-    transform: translateY(var(--calendar-thumb-y));
-}
-
-.calendar-segmented__item:focus-within span{
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(56, 200, 255, 0.24);
-}
-
 @media (prefers-reduced-motion: reduce){
     .calendar-page__header,
     .calendar-summary-card,
     .calendar-board-card,
-    .calendar-segmented__thumb,
-    .calendar-segmented__item span,
-    .calendar-segmented__item span::before,
     .calendar-action-btn::before{
         transition: none;
     }
@@ -759,12 +620,13 @@ body.is-calendar-page .page-main{
 }
 
 .calendar-board-card__header{
-    display: flex;
-    flex-direction: column;
-    gap: 0.52rem;
-    min-height: 7.2rem;
-    padding: 0.72rem 0.9rem 0.62rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 0.85rem;
+    min-height: 0;
+    padding: 1.5rem 1.5rem 0;
+    border-bottom: 0;
     flex-shrink: 0;
 }
 
@@ -775,18 +637,19 @@ body.is-calendar-page .page-main{
     gap: 0.55rem 0.9rem;
     flex-wrap: wrap;
     min-width: 0;
+    width: 100%;
 }
 
 .calendar-board-card__intro{
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.8rem;
+    display: grid;
+    gap: 0.28rem;
+    align-content: start;
     min-width: 0;
+    max-width: 42rem;
 }
 
 .calendar-board-card__intro h2{
-    flex: 0 0 auto;
+    margin: 0;
 }
 
 .calendar-board-card__header p{
@@ -890,7 +753,7 @@ body.is-calendar-page .page-main{
 .calendar-legend__dot--request-rejected{ background: #ff5f91; }
 
 .calendar-board-scroll{
-    --calendar-left-gutter: 1rem;
+    --calendar-left-gutter: 1.5rem;
     --calendar-top-gutter: 0.75rem;
     --calendar-panel-bg: rgba(58, 64, 80, 0.96);
     --calendar-panel-border: rgba(255, 255, 255, 0.06);
@@ -913,7 +776,7 @@ body.is-calendar-page .page-main{
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
-    padding: var(--calendar-top-gutter) 0.8rem 0.8rem var(--calendar-left-gutter);
+    padding: var(--calendar-top-gutter) 1.5rem 1.5rem var(--calendar-left-gutter);
     isolation: isolate;
     position: relative;
 }
@@ -1081,6 +944,8 @@ html.is-calendar-sizing .calendar-board-scroll{
     cursor: default;
     position: relative;
     isolation: isolate;
+    content-visibility: auto;
+    contain-intrinsic-size: var(--employee-col-width) var(--calendar-row-height);
 }
 
 .timeline-row{
@@ -1829,24 +1694,11 @@ html.is-calendar-sizing .calendar-board-scroll{
     border-radius: var(--ui-radius-panel-inner);
 }
 
-.calendar-segmented{
-    --seg-radius-shell: var(--ui-radius-control-shell);
-    --seg-radius-thumb: max(var(--ui-radius-min), calc(var(--seg-radius-shell) - var(--seg-pad)));
-    border-radius: var(--seg-radius-shell);
-}
-
-.calendar-segmented__thumb,
-.calendar-segmented__item span,
 .calendar-select__option,
 .calendar-legend__item,
 .timeline-employee-card__badge,
 .status-count{
     border-radius: var(--ui-radius-status);
-}
-
-.calendar-segmented__thumb,
-.calendar-segmented__item span{
-    border-radius: var(--seg-radius-thumb);
 }
 
 @media (max-width: 1500px){
@@ -1895,11 +1747,13 @@ html.is-calendar-sizing .calendar-board-scroll{
     }
 
     .calendar-board-scroll{
+        --calendar-left-gutter: 1.1rem;
         --calendar-cell-size: 5.8rem;
         --calendar-day-height: 2rem;
         --calendar-card-padding: 0.45rem;
         --calendar-card-font: 0.78rem;
         --calendar-card-meta-font: 0.66rem;
+        padding: var(--calendar-top-gutter) 1.1rem 1.1rem var(--calendar-left-gutter);
         overflow-x: auto;
         overflow-y: auto;
     }
@@ -1932,6 +1786,8 @@ html.is-calendar-sizing .calendar-board-scroll{
 
     .calendar-board-card__header{
         min-height: 0;
+        grid-template-columns: 1fr;
+        padding: 1.1rem 1.1rem 0;
     }
 
     .calendar-board-card__header .calendar-toolbar__controls{
@@ -1940,12 +1796,9 @@ html.is-calendar-sizing .calendar-board-scroll{
     }
 
     .calendar-segmented{
+        --seg-item-min: 0;
         width: 100%;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .calendar-segmented__item span{
-        min-width: 0;
     }
 
     .calendar-filter-stack{
@@ -1963,8 +1816,6 @@ html.is-calendar-sizing .calendar-board-scroll{
     }
 
     .calendar-board-card__intro{
-        align-items: flex-start;
-        flex-direction: column;
         gap: 0.25rem;
     }
 

@@ -13,9 +13,14 @@ function initEmployeesPage() {
     const employeesScrollShell = document.querySelector(".employee-cards-shell");
     const departmentSelect = document.getElementById("department");
     const employeesCountNode = document.getElementById("employees-count");
+    const searchForm = document.querySelector("[data-live-search-form]");
+    const searchInput = searchForm ? searchForm.querySelector("[data-live-search-input]") : null;
+    const searchToggle = searchForm ? searchForm.querySelector("[data-live-search-toggle]") : null;
+    const searchClear = searchForm ? searchForm.querySelector("[data-live-search-clear]") : null;
     const canOpenProfiles = Boolean(document.querySelector(".employee-row-clickable"));
     const segmentedControl = document.getElementById("employees-status-form");
     const scrollStorageKey = "employees:list-scroll-state";
+    const searchDebounceMs = 250;
 
     if (!segmentedControl || !buttons.length || !employeesList) {
         return;
@@ -24,16 +29,72 @@ function initEmployeesPage() {
     let currentStatus = (buttons.find(function (button) {
         return button.classList.contains("active");
     }) || buttons[0]).value;
+    let currentSearch = normalizeSearch(searchInput ? searchInput.value : new URLSearchParams(window.location.search).get("search"));
+    let searchTimer = null;
+    let requestSequence = 0;
 
     function getDepartmentValue() {
         return departmentSelect ? departmentSelect.value : "all";
+    }
+
+    function normalizeSearch(value) {
+        return (value || "").trim().replace(/\s+/g, " ");
     }
 
     function getCurrentListState() {
         return {
             status: currentStatus,
             department: getDepartmentValue(),
+            search: currentSearch,
         };
+    }
+
+    function syncHiddenFilterInputs() {
+        document.querySelectorAll('input[type="hidden"][name="status"]').forEach(function (input) {
+            input.value = currentStatus;
+        });
+        document.querySelectorAll('input[type="hidden"][name="search"]').forEach(function (input) {
+            input.value = currentSearch;
+        });
+    }
+
+    function setSearchOpen(isOpen) {
+        if (!searchForm) {
+            return;
+        }
+
+        const shouldOpen = Boolean(isOpen || currentSearch);
+        searchForm.classList.toggle("is-open", shouldOpen);
+        if (searchToggle) {
+            searchToggle.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+        }
+    }
+
+    function focusSearchInput() {
+        if (!searchInput) {
+            return;
+        }
+
+        searchInput.focus({ preventScroll: true });
+        window.requestAnimationFrame(function () {
+            searchInput.focus({ preventScroll: true });
+            window.requestAnimationFrame(function () {
+                searchInput.focus({ preventScroll: true });
+            });
+        });
+    }
+
+    function syncSearchControls() {
+        if (!searchForm) {
+            return;
+        }
+
+        const hasFocus = searchForm.contains(document.activeElement);
+        setSearchOpen(hasFocus || Boolean(currentSearch));
+        if (searchClear) {
+            searchClear.hidden = !currentSearch;
+        }
+        syncHiddenFilterInputs();
     }
 
     function readScrollState() {
@@ -81,6 +142,7 @@ function initEmployeesPage() {
             !savedState
             || savedState.status !== currentState.status
             || savedState.department !== currentState.department
+            || savedState.search !== currentState.search
         ) {
             return;
         }
@@ -105,37 +167,19 @@ function initEmployeesPage() {
         });
     }
 
-    function getStatusKey(statusValue) {
-        if (statusValue === "True") {
-            return "working";
-        }
-        if (statusValue === "False") {
-            return "vacation";
-        }
-        return "all";
-    }
-
-    function syncActiveHoverState() {
-        const activeButton = buttons.find(function (button) {
-            return button.classList.contains("active");
-        });
-
-        if (!activeButton) {
-            segmentedControl.classList.remove("is-active-hover");
-            return;
-        }
-
-        const isHovered = activeButton.matches(":hover");
-        segmentedControl.classList.toggle("is-active-hover", isHovered);
-    }
-
     function setActiveButton(value) {
-        segmentedControl.dataset.activeStatus = getStatusKey(value);
+        let activeButton = null;
         buttons.forEach(function (button) {
             const isActive = button.value === value;
             button.classList.toggle("active", isActive);
+            if (isActive) {
+                activeButton = button;
+            }
         });
-        syncActiveHoverState();
+        if (window.KabinetSegmented && typeof window.KabinetSegmented.sync === "function") {
+            window.KabinetSegmented.sync(segmentedControl, activeButton);
+        }
+        syncHiddenFilterInputs();
     }
 
     function renderEmptyState() {
@@ -146,13 +190,18 @@ function initEmployeesPage() {
         employeesList.appendChild(empty);
     }
 
-    function updateUrl(status, department) {
+    function updateUrl(status, department, search) {
         const params = new URLSearchParams(window.location.search);
         params.set("status", status);
         if (department && department !== "all") {
             params.set("department", department);
         } else {
             params.delete("department");
+        }
+        if (search) {
+            params.set("search", search);
+        } else {
+            params.delete("search");
         }
 
         const query = params.toString();
@@ -222,6 +271,8 @@ function initEmployeesPage() {
     function fetchEmployees() {
         const departmentId = getDepartmentValue();
         const url = new URL(window.location.href);
+        const requestId = ++requestSequence;
+        currentSearch = normalizeSearch(searchInput ? searchInput.value : currentSearch);
         url.searchParams.set("status", currentStatus);
 
         if (departmentId && departmentId !== "all") {
@@ -229,16 +280,26 @@ function initEmployeesPage() {
         } else {
             url.searchParams.delete("department");
         }
+        if (currentSearch) {
+            url.searchParams.set("search", currentSearch);
+        } else {
+            url.searchParams.delete("search");
+        }
+        syncSearchControls();
 
         fetch(url.toString(), {
             headers: {
                 "X-Requested-With": "XMLHttpRequest",
             },
+            signal: signal,
         })
             .then(function (response) {
                 return response.json();
             })
             .then(function (data) {
+                if (requestId !== requestSequence) {
+                    return;
+                }
                 employeesList.innerHTML = "";
 
                 if (!data.employees.length) {
@@ -246,7 +307,7 @@ function initEmployeesPage() {
                     if (employeesCountNode) {
                         employeesCountNode.textContent = "0";
                     }
-                    updateUrl(currentStatus, departmentId);
+                    updateUrl(currentStatus, departmentId, currentSearch);
                     return;
                 }
 
@@ -258,37 +319,34 @@ function initEmployeesPage() {
                     employeesCountNode.textContent = String(data.employees.length);
                 }
 
-                updateUrl(currentStatus, departmentId);
+                updateUrl(currentStatus, departmentId, currentSearch);
                 if (employeesScrollShell) {
                     employeesScrollShell.scrollTop = 0;
                 }
                 clearScrollState();
             })
             .catch(function (error) {
+                if (error.name === "AbortError") {
+                    return;
+                }
                 console.error("Error fetching employees:", error);
             });
     }
 
+    function scheduleSearch() {
+        window.clearTimeout(searchTimer);
+        searchTimer = window.setTimeout(function () {
+            clearScrollState();
+            fetchEmployees();
+        }, searchDebounceMs);
+    }
+
     setActiveButton(currentStatus);
+    syncSearchControls();
 
     buttons.forEach(function (button) {
-        button.addEventListener("mouseenter", function () {
-            syncActiveHoverState();
-        }, { signal: signal });
-
-        button.addEventListener("mouseleave", function () {
-            syncActiveHoverState();
-        }, { signal: signal });
-
-        button.addEventListener("focus", function () {
-            syncActiveHoverState();
-        }, { signal: signal });
-
-        button.addEventListener("blur", function () {
-            syncActiveHoverState();
-        }, { signal: signal });
-
         button.addEventListener("click", function () {
+            window.clearTimeout(searchTimer);
             currentStatus = button.value;
             setActiveButton(currentStatus);
             clearScrollState();
@@ -298,10 +356,61 @@ function initEmployeesPage() {
 
     if (departmentSelect) {
         departmentSelect.addEventListener("change", function () {
+            window.clearTimeout(searchTimer);
             clearScrollState();
             fetchEmployees();
         }, { signal: signal });
     }
+
+    if (searchForm && searchInput) {
+        searchForm.addEventListener("submit", function (event) {
+            event.preventDefault();
+            window.clearTimeout(searchTimer);
+            currentSearch = normalizeSearch(searchInput.value);
+            searchInput.value = currentSearch;
+            syncSearchControls();
+            clearScrollState();
+            fetchEmployees();
+        }, { signal: signal });
+
+        searchInput.addEventListener("input", function () {
+            currentSearch = normalizeSearch(searchInput.value);
+            syncSearchControls();
+            scheduleSearch();
+        }, { signal: signal });
+
+        searchForm.addEventListener("focusout", function () {
+            window.setTimeout(syncSearchControls, 0);
+        }, { signal: signal });
+    }
+
+    if (searchToggle && searchInput) {
+        searchToggle.addEventListener("click", function () {
+            setSearchOpen(true);
+            focusSearchInput();
+        }, { signal: signal });
+    }
+
+    if (searchClear && searchInput) {
+        searchClear.addEventListener("click", function () {
+            if (!searchInput.value && !currentSearch) {
+                focusSearchInput();
+                return;
+            }
+
+            searchInput.value = "";
+            currentSearch = "";
+            window.clearTimeout(searchTimer);
+            syncSearchControls();
+            clearScrollState();
+            fetchEmployees();
+            focusSearchInput();
+        }, { signal: signal });
+    }
+
+    signal.addEventListener("abort", function () {
+        window.clearTimeout(searchTimer);
+    }, { once: true });
 
     if (employeesScrollShell) {
         employeesScrollShell.addEventListener("scroll", function () {

@@ -20,25 +20,102 @@ function initApplicationsPage() {
     const transferScrollShell = root.querySelector("[data-applications-transfer-scroll]");
     const requestScrollShell = root.querySelector("[data-applications-request-scroll]");
     const departmentSelect = document.getElementById("department");
+    const searchControls = Array.from(root.querySelectorAll("[data-live-search-form]")).map(function (form) {
+        return {
+            form: form,
+            input: form.querySelector("[data-live-search-input]"),
+            toggle: form.querySelector("[data-live-search-toggle]"),
+            clear: form.querySelector("[data-live-search-clear]"),
+        };
+    }).filter(function (control) {
+        return Boolean(control.input);
+    });
     const scrollStorageKey = "applications:list-scroll-state";
+    const searchDebounceMs = 250;
 
     if (!statusForms.length || !buttons.length || !transferList || !requestList) {
         return;
     }
 
+    const initialSearchControl = searchControls.find(function (control) {
+        return control.input.value;
+    });
+
     let currentStatus = (buttons.find(function (button) {
         return button.classList.contains("active");
     }) || buttons[0]).value;
+    let currentSearch = normalizeSearch(initialSearchControl ? initialSearchControl.input.value : new URLSearchParams(window.location.search).get("search"));
+    let searchTimer = null;
+    let requestSequence = 0;
 
     function getDepartmentValue() {
         return departmentSelect ? departmentSelect.value : "all";
+    }
+
+    function normalizeSearch(value) {
+        return (value || "").trim().replace(/\s+/g, " ");
     }
 
     function getCurrentListState() {
         return {
             status: currentStatus,
             department: getDepartmentValue(),
+            search: currentSearch,
         };
+    }
+
+    function getCurrentSearchInputValue() {
+        const focusedControl = searchControls.find(function (control) {
+            return document.activeElement === control.input;
+        });
+        if (focusedControl) {
+            return focusedControl.input.value;
+        }
+
+        const filledControl = searchControls.find(function (control) {
+            return control.input.value;
+        });
+        return filledControl ? filledControl.input.value : currentSearch;
+    }
+
+    function setSearchOpen(control, isOpen) {
+        if (!control || !control.form) {
+            return;
+        }
+
+        const shouldOpen = Boolean(isOpen || currentSearch);
+        control.form.classList.toggle("is-open", shouldOpen);
+        if (control.toggle) {
+            control.toggle.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+        }
+    }
+
+    function focusSearchInput(control) {
+        if (!control || !control.input) {
+            return;
+        }
+
+        control.input.focus({ preventScroll: true });
+        window.requestAnimationFrame(function () {
+            control.input.focus({ preventScroll: true });
+            window.requestAnimationFrame(function () {
+                control.input.focus({ preventScroll: true });
+            });
+        });
+    }
+
+    function syncSearchControls(sourceInput) {
+        searchControls.forEach(function (control) {
+            if (control.input !== sourceInput) {
+                control.input.value = currentSearch;
+            }
+            const hasFocus = control.form.contains(document.activeElement);
+            setSearchOpen(control, hasFocus || Boolean(currentSearch));
+            if (control.clear) {
+                control.clear.hidden = !currentSearch;
+            }
+        });
+        syncHeaderSearchInput();
     }
 
     function readScrollState() {
@@ -78,6 +155,7 @@ function initApplicationsPage() {
             !savedState
             || savedState.status !== currentState.status
             || savedState.department !== currentState.department
+            || savedState.search !== currentState.search
         ) {
             return;
         }
@@ -137,24 +215,30 @@ function initApplicationsPage() {
         }
     }
 
-    function syncActiveHoverState(form) {
-        const activeButton = Array.from(form.querySelectorAll("button[name='status']")).find(function (button) {
-            return button.classList.contains("active");
-        });
-
-        form.classList.toggle("is-active-hover", Boolean(activeButton && activeButton.matches(":hover")));
+    function syncHeaderSearchInput() {
+        const searchInputNode = document.querySelector('#applications-department-form input[name="search"]');
+        if (searchInputNode) {
+            searchInputNode.value = currentSearch;
+        }
     }
 
     function setActiveButton(value) {
         statusForms.forEach(function (form) {
-            form.dataset.activeStatus = value;
+            let activeButton = null;
             form.querySelectorAll("button[name='status']").forEach(function (button) {
-                button.classList.toggle("active", button.value === value);
+                const isActive = button.value === value;
+                button.classList.toggle("active", isActive);
+                if (isActive) {
+                    activeButton = button;
+                }
             });
-            syncActiveHoverState(form);
+            if (window.KabinetSegmented && typeof window.KabinetSegmented.sync === "function") {
+                window.KabinetSegmented.sync(form, activeButton);
+            }
         });
         syncHiddenDepartmentInputs();
         syncHeaderStatusInput();
+        syncHeaderSearchInput();
     }
 
     function createLabel(text) {
@@ -354,13 +438,18 @@ function initApplicationsPage() {
         });
     }
 
-    function updateUrl(status, department) {
+    function updateUrl(status, department, search) {
         const params = new URLSearchParams(window.location.search);
         params.set("status", status);
         if (department && department !== "all") {
             params.set("department", department);
         } else {
             params.delete("department");
+        }
+        if (search) {
+            params.set("search", search);
+        } else {
+            params.delete("search");
         }
 
         const query = params.toString();
@@ -379,6 +468,8 @@ function initApplicationsPage() {
     function fetchApplications() {
         const selectedDepartment = getDepartmentValue();
         const url = new URL(window.location.href);
+        const requestId = ++requestSequence;
+        currentSearch = normalizeSearch(getCurrentSearchInputValue());
         url.searchParams.set("status", currentStatus);
 
         if (selectedDepartment && selectedDepartment !== "all") {
@@ -386,57 +477,54 @@ function initApplicationsPage() {
         } else {
             url.searchParams.delete("department");
         }
+        if (currentSearch) {
+            url.searchParams.set("search", currentSearch);
+        } else {
+            url.searchParams.delete("search");
+        }
+        syncSearchControls();
 
         fetch(url.toString(), {
             headers: {
                 "X-Requested-With": "XMLHttpRequest",
             },
+            signal: signal,
         })
             .then(function (response) {
                 return response.json();
             })
             .then(function (data) {
+                if (requestId !== requestSequence) {
+                    return;
+                }
                 renderChangeRequests(data.change_requests || []);
                 renderVacationRequests(data.vacations || []);
-                updateUrl(currentStatus, selectedDepartment);
+                updateUrl(currentStatus, selectedDepartment, currentSearch);
                 resetListScroll();
                 clearScrollState();
             })
             .catch(function (error) {
+                if (error.name === "AbortError") {
+                    return;
+                }
                 console.error("Error fetching applications:", error);
             });
     }
 
+    function scheduleSearch() {
+        window.clearTimeout(searchTimer);
+        searchTimer = window.setTimeout(function () {
+            clearScrollState();
+            fetchApplications();
+        }, searchDebounceMs);
+    }
+
     setActiveButton(currentStatus);
+    syncSearchControls();
 
     buttons.forEach(function (button) {
-        const form = button.closest("[data-applications-status-form]");
-
-        button.addEventListener("mouseenter", function () {
-            if (form) {
-                syncActiveHoverState(form);
-            }
-        }, { signal: signal });
-
-        button.addEventListener("mouseleave", function () {
-            if (form) {
-                syncActiveHoverState(form);
-            }
-        }, { signal: signal });
-
-        button.addEventListener("focus", function () {
-            if (form) {
-                syncActiveHoverState(form);
-            }
-        }, { signal: signal });
-
-        button.addEventListener("blur", function () {
-            if (form) {
-                syncActiveHoverState(form);
-            }
-        }, { signal: signal });
-
         button.addEventListener("click", function () {
+            window.clearTimeout(searchTimer);
             currentStatus = button.value;
             setActiveButton(currentStatus);
             clearScrollState();
@@ -446,11 +534,64 @@ function initApplicationsPage() {
 
     if (departmentSelect) {
         departmentSelect.addEventListener("change", function () {
+            window.clearTimeout(searchTimer);
             syncHiddenDepartmentInputs();
             clearScrollState();
             fetchApplications();
         }, { signal: signal });
     }
+
+    searchControls.forEach(function (control) {
+        control.form.addEventListener("submit", function (event) {
+            event.preventDefault();
+            window.clearTimeout(searchTimer);
+            currentSearch = normalizeSearch(control.input.value);
+            control.input.value = currentSearch;
+            syncSearchControls();
+            clearScrollState();
+            fetchApplications();
+        }, { signal: signal });
+
+        control.input.addEventListener("input", function () {
+            currentSearch = normalizeSearch(control.input.value);
+            syncSearchControls(control.input);
+            scheduleSearch();
+        }, { signal: signal });
+
+        control.form.addEventListener("focusout", function () {
+            window.setTimeout(syncSearchControls, 0);
+        }, { signal: signal });
+
+        if (control.toggle) {
+            control.toggle.addEventListener("click", function () {
+                setSearchOpen(control, true);
+                focusSearchInput(control);
+            }, { signal: signal });
+        }
+
+        if (control.clear) {
+            control.clear.addEventListener("click", function () {
+                if (!control.input.value && !currentSearch) {
+                    focusSearchInput(control);
+                    return;
+                }
+
+                currentSearch = "";
+                searchControls.forEach(function (otherControl) {
+                    otherControl.input.value = "";
+                });
+                window.clearTimeout(searchTimer);
+                syncSearchControls();
+                clearScrollState();
+                fetchApplications();
+                focusSearchInput(control);
+            }, { signal: signal });
+        }
+    });
+
+    signal.addEventListener("abort", function () {
+        window.clearTimeout(searchTimer);
+    }, { once: true });
 
     [transferScrollShell, requestScrollShell].forEach(function (scrollShell) {
         if (!scrollShell) {

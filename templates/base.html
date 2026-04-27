@@ -49,10 +49,10 @@
             </div>
 
             <nav class="sidebar sidebar-nav" aria-label="Основная навигация" data-sidebar-nav>
-                <span class="sidebar__thumb" aria-hidden="true"></span>
+                <span class="sidebar__active-indicator" aria-hidden="true"></span>
                 {% with current_url=request.resolver_match.url_name %}
                 {% if can_access_profile %}
-                <a href="{% url 'main' %}" class="sidebar__link {% if current_url == 'main' or sidebar_section == 'profile' %}active{% endif %}" data-sidebar-link {% if current_url == 'main' or sidebar_section == 'profile' %}aria-current="page"{% endif %}>
+                <a href="{% url 'main' %}" class="sidebar__link {% if current_url == 'main' or sidebar_section == 'profile' %}active{% endif %}" data-sidebar-link data-sidebar-key="profile" {% if current_url == 'main' or sidebar_section == 'profile' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
                         <span class="material-icons-sharp">person</span>
                         <h3>Профиль</h3>
@@ -60,7 +60,7 @@
                 </a>
                 {% endif %}
                 {% if can_access_calendar %}
-                <a href="{% url 'calendar' %}" class="sidebar__link {% if current_url == 'calendar' %}active{% endif %}" data-sidebar-link {% if current_url == 'calendar' %}aria-current="page"{% endif %}>
+                <a href="{% url 'calendar' %}" class="sidebar__link {% if current_url == 'calendar' %}active{% endif %}" data-sidebar-link data-sidebar-key="calendar" {% if current_url == 'calendar' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
                         <span class="material-icons-sharp">event</span>
                         <h3>График</h3>
@@ -68,7 +68,7 @@
                 </a>
                 {% endif %}
                 {% if can_access_employees %}
-                <a href="{% url 'employees' %}" class="sidebar__link {% if current_url == 'employees' or sidebar_section == 'employees' %}active{% endif %}" data-sidebar-link {% if current_url == 'employees' or sidebar_section == 'employees' %}aria-current="page"{% endif %}>
+                <a href="{% url 'employees' %}" class="sidebar__link {% if current_url == 'employees' or sidebar_section == 'employees' %}active{% endif %}" data-sidebar-link data-sidebar-key="employees" {% if current_url == 'employees' or sidebar_section == 'employees' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
                         <span class="material-icons-sharp">group_add</span>
                         <h3>Сотрудники</h3>
@@ -76,7 +76,7 @@
                 </a>
                 {% endif %}
                 {% if is_hr or is_department_head or is_enterprise_head %}
-                <a href="{% url 'departments' %}" class="sidebar__link {% if current_url == 'departments' %}active{% endif %}" data-sidebar-link {% if current_url == 'departments' %}aria-current="page"{% endif %}>
+                <a href="{% url 'departments' %}" class="sidebar__link {% if current_url == 'departments' %}active{% endif %}" data-sidebar-link data-sidebar-key="departments" {% if current_url == 'departments' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
                         <span class="material-icons-sharp">diversity_2</span>
                         <h3>{% if is_department_head and not is_hr and not is_enterprise_head %}Мой отдел{% else %}Отделы{% endif %}</h3>
@@ -84,7 +84,7 @@
                 </a>
                 {% endif %}
                 {% if can_access_applications %}
-                <a href="{% url 'applications' %}" class="sidebar__link {% if current_url == 'applications' or current_url == 'vacation_detail' %}active{% endif %}" data-sidebar-link {% if current_url == 'applications' or current_url == 'vacation_detail' %}aria-current="page"{% endif %}>
+                <a href="{% url 'applications' %}" class="sidebar__link {% if current_url == 'applications' or current_url == 'vacation_detail' %}active{% endif %}" data-sidebar-link data-sidebar-key="applications" {% if current_url == 'applications' or current_url == 'vacation_detail' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
                         <span class="material-icons-sharp">email</span>
                         <h3>Заявки</h3>
@@ -97,14 +97,14 @@
                 </a>
                 {% endif %}
                 {% if is_department_head or is_enterprise_head %}
-                <a href="{% url 'analytics' %}" class="sidebar__link {% if current_url == 'analytics' %}active{% endif %}" data-sidebar-link {% if current_url == 'analytics' %}aria-current="page"{% endif %}>
+                <a href="{% url 'analytics' %}" class="sidebar__link {% if current_url == 'analytics' %}active{% endif %}" data-sidebar-link data-sidebar-key="analytics" {% if current_url == 'analytics' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
                         <span class="material-icons-sharp">insights</span>
                         <h3>Аналитика</h3>
                     </span>
                 </a>
                 {% endif %}
-                <a href="{% url 'logout' %}" class="sidebar__link" data-sidebar-link>
+                <a href="{% url 'logout' %}" class="sidebar__link" data-sidebar-link data-sidebar-key="logout">
                     <span class="sidebar__link-main">
                         <span class="material-icons-sharp">logout</span>
                         <h3>Выход</h3>

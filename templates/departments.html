@@ -12,6 +12,13 @@
     {% include 'includes/page_header.html' with eyebrow='Структура компании' title='Отделы' subtitle='Список подразделений компании с закрепленными руководителями и датой добавления в систему.' header_actions_template='includes/page_headers/departments_controls.html' %}
 
     <section class="staff_main">
+        <div class="panel-heading panel-heading--solo">
+            <div class="panel-heading__copy">
+                <h2>Структура отделов</h2>
+                <p>Подразделения компании, закрепленные руководители и численность сотрудников.</p>
+            </div>
+        </div>
+
         <div class="department-cards-shell">
             <div class="department-cards-list">
                 {% for department in departments %}

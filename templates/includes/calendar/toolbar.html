@@ -1,12 +1,12 @@
 <form method="get" class="calendar-toolbar" id="calendar-filters-form">
     <div class="calendar-toolbar__controls">
-        <div class="calendar-segmented" data-active-view="{{ calendar_view_mode }}" role="tablist" aria-label="Режим графика">
-            <span class="calendar-segmented__thumb" aria-hidden="true"></span>
-            <label class="calendar-segmented__item {% if calendar_view_mode == 'month' %}is-active{% endif %}">
+        <div class="segmented-control segmented-control--count-2 calendar-segmented" data-segmented-index="{% if calendar_view_mode == 'year' %}1{% else %}0{% endif %}" role="tablist" aria-label="Режим графика">
+            <span class="segmented-control__indicator" aria-hidden="true"></span>
+            <label class="segmented-control__item {% if calendar_view_mode == 'month' %}is-active{% endif %}">
                 <input type="radio" name="view" value="month" {% if calendar_view_mode == 'month' %}checked{% endif %}>
                 <span>Месяц</span>
             </label>
-            <label class="calendar-segmented__item {% if calendar_view_mode == 'year' %}is-active{% endif %}">
+            <label class="segmented-control__item {% if calendar_view_mode == 'year' %}is-active{% endif %}">
                 <input type="radio" name="view" value="year" {% if calendar_view_mode == 'year' %}checked{% endif %}>
                 <span>Год</span>
             </label>

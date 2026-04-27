@@ -35,6 +35,7 @@ function initCalendarPage() {
     let rows = Array.from(document.querySelectorAll("[data-employee-id]"));
     let detailsData = JSON.parse(detailsDataNode.textContent || "{}");
     let isFetchingCalendarResults = false;
+    let currentFiltersStateKey = null;
 
     const detailModal = document.getElementById("calendar-detail-drawer");
     const detailName = document.getElementById("calendar-detail-name");
@@ -48,6 +49,9 @@ function initCalendarPage() {
     const selectedList = document.getElementById("calendar-selected-list");
     const yearList = document.getElementById("calendar-year-list");
     let calendarRowHeightFrame = null;
+    let boardScrollPersistTimeout = null;
+    let pendingBoardScrollState = null;
+    const boardScrollPersistDelay = 140;
 
     const modal = document.getElementById("vacation-modal");
     const transferModal = document.getElementById("schedule-transfer-modal");
@@ -92,6 +96,8 @@ function initCalendarPage() {
     }
 
     function submitFilters() {
+        flushBoardScrollState();
+
         if (monthSelect.disabled) {
             monthSelect.disabled = false;
         }
@@ -104,7 +110,12 @@ function initCalendarPage() {
     }
 
     function getFiltersStateKey() {
-        return new URLSearchParams(new FormData(filtersForm)).toString();
+        currentFiltersStateKey = new URLSearchParams(new FormData(filtersForm)).toString();
+        return currentFiltersStateKey;
+    }
+
+    function getCachedFiltersStateKey() {
+        return currentFiltersStateKey || getFiltersStateKey();
     }
 
     function persistCalendarUrl(url) {
@@ -122,7 +133,7 @@ function initCalendarPage() {
         }
 
         const state = {
-            key: getFiltersStateKey(),
+            key: scrollState.key || getFiltersStateKey(),
             top: Number(scrollState.top) || 0,
             left: Number(scrollState.left) || 0,
         };
@@ -132,6 +143,37 @@ function initCalendarPage() {
         } catch (error) {
             return;
         }
+    }
+
+    function clearBoardScrollPersistTimeout() {
+        if (!boardScrollPersistTimeout) {
+            return;
+        }
+
+        window.clearTimeout(boardScrollPersistTimeout);
+        boardScrollPersistTimeout = null;
+    }
+
+    function flushBoardScrollState() {
+        clearBoardScrollPersistTimeout();
+
+        if (!pendingBoardScrollState) {
+            return;
+        }
+
+        persistBoardScrollState(pendingBoardScrollState);
+        pendingBoardScrollState = null;
+    }
+
+    function scheduleBoardScrollStatePersist(boardScroll) {
+        pendingBoardScrollState = {
+            key: getCachedFiltersStateKey(),
+            top: boardScroll.scrollTop,
+            left: boardScroll.scrollLeft,
+        };
+
+        clearBoardScrollPersistTimeout();
+        boardScrollPersistTimeout = window.setTimeout(flushBoardScrollState, boardScrollPersistDelay);
     }
 
     function readPersistedBoardScrollState() {
@@ -198,8 +240,19 @@ function initCalendarPage() {
         }
 
         boardScroll.addEventListener("scroll", function () {
-            persistBoardScrollState(getBoardScrollState({ includeAnchor: false }));
+            scheduleBoardScrollStatePersist(boardScroll);
         }, { passive: true, signal: signal });
+        boardScroll.addEventListener("scrollend", flushBoardScrollState, { passive: true, signal: signal });
+        window.addEventListener("pagehide", flushBoardScrollState, { signal: signal });
+        document.addEventListener("visibilitychange", function () {
+            if (document.visibilityState === "hidden") {
+                flushBoardScrollState();
+            }
+        }, { signal: signal });
+        signal.addEventListener("abort", function () {
+            clearBoardScrollPersistTimeout();
+            pendingBoardScrollState = null;
+        }, { once: true });
     }
 
     function bindRows() {
@@ -358,11 +411,43 @@ function initCalendarPage() {
         }
     }
 
+    function updateCalendarBoardMeta(payload) {
+        const intro = resultsContainer
+            ? resultsContainer.querySelector(".calendar-board-card__intro")
+            : null;
+        const title = intro ? intro.querySelector("h2") : null;
+        const description = intro ? intro.querySelector("p") : null;
+
+        if (title && payload.period_label) {
+            title.textContent = payload.period_label;
+        }
+        if (description && payload.period_description) {
+            description.textContent = payload.period_description;
+        }
+    }
+
+    function updateCalendarBoard(payload) {
+        const boardScroll = resultsContainer
+            ? resultsContainer.querySelector(".calendar-board-scroll")
+            : null;
+
+        if (!boardScroll || typeof payload.board_html !== "string") {
+            throw new Error("Calendar board payload is missing.");
+        }
+
+        boardScroll.innerHTML = payload.board_html;
+        updateCalendarBoardMeta(payload);
+        updateDetailsData(payload.calendar_details);
+        bindRows();
+        scheduleCalendarRowHeightSync();
+    }
+
     function requestCalendarResults() {
         if (!resultsContainer || isFetchingCalendarResults) {
             return;
         }
 
+        flushBoardScrollState();
         const requestUrl = buildFiltersUrl();
         const boardScrollState = getBoardScrollState();
         persistBoardScrollState(boardScrollState);
@@ -383,15 +468,12 @@ function initCalendarPage() {
                 return response.json();
             })
             .then(function (payload) {
-                resultsContainer.innerHTML = payload.html || "";
-                updateDetailsData(payload.calendar_details);
+                updateCalendarBoard(payload);
                 window.history.replaceState({}, "", requestUrl);
                 persistCalendarUrl(new URL(requestUrl, window.location.href).href);
                 persistBoardScrollState(boardScrollState);
-                initCalendarPage();
                 requestAnimationFrame(function () {
                     restoreBoardScrollState(boardScrollState);
-                    resetDocumentScroll();
                 });
             })
             .catch(function () {
@@ -409,23 +491,20 @@ function initCalendarPage() {
             return;
         }
 
-        segmentedControl.dataset.activeView = activeInput.value;
+        let activeItem = null;
         viewInputs.forEach(function (input) {
-            const item = input.closest(".calendar-segmented__item");
+            const item = input.closest(".segmented-control__item");
             if (item) {
-                item.classList.toggle("is-active", input.checked);
+                const isActive = input.checked;
+                item.classList.toggle("is-active", isActive);
+                if (isActive) {
+                    activeItem = item;
+                }
             }
         });
-        syncViewSegmentedHoverState();
-    }
-
-    function syncViewSegmentedHoverState() {
-        if (!segmentedControl) {
-            return;
+        if (window.KabinetSegmented && typeof window.KabinetSegmented.sync === "function") {
+            window.KabinetSegmented.sync(segmentedControl, activeItem);
         }
-
-        const activeItem = segmentedControl.querySelector(".calendar-segmented__item.is-active");
-        segmentedControl.classList.toggle("is-active-hover", Boolean(activeItem && activeItem.matches(":hover")));
     }
 
     function closeCustomSelects(exceptSelect) {
@@ -807,17 +886,10 @@ function initCalendarPage() {
     syncMonthFilterState();
 
     viewInputs.forEach(function (input) {
-        const item = input.closest(".calendar-segmented__item");
-
-        if (item) {
-            item.addEventListener("mouseenter", syncViewSegmentedHoverState, { signal: signal });
-            item.addEventListener("mouseleave", syncViewSegmentedHoverState, { signal: signal });
-        }
-
         input.addEventListener("change", function () {
             syncViewSegmentedState();
             syncMonthFilterState();
-            window.setTimeout(requestCalendarResults, 220);
+            requestCalendarResults();
         }, { signal: signal });
     });
 

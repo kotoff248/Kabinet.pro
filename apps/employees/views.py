@@ -25,6 +25,7 @@ from apps.accounts.services import (
 from apps.employees.models import Departments, Employees
 from apps.leave.models import VacationRequest, VacationScheduleItem
 from apps.leave.services import (
+    exclude_converted_paid_requests,
     get_employee_entitlement_rows,
     get_employee_list_leave_summaries,
     get_employee_leave_summary,
@@ -52,12 +53,19 @@ def _get_current_vacation_employee_ids(employee_ids, as_of_date=None):
         return set()
 
     today = as_of_date or timezone.localdate()
-    request_employee_ids = VacationRequest.objects.filter(
+    current_requests = VacationRequest.objects.filter(
         employee_id__in=employee_ids,
         status=VacationRequest.STATUS_APPROVED,
         start_date__lte=today,
         end_date__gte=today,
-    ).values_list("employee_id", flat=True)
+    )
+    current_requests = exclude_converted_paid_requests(
+        current_requests,
+        employee_ids=employee_ids,
+        start_date=today,
+        end_date=today,
+    )
+    request_employee_ids = current_requests.values_list("employee_id", flat=True)
     schedule_employee_ids = VacationScheduleItem.objects.filter(
         employee_id__in=employee_ids,
         status__in=VacationScheduleItem.ACTIVE_STATUSES,
@@ -122,6 +130,20 @@ def _get_visible_employees_queryset(current_employee):
     if current_employee.department_id:
         return queryset.filter(department_id=current_employee.department_id)
     return queryset.filter(pk=current_employee.pk)
+
+
+def _normalize_employee_search_query(value):
+    return " ".join((value or "").split())
+
+
+def _filter_employees_by_name(queryset, search_query):
+    for token in search_query.split():
+        queryset = queryset.filter(
+            Q(last_name__icontains=token)
+            | Q(first_name__icontains=token)
+            | Q(middle_name__icontains=token)
+        )
+    return queryset
 
 
 @employee_required
@@ -282,6 +304,10 @@ def employees(request):
         department_id = str(current_employee.department_id)
 
     status = request.GET.get("status", "None")
+    search_query = _normalize_employee_search_query(request.GET.get("search", ""))
+    if search_query:
+        employees_qs = _filter_employees_by_name(employees_qs, search_query)
+
     employees_qs = list(employees_qs)
     current_vacation_employee_ids = _get_current_vacation_employee_ids(employee.id for employee in employees_qs)
     if status == "True":
@@ -308,6 +334,7 @@ def employees(request):
             "employees_count": len(employees_list),
             "selected_status": status,
             "selected_department": department_id,
+            "search_query": search_query,
             "can_manage_employees": can_edit,
             "show_manager_fields": can_edit,
         }

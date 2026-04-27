@@ -2,15 +2,8 @@
 
 <section class="calendar-board-card">
     <div class="calendar-board-card__header">
-        <div class="calendar-board-card__intro">
+        <div class="calendar-board-card__intro panel-heading__copy">
             <h2>{{ calendar_period_label }}</h2>
-            <p>
-                {% if calendar_view_mode == 'month' %}
-                Детали по сотруднику открываются кликом по строке.
-                {% else %}
-                Обзор отпусков по месяцам за выбранный год.
-                {% endif %}
-            </p>
         </div>
 
         <div class="calendar-board-card__controls">
@@ -33,122 +26,6 @@
     </div>
 
     <div class="calendar-board-scroll">
-        {% if calendar_view_mode == 'month' %}
-        <div class="timeline-board">
-            <div class="timeline-grid timeline-grid--header" style="--days-count: {{ month_day_headers|length }};">
-                <div class="timeline-head timeline-head--employee">
-                    <span>Сотрудник</span>
-                </div>
-                {% for header in month_day_headers %}
-                <div class="timeline-head timeline-head--day {% if header.is_weekend %}is-weekend{% endif %} {% if header.is_today %}is-today{% endif %}">
-                    <strong>{{ header.day }}</strong>
-                    <span>{{ header.weekday }}</span>
-                </div>
-                {% endfor %}
-            </div>
-
-            {% for row in calendar_rows %}
-            <button
-                type="button"
-                class="timeline-grid timeline-row {% if row.employee_id == selected_employee_id %}is-active{% endif %}"
-                style="--days-count: {{ row.cells|length }};"
-                data-employee-id="{{ row.employee_id }}"
-            >
-                <span class="timeline-employee-card">
-                    <span class="timeline-employee-card__top">
-                        <strong>{{ row.employee_name }}</strong>
-                        <span class="timeline-employee-card__badge timeline-employee-card__badge--{{ row.status }}">
-                            {% if row.selected_total_days %}
-                            {{ row.selected_total_days }} д.
-                            {% else %}
-                            Нет отпусков
-                            {% endif %}
-                        </span>
-                    </span>
-                    <span class="timeline-employee-card__bottom">
-                        <span class="timeline-employee-card__meta">{{ row.position }} &bull; {{ row.department }}</span>
-                        <span class="timeline-employee-card__stats">
-                            <span class="status-count status-count--schedule" title="По графику">{{ row.selected_schedule_days }}</span>
-                            <span class="status-count status-count--request" title="Заявки">{{ row.selected_request_days }}</span>
-                            <span class="status-count status-count--changed" title="Переносы и отмены">{{ row.selected_changed_days }}</span>
-                        </span>
-                    </span>
-                </span>
-                {% for cell in row.cells %}
-                <span
-                    class="timeline-day status-{{ cell.status }} {% if cell.is_weekend %}is-weekend{% endif %} {% if cell.is_today %}is-today{% endif %} {% if cell.is_start %}is-start{% endif %} {% if cell.is_end %}is-end{% endif %} {% if cell.is_single %}is-single{% endif %}"
-                    title="{{ cell.tooltip }}"
-                ></span>
-                {% endfor %}
-            </button>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="year-board">
-            <div class="year-grid year-grid--header">
-                <div class="timeline-head timeline-head--employee year-head year-head--employee">
-                    <span>Сотрудник</span>
-                </div>
-                {% for month_name in year_short_headers %}
-                <div class="timeline-head timeline-head--day year-head year-head--month">
-                    <strong>{{ month_name }}</strong>
-                </div>
-                {% endfor %}
-            </div>
-
-            {% for row in calendar_rows %}
-            <button type="button" class="year-grid year-row {% if row.employee_id == selected_employee_id %}is-active{% endif %}" data-employee-id="{{ row.employee_id }}">
-                <span class="timeline-employee-card year-employee-card">
-                    <span class="timeline-employee-card__top">
-                        <strong>{{ row.employee_name }}</strong>
-                        <span class="timeline-employee-card__badge timeline-employee-card__badge--{{ row.status }}">
-                            {% if row.year_total_days %}
-                            {{ row.year_total_days }} д.
-                            {% else %}
-                            Нет отпусков
-                            {% endif %}
-                        </span>
-                    </span>
-                    <span class="timeline-employee-card__bottom">
-                        <span class="timeline-employee-card__meta">{{ row.position }} &bull; {{ row.department }}</span>
-                        <span class="timeline-employee-card__stats">
-                            <span class="status-count status-count--schedule" title="По графику">{{ row.year_schedule_days }}</span>
-                            <span class="status-count status-count--request" title="Заявки">{{ row.year_request_days }}</span>
-                            <span class="status-count status-count--changed" title="Переносы и отмены">{{ row.year_changed_days }}</span>
-                        </span>
-                    </span>
-                </span>
-                {% for cell in row.cells %}
-                <span class="year-month-card year-month-card--{{ cell.status }}">
-                    <span class="year-month-card__top">
-                        <span>{{ cell.month_short }}</span>
-                        <strong>{% if cell.busy_days %}{{ cell.busy_days }} д.{% endif %}</strong>
-                    </span>
-                    <span class="year-month-card__track">
-                        {% for segment in cell.segments %}
-                        {% localize off %}
-                        <span class="year-month-card__segment status-{{ segment.status }}" style="left: {{ segment.offset_percent }}%; width: {{ segment.width_percent }}%;"></span>
-                        {% endlocalize %}
-                        {% endfor %}
-                    </span>
-                    <span class="year-month-card__stats">
-                        <span class="status-count status-count--schedule" title="По графику">{{ cell.schedule_days }}</span>
-                        <span class="status-count status-count--request" title="Заявки">{{ cell.request_days }}</span>
-                        <span class="status-count status-count--changed" title="Переносы и отмены">{{ cell.changed_days }}</span>
-                    </span>
-                </span>
-                {% endfor %}
-            </button>
-            {% endfor %}
-        </div>
-        {% endif %}
-
-        {% if not calendar_rows %}
-        <div class="calendar-empty-state">
-            <span class="material-icons-sharp">event_busy</span>
-            <h3>По выбранному периоду отпусков пока нет</h3>
-            <p>Когда появятся пункты графика, переносы или заявки, календарь автоматически заполнится.</p>
-        </div>
-        {% endif %}
+        {% include 'includes/calendar/board_content.html' %}
     </div>
 </section>

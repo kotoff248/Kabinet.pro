@@ -20,7 +20,13 @@ from apps.leave.models import (
     VacationScheduleEnterpriseApproval,
     VacationScheduleItem,
 )
-from apps.leave.services import add_months_safe, add_years_safe, get_chargeable_leave_days, get_employee_leave_summary
+from apps.leave.services import (
+    add_months_safe,
+    add_years_safe,
+    exclude_converted_paid_requests,
+    get_chargeable_leave_days,
+    get_employee_leave_summary,
+)
 
 
 class SeedVacationRequestsCommandTests(TestCase):
@@ -126,6 +132,7 @@ class SeedVacationRequestsCommandTests(TestCase):
             VacationScheduleItem.objects.filter(
                 employee__in=new_hires,
                 schedule__year=current_year,
+                source=VacationScheduleItem.SOURCE_GENERATED,
             ).exists()
         )
         established_employees = Employees.objects.filter(role=Employees.ROLE_EMPLOYEE, date_joined__lte=schedule_cutoff)
@@ -145,13 +152,31 @@ class SeedVacationRequestsCommandTests(TestCase):
         for request_obj in paid_requests:
             with self.subTest(request=request_obj.id):
                 self.assertGreaterEqual(request_obj.start_date, add_months_safe(request_obj.employee.date_joined, 6))
-                self.assertFalse(
-                    request_obj.employee.vacation_schedule_items.filter(
-                        status__in=VacationScheduleItem.ACTIVE_STATUSES,
-                        start_date__lte=request_obj.end_date,
-                        end_date__gte=request_obj.start_date,
-                    ).exists()
+                overlapping_items = request_obj.employee.vacation_schedule_items.filter(
+                    status__in=VacationScheduleItem.ACTIVE_STATUSES,
+                    start_date__lte=request_obj.end_date,
+                    end_date__gte=request_obj.start_date,
                 )
+                if request_obj.status == VacationRequest.STATUS_APPROVED:
+                    linked_items = request_obj.created_schedule_items.filter(
+                        status__in=VacationScheduleItem.ACTIVE_STATUSES,
+                    )
+                    self.assertEqual(linked_items.count(), 1)
+                    self.assertEqual(linked_items.get().source, VacationScheduleItem.SOURCE_MANUAL)
+                    self.assertFalse(overlapping_items.exclude(id__in=linked_items.values_list("id", flat=True)).exists())
+                else:
+                    self.assertFalse(overlapping_items.exists())
+        approved_paid_requests = VacationRequest.objects.filter(
+            vacation_type="paid",
+            status=VacationRequest.STATUS_APPROVED,
+        )
+        self.assertFalse(approved_paid_requests.filter(created_schedule_items__isnull=True).exists())
+        self.assertFalse(
+            VacationRequest.objects.filter(
+                vacation_type__in=["unpaid", "study"],
+                created_schedule_items__isnull=False,
+            ).exists()
+        )
         self.assertGreater(
             VacationRequest.objects.filter(status=VacationRequest.STATUS_REJECTED).count(),
             0,
@@ -187,8 +212,10 @@ class SeedVacationRequestsCommandTests(TestCase):
         )
 
         for employee in Employees.objects.all():
+            active_requests = employee.vacation_requests.filter(status__in=VacationRequest.ACTIVE_STATUSES)
+            active_requests = exclude_converted_paid_requests(active_requests, employee_ids=[employee.id])
             active_periods = list(
-                employee.vacation_requests.filter(status__in=VacationRequest.ACTIVE_STATUSES).values_list("start_date", "end_date")
+                active_requests.values_list("start_date", "end_date")
             )
             active_periods.extend(
                 employee.vacation_schedule_items.filter(
@@ -222,12 +249,14 @@ class SeedVacationRequestsCommandTests(TestCase):
                 status__in=VacationScheduleItem.BALANCE_STATUSES,
             )
         )
+        active_paid_requests = VacationRequest.objects.filter(
+            vacation_type="paid",
+            status__in=VacationRequest.ACTIVE_STATUSES,
+        )
+        active_paid_requests = exclude_converted_paid_requests(active_paid_requests)
         active_paid_request_days = sum(
             get_chargeable_leave_days(request_obj.start_date, request_obj.end_date, request_obj.vacation_type)
-            for request_obj in VacationRequest.objects.filter(
-                vacation_type="paid",
-                status__in=VacationRequest.ACTIVE_STATUSES,
-            )
+            for request_obj in active_paid_requests
         )
         allocated_days = sum(allocation.allocated_days for allocation in VacationEntitlementAllocation.objects.all())
         self.assertEqual(allocated_days, active_schedule_days + active_paid_request_days)

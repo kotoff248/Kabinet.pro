@@ -1,19 +1,19 @@
 <div class="applications-status-nav">
-    <form method="get" id="{{ form_id }}" data-applications-status-form class="applications-segmented" data-active-status="{{ selected_status }}" role="tablist" aria-label="Статус заявок">
+    <form method="get" id="{{ form_id }}" data-applications-status-form class="segmented-control segmented-control--count-4 applications-segmented" data-segmented-index="{% if selected_status == 'pending' %}1{% elif selected_status == 'approved' %}2{% elif selected_status == 'rejected' %}3{% else %}0{% endif %}" role="tablist" aria-label="Статус заявок">
         {% if selected_department %}
         <input type="hidden" name="department" value="{{ selected_department }}">
         {% endif %}
-        <span class="applications-segmented__thumb" aria-hidden="true"></span>
-        <button type="button" name="status" value="all" data-status-key="all" class="applications-segmented__item {% if selected_status == 'all' %}active{% endif %}">
+        <span class="segmented-control__indicator" aria-hidden="true"></span>
+        <button type="button" name="status" value="all" data-status-key="all" class="segmented-control__item {% if selected_status == 'all' %}active{% endif %}">
             <span>Все</span>
         </button>
-        <button type="button" name="status" value="pending" data-status-key="pending" class="applications-segmented__item {% if selected_status == 'pending' %}active{% endif %}">
+        <button type="button" name="status" value="pending" data-status-key="pending" class="segmented-control__item {% if selected_status == 'pending' %}active{% endif %}">
             <span>В ожидании</span>
         </button>
-        <button type="button" name="status" value="approved" data-status-key="approved" class="applications-segmented__item {% if selected_status == 'approved' %}active{% endif %}">
+        <button type="button" name="status" value="approved" data-status-key="approved" class="segmented-control__item {% if selected_status == 'approved' %}active{% endif %}">
             <span>Одобрено</span>
         </button>
-        <button type="button" name="status" value="rejected" data-status-key="rejected" class="applications-segmented__item {% if selected_status == 'rejected' %}active{% endif %}">
+        <button type="button" name="status" value="rejected" data-status-key="rejected" class="segmented-control__item {% if selected_status == 'rejected' %}active{% endif %}">
             <span>Отклонено</span>
         </button>
     </form>

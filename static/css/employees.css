@@ -24,6 +24,11 @@
 .staff_nav--segmented {
     display: flex;
     align-items: flex-start;
+    justify-content: center;
+}
+
+.staff_main > .panel-heading {
+    flex: 0 0 auto;
 }
 
 .profile-page[data-page="employees"] .page-hero,
@@ -1048,136 +1053,12 @@
 }
 
 .employees-segmented {
-    --seg-pad: 0.35rem;
-    --seg-gap: 0.45rem;
-    --seg-radius-shell: var(--ui-radius-control-shell);
-    --seg-radius-thumb: max(var(--ui-radius-min), calc(var(--seg-radius-shell) - var(--seg-pad)));
-    --employees-thumb-y: -1px;
-    position: relative;
-    display: inline-grid;
-    grid-template-columns: repeat(3, minmax(8rem, 1fr));
-    gap: var(--seg-gap);
-    padding: var(--seg-pad);
-    width: auto;
-    border-radius: var(--seg-radius-shell);
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    align-self: start;
-    justify-content: start;
-    isolation: isolate;
-    overflow: hidden;
-}
-
-.employees-segmented__thumb {
-    position: absolute;
-    top: var(--seg-pad);
-    left: var(--seg-pad);
-    width: calc((100% - ((var(--seg-pad) * 2) + (var(--seg-gap) * 2))) / 3);
-    height: calc(100% - (var(--seg-pad) * 2));
-    border-radius: var(--seg-radius-thumb);
-    background:
-        linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
-        linear-gradient(135deg, rgba(0, 175, 245, 0.9), rgba(39, 199, 255, 0.68));
-    box-shadow:
-        0 0.7rem 1.35rem rgba(0, 175, 245, 0.22),
-        inset 0 1px 0 rgba(255, 255, 255, 0.18);
-    transform: translate3d(0, var(--employees-thumb-y), 0);
-    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease, filter 0.22s ease;
-    pointer-events: none;
-    z-index: 0;
-}
-
-.employees-segmented__item {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    border: 0;
-    background: transparent;
-    padding: 0;
-    cursor: pointer;
-}
-
-.employees-segmented__item span {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 8rem;
-    min-height: 2.8rem;
-    width: 100%;
-    padding: 0.65rem 1rem;
-    border-radius: var(--seg-radius-thumb);
-    border: 1px solid transparent;
-    position: relative;
-    overflow: hidden;
-    color: rgba(219, 228, 242, 0.72);
-    font-size: 0.92rem;
-    font-weight: 600;
-    transition: color 0.22s ease, transform 0.22s ease, background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, filter 0.22s ease;
-}
-
-.employees-segmented__item span::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(120deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0));
-    transform: translateX(-120%);
-    transition: transform 0.38s ease, opacity 0.22s ease;
-    opacity: 0;
-    pointer-events: none;
-}
-
-.employees-segmented__item.active span {
-    color: var(--color-white);
-    transform: translateY(-1px);
-}
-
-.employees-segmented[data-active-status="working"] .employees-segmented__thumb {
-    transform: translate3d(calc(100% + var(--seg-gap)), var(--employees-thumb-y), 0);
-}
-
-.employees-segmented[data-active-status="vacation"] .employees-segmented__thumb {
-    transform: translate3d(calc((100% + var(--seg-gap)) * 2), var(--employees-thumb-y), 0);
-}
-
-.employees-segmented__item:not(.active):hover span {
-    transform: translateY(-3px);
-}
-
-.employees-segmented__item:not(.active):hover span {
-    color: var(--color-white);
-    background: linear-gradient(135deg, rgba(0, 175, 245, 0.16), rgba(56, 200, 255, 0.12));
-    border-color: rgba(56, 200, 255, 0.24);
-    box-shadow: 0 0.9rem 1.8rem rgba(0, 175, 245, 0.18), inset 0 0 0 1px rgba(56, 200, 255, 0.16);
-    filter: brightness(1.03);
-}
-
-.employees-segmented__item:not(.active):hover span::before {
-    transform: translateX(120%);
-    opacity: 1;
-}
-
-.employees-segmented__item.active:hover span {
-    transform: translateY(-1px);
-    box-shadow: 0 1rem 2rem rgba(0, 175, 245, 0.2);
-    filter: brightness(1.04);
-}
-
-.employees-segmented.is-active-hover {
-    --employees-thumb-y: -3px;
-}
-
-.employees-segmented.is-active-hover .employees-segmented__thumb {
-    box-shadow: 0 1.15rem 2.2rem rgba(0, 175, 245, 0.28);
-    filter: brightness(1.04);
-}
-
-.employees-segmented__item:focus-visible {
-    outline: none;
-}
-
-.employees-segmented__item:focus-visible span {
-    box-shadow: 0 0 0 3px rgba(56, 200, 255, 0.22);
+    --seg-item-min: 8rem;
+    --seg-item-font-size: 0.92rem;
+    --seg-indicator-duration: 0.36s;
+    --seg-indicator-ease: cubic-bezier(0.2, 0.9, 0.24, 1);
+    --seg-indicator-shadow-duration: 0.34s;
+    --seg-indicator-filter-duration: 0.3s;
 }
 
 @media (max-width: 992px) {
@@ -1309,27 +1190,9 @@
     border-radius: var(--ui-radius-panel-inner);
 }
 
-.employees-segmented {
-    --seg-radius-shell: var(--ui-radius-control-shell);
-    --seg-radius-thumb: max(var(--ui-radius-min), calc(var(--seg-radius-shell) - var(--seg-pad)));
-    border-radius: var(--seg-radius-shell);
-}
-
-.employees-segmented__thumb,
-.employees-segmented__item span{
-    border-radius: var(--seg-radius-thumb);
-}
-
-.employees-segmented.is-active-hover .employees-segmented__item.active span{
-    transform: translateY(var(--employees-thumb-y));
-}
-
 @media (prefers-reduced-motion: reduce) {
     .staff_nav form button,
     .line,
-    .employees-segmented__thumb,
-    .employees-segmented__item span,
-    .employees-segmented__item span::before,
     .employee-select__trigger,
     .employee-select__trigger .material-icons-sharp,
     .employee-select__menu,

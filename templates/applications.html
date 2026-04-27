@@ -18,13 +18,15 @@
                         {% include 'includes/page_header.html' with eyebrow='Согласование' title='Заявки сотрудников' subtitle='Сначала проверьте переносы утверждённого графика, затем перейдите к обычным заявлениям сотрудников.' header_actions_template='includes/page_headers/applications_controls.html' %}
 
                         <section class="applications-board applications-board--transfers">
-                            <div class="applications-board__topline">
-                                <div class="applications-board__heading">
-                                    <span class="applications-board__eyebrow">Годовой график</span>
+                            <div class="panel-heading panel-heading--with-controls applications-board__topline">
+                                <div class="panel-heading__copy applications-board__heading">
                                     <h2>Переносы графика</h2>
                                     <p>Запросы на изменение утверждённых отпусков с оценкой риска и быстрым согласованием.</p>
                                 </div>
-                                {% include 'includes/applications/status_segmented.html' with form_id='applications-status-form-transfers' %}
+                                <div class="panel-heading__controls">
+                                    {% include 'includes/applications/status_segmented.html' with form_id='applications-status-form-transfers' %}
+                                    {% include 'includes/search_control.html' with search_id='applications-search-transfers' search_label='Поиск сотрудника' search_placeholder='Найти сотрудника' %}
+                                </div>
                             </div>
 
                             <div class="applications-cards-shell" data-profile-overview-scroll data-applications-transfer-scroll>
@@ -88,13 +90,15 @@
                 <div class="profile-page__section-body">
                     <div class="profile-page__section-stack">
                         <section class="applications-board applications-board--requests">
-                            <div class="applications-board__topline">
-                                <div class="applications-board__heading">
-                                    <span class="applications-board__eyebrow">Заявления сотрудников</span>
+                            <div class="panel-heading panel-heading--with-controls applications-board__topline">
+                                <div class="panel-heading__copy applications-board__heading">
                                     <h2>Заявки</h2>
                                     <p>Неоплачиваемые, учебные и оплачиваемые заявки из свободного остатка.</p>
                                 </div>
-                                {% include 'includes/applications/status_segmented.html' with form_id='applications-status-form-requests' %}
+                                <div class="panel-heading__controls">
+                                    {% include 'includes/applications/status_segmented.html' with form_id='applications-status-form-requests' %}
+                                    {% include 'includes/search_control.html' with search_id='applications-search-requests' search_label='Поиск сотрудника' search_placeholder='Найти сотрудника' %}
+                                </div>
                             </div>
 
                             <div class="applications-cards-shell" data-profile-requests-scroll data-applications-request-scroll>

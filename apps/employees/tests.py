@@ -163,7 +163,7 @@ class EmployeeManagementTests(TestCase):
                 "position": "Ведущий специалист",
                 "role": Employees.ROLE_EMPLOYEE,
                 "date_joined": self.employee.date_joined.isoformat(),
-                "annual_paid_leave_days": 52,
+                "annual_paid_leave_days": 28,
                 "department": self.hr_department.id,
                 "password": "",
                 "next_path": reverse("main"),
@@ -175,6 +175,7 @@ class EmployeeManagementTests(TestCase):
         self.assertRedirects(response, reverse("main"))
         self.assertEqual(self.employee.login, "employee-updated")
         self.assertEqual(self.employee.department, self.hr_department)
+        self.assertEqual(self.employee.annual_paid_leave_days, 52)
 
     def test_department_head_cannot_update_employee_profile(self):
         self.client.force_login(self.department_head.user)
@@ -410,6 +411,49 @@ class EmployeeManagementTests(TestCase):
         self.assertIn("department_name", first_employee)
         self.assertIn("status_label", first_employee)
         self.assertIn("profile_url", first_employee)
+
+    def test_employees_search_filters_by_name_status_and_department(self):
+        matching_outsider = Employees.objects.create(
+            last_name=self.employee.last_name,
+            first_name=self.employee.first_name,
+            middle_name="Search",
+            login="matching-outsider-login",
+            position="Analyst",
+            date_joined=timezone.localdate(),
+            annual_paid_leave_days=52,
+            department=self.hr_department,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("employees"),
+            {
+                "search": self.employee.first_name,
+                "status": "True",
+                "department": self.engineering.id,
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        employee_ids = {employee["id"] for employee in response.json()["employees"]}
+        self.assertIn(self.employee.id, employee_ids)
+        self.assertNotIn(matching_outsider.id, employee_ids)
+        self.assertNotIn(self.outsider.id, employee_ids)
+
+    def test_employees_search_respects_department_head_scope(self):
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(
+            reverse("employees"),
+            {"search": self.outsider.first_name},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        employee_ids = {employee["id"] for employee in response.json()["employees"]}
+        self.assertNotIn(self.outsider.id, employee_ids)
 
     def test_employees_page_uses_current_schedule_for_status(self):
         self.client.force_login(self.hr_employee.user)

@@ -198,6 +198,14 @@ class VacationScheduleItem(models.Model):
         related_name="created_schedule_items",
         verbose_name="Создан из запроса переноса",
     )
+    created_from_vacation_request = models.ForeignKey(
+        "leave.VacationRequest",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_schedule_items",
+        verbose_name="Создан из оплачиваемой заявки",
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
 
     class Meta:

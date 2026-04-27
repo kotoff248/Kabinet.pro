@@ -29,7 +29,9 @@ from apps.leave.services import (
     add_years_safe,
     add_months_safe,
     calculate_vacation_request_risk,
+    create_schedule_item_from_paid_vacation_request,
     create_schedule_change_request,
+    exclude_converted_paid_requests,
     get_chargeable_leave_days,
     get_employee_requestable_leave,
     rebuild_employee_leave_ledger,
@@ -839,10 +841,12 @@ class Command(BaseCommand):
                     item.manager_comment = "Отменено при сверке отпускных прав по рабочим годам."
                     item.save(update_fields=["status", "manager_comment"])
 
-            for request_obj in employee.vacation_requests.filter(
+            active_paid_requests = employee.vacation_requests.filter(
                 vacation_type="paid",
                 status__in=VacationRequest.ACTIVE_STATUSES,
-            ):
+            )
+            active_paid_requests = exclude_converted_paid_requests(active_paid_requests, employee_ids=[employee.id])
+            for request_obj in active_paid_requests:
                 requested_days = get_chargeable_leave_days(request_obj.start_date, request_obj.end_date, request_obj.vacation_type)
                 allocated_days = sum(allocation.allocated_days for allocation in request_obj.entitlement_allocations.all())
                 if allocated_days < requested_days:
@@ -999,12 +1003,19 @@ class Command(BaseCommand):
         return None
 
     def _request_period_conflicts(self, employee, start_date, end_date):
+        conflicting_requests = VacationRequest.objects.filter(
+            employee=employee,
+            start_date__lte=end_date,
+            end_date__gte=start_date,
+        )
+        conflicting_requests = exclude_converted_paid_requests(
+            conflicting_requests,
+            employee_ids=[employee.id],
+            start_date=start_date,
+            end_date=end_date,
+        )
         return (
-            VacationRequest.objects.filter(
-                employee=employee,
-                start_date__lte=end_date,
-                end_date__gte=start_date,
-            ).exists()
+            conflicting_requests.exists()
             or VacationScheduleItem.objects.filter(
                 employee=employee,
                 status__in=VacationScheduleItem.ACTIVE_STATUSES,
@@ -1393,13 +1404,18 @@ class Command(BaseCommand):
                 .exclude(pk=item.pk)
                 .values_list("start_date", "end_date")
             )
-            occupied_periods.extend(
-                VacationRequest.objects.filter(
-                    employee=item.employee,
-                    status__in=VacationRequest.ACTIVE_STATUSES,
-                    start_date__year=current_year,
-                ).values_list("start_date", "end_date")
+            active_requests = VacationRequest.objects.filter(
+                employee=item.employee,
+                status__in=VacationRequest.ACTIVE_STATUSES,
+                start_date__year=current_year,
             )
+            active_requests = exclude_converted_paid_requests(
+                active_requests,
+                employee_ids=[item.employee_id],
+                start_date=date(current_year, 1, 1),
+                end_date=date(current_year, 12, 31),
+            )
+            occupied_periods.extend(active_requests.values_list("start_date", "end_date"))
             duration = (item.end_date - item.start_date).days + 1
             search_start = max(self.today + timedelta(days=30), item.end_date + timedelta(days=21))
             slot = self._find_free_slot(
@@ -1822,7 +1838,7 @@ class Command(BaseCommand):
             if reviewed_by is not None
             else None
         )
-        VacationRequest.objects.create(
+        request_obj = VacationRequest.objects.create(
             employee=employee,
             start_date=start_date,
             end_date=end_date,
@@ -1834,7 +1850,10 @@ class Command(BaseCommand):
             review_comment=self._review_comment(status, risk_payload) if reviewed_by is not None else "",
             **risk_payload,
         )
+        if vacation_type == "paid" and status == VacationRequest.STATUS_APPROVED:
+            create_schedule_item_from_paid_vacation_request(request_obj, risk_payload=risk_payload)
         self.status_counts[status] += 1
+        return request_obj
 
     def _pick_duration(self, window_start, window_end, variants):
         if window_start > window_end:
