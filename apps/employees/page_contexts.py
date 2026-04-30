@@ -15,6 +15,7 @@ from apps.accounts.services import (
     is_hr_employee,
 )
 from apps.employees.models import Departments, Employees
+from apps.employees.role_presentation import get_employee_role_card_meta
 from apps.leave.models import DepartmentWorkload, VacationRequest, VacationScheduleChangeRequest, VacationScheduleItem
 from apps.leave.services.calendar import build_calendar_base_data
 from apps.leave.services.ledger import (
@@ -30,38 +31,115 @@ def _format_days(value):
     return f"{value:.2f}".rstrip("0").rstrip(".")
 
 
-def _get_current_vacation_employee_ids(employee_ids, as_of_date=None):
-    employee_ids = list(employee_ids)
+def _format_short_date(value):
+    return date_format(value, "j E", use_l10n=True)
+
+
+def _format_short_period(start_date, end_date):
+    return f"{_format_short_date(start_date)} - {_format_short_date(end_date)}"
+
+
+def _empty_vacation_display():
+    return {
+        "is_currently_on_vacation": False,
+        "current_vacation_end": None,
+        "upcoming_vacation_label": "Не запланирован",
+    }
+
+
+def _collect_employee_vacation_display(employee_ids, as_of_date=None):
+    employee_ids = list(dict.fromkeys(employee_ids))
+    display_by_employee = {employee_id: _empty_vacation_display() for employee_id in employee_ids}
     if not employee_ids:
-        return set()
+        return display_by_employee
 
     today = as_of_date or timezone.localdate()
+    entries_by_employee = {employee_id: [] for employee_id in employee_ids}
     current_requests = VacationRequest.objects.filter(
         employee_id__in=employee_ids,
         status=VacationRequest.STATUS_APPROVED,
-        start_date__lte=today,
         end_date__gte=today,
-    )
+    ).only("employee_id", "start_date", "end_date", "vacation_type", "status")
     current_requests = exclude_converted_paid_requests(
         current_requests,
         employee_ids=employee_ids,
         start_date=today,
-        end_date=today,
     )
-    request_employee_ids = current_requests.values_list("employee_id", flat=True)
-    schedule_employee_ids = VacationScheduleItem.objects.filter(
+    for request_obj in current_requests:
+        entries_by_employee[request_obj.employee_id].append(
+            {
+                "start_date": request_obj.start_date,
+                "end_date": request_obj.end_date,
+            }
+        )
+
+    schedule_items = VacationScheduleItem.objects.filter(
         employee_id__in=employee_ids,
         status__in=VacationScheduleItem.ACTIVE_STATUSES,
-        start_date__lte=today,
         end_date__gte=today,
-    ).values_list("employee_id", flat=True)
-    return set(request_employee_ids).union(schedule_employee_ids)
+    ).only("employee_id", "start_date", "end_date", "status")
+    for item in schedule_items:
+        entries_by_employee[item.employee_id].append(
+            {
+                "start_date": item.start_date,
+                "end_date": item.end_date,
+            }
+        )
+
+    for employee_id, entries in entries_by_employee.items():
+        if not entries:
+            continue
+
+        current_entries = [
+            entry
+            for entry in entries
+            if entry["start_date"] <= today <= entry["end_date"]
+        ]
+        if current_entries:
+            current_end = max(entry["end_date"] for entry in current_entries)
+            display_by_employee[employee_id]["is_currently_on_vacation"] = True
+            display_by_employee[employee_id]["current_vacation_end"] = current_end
+
+        upcoming = sorted(
+            entries,
+            key=lambda entry: (
+                0 if entry["start_date"] <= today <= entry["end_date"] else 1,
+                entry["start_date"],
+                entry["end_date"],
+            ),
+        )[0]
+        display_by_employee[employee_id]["upcoming_vacation_label"] = _format_short_period(
+            upcoming["start_date"],
+            upcoming["end_date"],
+        )
+
+    return display_by_employee
 
 
-def _serialize_employee_row(employee, leave_summary, is_currently_on_vacation=None):
-    if is_currently_on_vacation is None:
-        is_currently_on_vacation = employee.id in _get_current_vacation_employee_ids([employee.id])
-    is_working_now = not is_currently_on_vacation
+def _get_current_vacation_employee_ids(employee_ids, as_of_date=None):
+    vacation_display = _collect_employee_vacation_display(employee_ids, as_of_date=as_of_date)
+    return {
+        employee_id
+        for employee_id, display in vacation_display.items()
+        if display["is_currently_on_vacation"]
+    }
+
+
+def _serialize_employee_row(employee, leave_summary, vacation_display=None):
+    vacation_display = vacation_display or _collect_employee_vacation_display([employee.id]).get(
+        employee.id,
+        _empty_vacation_display(),
+    )
+    role_meta = get_employee_role_card_meta(employee)
+    is_working_now = not vacation_display["is_currently_on_vacation"]
+    status_label = "Работает"
+    if not is_working_now:
+        current_vacation_end = vacation_display.get("current_vacation_end")
+        status_label = (
+            f"В отпуске до {_format_short_date(current_vacation_end)}"
+            if current_vacation_end
+            else "В отпуске"
+        )
     return {
         "id": employee.id,
         "name": employee.full_name,
@@ -69,18 +147,31 @@ def _serialize_employee_row(employee, leave_summary, is_currently_on_vacation=No
         "department_name": employee.department.name if employee.department else "Не указан",
         "date_joined": date_format(employee.date_joined, "j E Y", use_l10n=True),
         "available_days": _format_days(leave_summary["available"]),
+        "role_icon": role_meta["icon"],
+        "role_icon_type": role_meta["icon_type"],
+        "role_label": role_meta["label"],
+        "role_variant": role_meta["variant"],
+        "upcoming_vacation_label": vacation_display["upcoming_vacation_label"],
         "is_working": is_working_now,
-        "status_label": "Работает" if is_working_now else "В отпуске",
+        "status_label": status_label,
         "profile_url": reverse("employee_profile", args=[employee.id]),
     }
 
 
 def _get_employee_status_context(employee):
-    is_currently_on_vacation = employee.id in _get_current_vacation_employee_ids([employee.id])
-    is_working_now = not is_currently_on_vacation
+    vacation_display = _collect_employee_vacation_display([employee.id]).get(employee.id, _empty_vacation_display())
+    is_working_now = not vacation_display["is_currently_on_vacation"]
+    status_label = "Работает"
+    if not is_working_now:
+        current_vacation_end = vacation_display.get("current_vacation_end")
+        status_label = (
+            f"В отпуске до {_format_short_date(current_vacation_end)}"
+            if current_vacation_end
+            else "В отпуске"
+        )
     return {
         "employee_is_working": is_working_now,
-        "employee_status_label": "Работает" if is_working_now else "В отпуске",
+        "employee_status_label": status_label,
     }
 
 
@@ -219,7 +310,12 @@ def build_employees_page_context(current_employee, query_params, session):
         employees_qs = _filter_employees_by_name(employees_qs, search_query)
 
     employees_qs = list(employees_qs)
-    current_vacation_employee_ids = _get_current_vacation_employee_ids(employee.id for employee in employees_qs)
+    vacation_display_by_employee = _collect_employee_vacation_display(employee.id for employee in employees_qs)
+    current_vacation_employee_ids = {
+        employee_id
+        for employee_id, vacation_display in vacation_display_by_employee.items()
+        if vacation_display["is_currently_on_vacation"]
+    }
     if status == "True":
         employees_qs = [employee for employee in employees_qs if employee.id not in current_vacation_employee_ids]
     elif status == "False":
@@ -230,7 +326,7 @@ def build_employees_page_context(current_employee, query_params, session):
         _serialize_employee_row(
             employee,
             leave_summaries[employee.id],
-            is_currently_on_vacation=employee.id in current_vacation_employee_ids,
+            vacation_display=vacation_display_by_employee.get(employee.id),
         )
         for employee in employees_qs
     ]

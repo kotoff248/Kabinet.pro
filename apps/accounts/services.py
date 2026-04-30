@@ -6,6 +6,7 @@ from django.contrib.auth.models import Group
 from django.shortcuts import redirect
 
 from apps.employees.models import Departments, Employees
+from apps.employees.role_presentation import get_employee_role_card_meta
 
 
 MANAGERS_GROUP_NAME = "Managers"
@@ -278,6 +279,7 @@ def sync_employee_user(employee, raw_password=None):
 def get_user_context(request):
     employee = get_current_employee(request)
     is_authorized_person = is_authorized_person_employee(employee)
+    role_meta = get_employee_role_card_meta(employee)
     if employee is not None:
         if is_authorized_person:
             employee_name = "Уполномоченное лицо"
@@ -315,6 +317,10 @@ def get_user_context(request):
         "can_access_profile": not is_authorized_person,
         "session_card_name": f"{last_name} {initials}".strip() if not is_authorized_person else "Служебный доступ",
         "session_card_hint": "" if not is_authorized_person else "Согласование отпуска руководителя предприятия",
+        "session_role_icon": role_meta["icon"],
+        "session_role_icon_type": role_meta["icon_type"],
+        "session_role_label": role_meta["label"],
+        "session_role_variant": role_meta["variant"],
         "managed_department_id": managed_department_id,
     }
 

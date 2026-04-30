@@ -281,21 +281,44 @@ function initEmployeesPage() {
             article.setAttribute("role", "link");
         }
 
+        const role = document.createElement("div");
+        role.className = "employee-card__role employee-card__role--" + (employee.role_variant || "employee");
+        role.title = employee.role_label || "Сотрудник";
+        role.setAttribute("aria-label", employee.role_label || "Сотрудник");
+
+        const roleIcon = document.createElement("span");
+        roleIcon.className = employee.role_icon_type === "symbol" ? "employee-card__role-symbol" : "material-icons-sharp";
+        roleIcon.setAttribute("aria-hidden", "true");
+        roleIcon.textContent = employee.role_icon || "person";
+        role.appendChild(roleIcon);
+
         const primary = document.createElement("div");
         primary.className = "employee-card__primary";
-        primary.innerHTML = '<span class="employee-card__label">Сотрудник</span>';
+
+        const primaryLabel = document.createElement("span");
+        primaryLabel.className = "employee-card__label";
+        primaryLabel.textContent = "ФИО";
+        primary.appendChild(primaryLabel);
 
         const nameNode = document.createElement("strong");
         nameNode.className = "employee-card__value employee-card__value--name";
         nameNode.textContent = employee.name;
         primary.appendChild(nameNode);
 
+        const positionNode = document.createElement("span");
+        positionNode.className = "employee-card__subline";
+        positionNode.textContent = employee.position;
+        primary.appendChild(positionNode);
+
+        const departmentNode = document.createElement("span");
+        departmentNode.className = "employee-card__subline";
+        departmentNode.textContent = employee.department_name || "Не указан";
+        primary.appendChild(departmentNode);
+
         const meta = document.createElement("div");
         meta.className = "employee-card__meta";
-        meta.appendChild(createCell("Должность", employee.position));
-        meta.appendChild(createCell("Отдел", employee.department_name || "Не указан"));
-        meta.appendChild(createCell("Дата начала работы", employee.date_joined));
-        meta.appendChild(createCell("Доступно к заявке", employee.available_days + " д.", "employee-card__cell--available"));
+        meta.appendChild(createCell("Доступный отпуск", employee.available_days + " д.", "employee-card__cell--available"));
+        meta.appendChild(createCell("Ближайший отпуск", employee.upcoming_vacation_label || "Не запланирован", "employee-card__cell--upcoming"));
 
         const status = document.createElement("div");
         status.className = "employee-card__status";
@@ -306,6 +329,7 @@ function initEmployeesPage() {
         badge.textContent = employee.status_label;
         status.appendChild(badge);
 
+        article.appendChild(role);
         article.appendChild(primary);
         article.appendChild(meta);
         article.appendChild(status);

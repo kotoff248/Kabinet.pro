@@ -126,3 +126,30 @@ class LoginFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "login.html")
+
+    def test_session_card_uses_employee_role_icon(self):
+        self.client.force_login(self.employee.user)
+
+        response = self.client.get(reverse("main"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "session-card__role-icon--employee", html=False)
+        self.assertContains(
+            response,
+            '<span class="material-icons-sharp">person</span>',
+            html=True,
+        )
+        self.assertNotContains(response, 'class="session-card__monogram" aria-hidden="true">И.И.</div>', html=False)
+
+    def test_session_card_uses_hr_role_icon(self):
+        self.client.force_login(self.hr.user)
+
+        response = self.client.get(reverse("main"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "session-card__role-icon--hr", html=False)
+        self.assertContains(
+            response,
+            '<span class="material-icons-sharp">manage_accounts</span>',
+            html=True,
+        )

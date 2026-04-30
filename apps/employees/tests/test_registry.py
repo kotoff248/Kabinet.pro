@@ -1,7 +1,10 @@
+from datetime import timedelta
+
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.formats import date_format
 
 from apps.accounts.services import sync_employee_user
 from apps.employees.models import Employees
@@ -26,6 +29,18 @@ class EmployeeRegistryTests(EmployeeTestCase):
         self.assertContains(response, "js/employee-form.js")
         self.assertContains(response, "js/employees-page.js")
         self.assertContains(response, 'class="employee-card employee-row employee-row-clickable is-clickable"')
+        self.assertContains(response, "Доступный отпуск")
+        self.assertContains(response, "Ближайший отпуск")
+        self.assertContains(response, 'class="employee-card__role employee-card__role--hr"', html=False)
+        self.assertContains(
+            response,
+            '<div class="employee-card__role employee-card__role--hr" title="HR" aria-label="HR">'
+            '<span class="material-icons-sharp" aria-hidden="true">manage_accounts</span>'
+            '</div>',
+            html=True,
+        )
+        self.assertNotContains(response, '<span class="employee-card__label">Дата начала работы</span>', html=True)
+        self.assertNotContains(response, "Доступно к заявке")
         self.assertNotContains(response, "<table", html=False)
 
     def test_department_head_sees_only_managed_department_on_employees_page(self):
@@ -53,8 +68,24 @@ class EmployeeRegistryTests(EmployeeTestCase):
         self.assertTrue(payload["employees"])
         first_employee = payload["employees"][0]
         self.assertIn("department_name", first_employee)
+        self.assertIn("role_icon", first_employee)
+        self.assertIn("role_icon_type", first_employee)
+        self.assertIn("role_label", first_employee)
+        self.assertIn("role_variant", first_employee)
+        self.assertIn("upcoming_vacation_label", first_employee)
         self.assertIn("status_label", first_employee)
         self.assertIn("profile_url", first_employee)
+        employees_by_id = {employee["id"]: employee for employee in payload["employees"]}
+        expected_role_meta = {
+            self.employee.id: ("person", "material", "employee"),
+            self.hr_employee.id: ("manage_accounts", "material", "hr"),
+            self.department_head.id: ("admin_panel_settings", "material", "department-head"),
+            self.enterprise_head.id: ("♛", "symbol", "enterprise-head"),
+        }
+        for employee_id, (role_icon, role_icon_type, role_variant) in expected_role_meta.items():
+            self.assertEqual(employees_by_id[employee_id]["role_icon"], role_icon)
+            self.assertEqual(employees_by_id[employee_id]["role_icon_type"], role_icon_type)
+            self.assertEqual(employees_by_id[employee_id]["role_variant"], role_variant)
 
     def test_employees_search_filters_by_name_status_and_department(self):
         matching_outsider = Employees.objects.create(
@@ -119,14 +150,50 @@ class EmployeeRegistryTests(EmployeeTestCase):
         )
         response = self.client.get(reverse("employees"))
         employee_row = next(employee for employee in response.context["employees"] if employee["id"] == self.employee.id)
+        expected_status = f'В отпуске до {date_format(today, "j E", use_l10n=True)}'
 
         self.assertFalse(employee_row["is_working"])
-        self.assertEqual(employee_row["status_label"], "В отпуске")
+        self.assertEqual(employee_row["status_label"], expected_status)
+        self.assertEqual(
+            employee_row["upcoming_vacation_label"],
+            f'{date_format(today, "j E", use_l10n=True)} - {date_format(today, "j E", use_l10n=True)}',
+        )
         self.assertContains(
             response,
-            '<span class="employee-status-badge employee-status-badge--vacation">В отпуске</span>',
+            f'<span class="employee-status-badge employee-status-badge--vacation">{expected_status}</span>',
             html=True,
         )
+
+    def test_employees_page_shows_upcoming_vacation(self):
+        self.client.force_login(self.hr_employee.user)
+        today = timezone.localdate()
+        schedule = VacationSchedule.objects.create(
+            year=today.year,
+            status=VacationSchedule.STATUS_APPROVED,
+            created_by=self.hr_employee,
+            approved_by=self.enterprise_head,
+        )
+        start_date = today + timedelta(days=20)
+        end_date = today + timedelta(days=33)
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=start_date,
+            end_date=end_date,
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        response = self.client.get(reverse("employees"))
+        employee_row = next(employee for employee in response.context["employees"] if employee["id"] == self.employee.id)
+        expected_period = (
+            f'{date_format(start_date, "j E", use_l10n=True)} - '
+            f'{date_format(end_date, "j E", use_l10n=True)}'
+        )
+
+        self.assertEqual(employee_row["upcoming_vacation_label"], expected_period)
+        self.assertContains(response, expected_period)
 
     def test_employees_status_filter_uses_current_schedule(self):
         self.client.force_login(self.hr_employee.user)

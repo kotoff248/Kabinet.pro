@@ -4,7 +4,7 @@
 {% block title %}Кабинет.pro - Сотрудники{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260430-system-readable-copy">
+<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260430-session-role-size-sync2">
 <link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260430-header-readable-copy">
 <link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260430-modal-readable-copy">
 {% endblock %}
@@ -12,16 +12,16 @@
 {% block content %}
 <section class="profile-page" data-page="employees">
     {% if is_management %}
-    {% include 'includes/page_header.html' with eyebrow='Команда' title='Сотрудники' subtitle='Просматривайте состав команды, фильтруйте сотрудников по отделам и быстро переходите к карточке каждого сотрудника.' header_actions_template='includes/page_headers/employees_controls.html' %}
+    {% include 'includes/page_header.html' with eyebrow='Команда' title='Сотрудники' subtitle='Состав команды, фильтры по отделам и быстрый доступ к карточкам сотрудников.' header_actions_template='includes/page_headers/employees_controls.html' %}
     {% else %}
-    {% include 'includes/page_header.html' with eyebrow='Команда' title='Сотрудники' subtitle='Актуальный список сотрудников компании с их должностями, датами выхода и текущим статусом.' %}
+    {% include 'includes/page_header.html' with eyebrow='Команда' title='Сотрудники' subtitle='Состав команды, фильтры по отделам и быстрый доступ к карточкам сотрудников.' %}
     {% endif %}
 
     <section class="staff_main">
         <div class="panel-heading panel-heading--with-controls">
             <div class="panel-heading__copy">
                 <h2>Состав команды</h2>
-                <p>Список сотрудников с отделами, должностями, остатком дней и текущим статусом.</p>
+                <p>Сотрудники, отделы, остаток дней и текущий статус.</p>
             </div>
             <div class="panel-heading__controls">
                 <div class="staff_nav staff_nav--segmented">
@@ -49,27 +49,29 @@
             <div class="employee-cards-list" id="employees-table-body">
                 {% for employee in employees %}
                 <article {% if is_management %}class="employee-card employee-row employee-row-clickable is-clickable" data-href="{% url 'employee_profile' employee.id %}" data-employee-id="{{ employee.id }}" tabindex="0" role="link"{% else %}class="employee-card" data-employee-id="{{ employee.id }}"{% endif %}>
+                    <div class="employee-card__role employee-card__role--{{ employee.role_variant }}" title="{{ employee.role_label }}" aria-label="{{ employee.role_label }}">
+                        {% if employee.role_icon_type == 'symbol' %}
+                        <span class="employee-card__role-symbol" aria-hidden="true">{{ employee.role_icon }}</span>
+                        {% else %}
+                        <span class="material-icons-sharp" aria-hidden="true">{{ employee.role_icon }}</span>
+                        {% endif %}
+                    </div>
+
                     <div class="employee-card__primary">
-                        <span class="employee-card__label">Сотрудник</span>
+                        <span class="employee-card__label">ФИО</span>
                         <strong class="employee-card__value employee-card__value--name">{{ employee.name }}</strong>
+                        <span class="employee-card__subline">{{ employee.position }}</span>
+                        <span class="employee-card__subline">{{ employee.department_name|default:'Не указан' }}</span>
                     </div>
 
                     <div class="employee-card__meta">
-                        <div class="employee-card__cell">
-                            <span class="employee-card__label">Должность</span>
-                            <span class="employee-card__value">{{ employee.position }}</span>
-                        </div>
-                        <div class="employee-card__cell">
-                            <span class="employee-card__label">Отдел</span>
-                            <span class="employee-card__value">{{ employee.department_name|default:'Не указан' }}</span>
-                        </div>
-                        <div class="employee-card__cell">
-                            <span class="employee-card__label">Дата начала работы</span>
-                            <span class="employee-card__value">{{ employee.date_joined }}</span>
-                        </div>
                         <div class="employee-card__cell employee-card__cell--available">
-                            <span class="employee-card__label">Доступно к заявке</span>
+                            <span class="employee-card__label">Доступный отпуск</span>
                             <span class="employee-card__value">{{ employee.available_days }} д.</span>
+                        </div>
+                        <div class="employee-card__cell employee-card__cell--upcoming">
+                            <span class="employee-card__label">Ближайший отпуск</span>
+                            <span class="employee-card__value">{{ employee.upcoming_vacation_label }}</span>
                         </div>
                     </div>
 
@@ -97,5 +99,5 @@
 
 {% block extra_scripts %}
 <script src="{% static 'js/employee-form.js' %}" defer></script>
-<script src="{% static 'js/employees-page.js' %}?v=20260428-repeat-scroll" defer></script>
+<script src="{% static 'js/employees-page.js' %}?v=20260430-role-crown-symbol" defer></script>
 {% endblock %}

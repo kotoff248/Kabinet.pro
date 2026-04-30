@@ -85,26 +85,65 @@ aside .toggle{
 .session-card__monogram{
     --ui-radius-shell: var(--ui-radius-control-shell);
     --ui-radius-inset: 0rem;
+    --session-role-rgb: 56, 200, 255;
+    --session-role-text: #dff7ff;
     width: var(--session-card-monogram-size);
     height: var(--session-card-monogram-size);
-    border-radius: var(--ui-radius-inner);
+    border-radius: var(--ui-radius-status);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 0.25rem;
+    border: 1px solid rgba(var(--session-role-rgb), 0.3);
     background:
-        linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04)),
-        linear-gradient(135deg, rgba(0, 175, 245, 0.92), rgba(39, 199, 255, 0.72));
+        linear-gradient(135deg, rgba(var(--session-role-rgb), 0.22), rgba(var(--session-role-rgb), 0.075)),
+        rgba(255, 255, 255, 0.035);
     box-shadow:
-        0 0.95rem 1.8rem rgba(0, 175, 245, 0.2),
-        inset 0 1px 0 rgba(255, 255, 255, 0.18);
-    color: var(--color-white);
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 0.55rem 1rem rgba(var(--session-role-rgb), 0.09);
+    color: var(--session-role-text);
     font-size: 1rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     line-height: 1;
     text-transform: uppercase;
     flex-shrink: 0;
+}
+
+.session-card__role-icon--hr{
+    --session-role-rgb: 177, 139, 255;
+    --session-role-text: #f0e8ff;
+}
+
+.session-card__role-icon--department-head{
+    --session-role-rgb: 78, 211, 154;
+    --session-role-text: #ddfff1;
+}
+
+.session-card__role-icon--enterprise-head{
+    --session-role-rgb: 255, 199, 89;
+    --session-role-text: #fff1c7;
+}
+
+.session-card__role-icon--authorized-person{
+    --session-role-rgb: 148, 163, 184;
+    --session-role-text: #edf3fb;
+}
+
+.session-card__role-icon .material-icons-sharp,
+.session-card__role-symbol{
+    font-size: 1.65rem;
+    line-height: 1;
+    letter-spacing: 0;
+}
+
+.session-card__role-symbol{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Segoe UI Symbol", "Arial Unicode MS", sans-serif;
+    font-weight: 700;
+    transform: translateY(-0.02rem);
 }
 
 .session-card__content{
@@ -129,19 +168,14 @@ aside .toggle{
 }
 
 .session-card__label{
-    --ui-radius-size: var(--session-card-label-height);
     width: fit-content;
-    font-size: 0.72rem;
+    font-size: 0.75rem;
+    font-weight: 800;
+    line-height: 1.25;
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: var(--color-info-dark);
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--session-card-label-height);
-    padding: 0.12rem 0.55rem;
-    border-radius: var(--ui-radius-sized);
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    display: block;
 }
 
 .session-card__name{

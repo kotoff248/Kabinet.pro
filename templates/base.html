@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="{% static 'css/components/modals.css' %}?v=20260430-modal-readable-copy">
     <link rel="stylesheet" href="{% static 'css/components/panels.css' %}?v=20260430-readable-copy">
     <link rel="stylesheet" href="{% static 'css/components/messages.css' %}">
-    <link rel="stylesheet" href="{% static 'css/layout/sidebar-shell.css' %}?v=20260428-sidebar-height">
+    <link rel="stylesheet" href="{% static 'css/layout/sidebar-shell.css' %}?v=20260430-session-role-radius">
     <link rel="stylesheet" href="{% static 'css/components/segmented-control.css' %}">
     <link rel="stylesheet" href="{% static 'css/layout/sidebar-nav.css' %}?v=20260428-sidebar-height">
     <link rel="stylesheet" href="{% static 'css/pages/profile.css' %}?v=20260430-system-readable-copy">
@@ -47,7 +47,13 @@
             </div>
 
             <div class="session-card" title="{% if session_card_name %}{{ session_card_name }}{% else %}{{ last_name }} {{ initials }}{% endif %} - {{ role|capfirst }}">
-                <div class="session-card__monogram" aria-hidden="true">{{ initials }}</div>
+                <div class="session-card__monogram session-card__role-icon session-card__role-icon--{{ session_role_variant|default:'employee' }}" aria-hidden="true">
+                    {% if session_role_icon_type == 'symbol' %}
+                    <span class="session-card__role-symbol">{{ session_role_icon|default:'person' }}</span>
+                    {% else %}
+                    <span class="material-icons-sharp">{{ session_role_icon|default:'person' }}</span>
+                    {% endif %}
+                </div>
                 <div class="session-card__content">
                     <span class="session-card__label">Вы вошли как</span>
                     <strong class="session-card__name">
