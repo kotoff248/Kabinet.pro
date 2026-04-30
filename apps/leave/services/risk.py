@@ -1,4 +1,6 @@
-from decimal import Decimal
+import calendar
+from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
 
 from apps.employees.models import Employees
 from apps.leave.models import DepartmentWorkload, VacationRequest, VacationScheduleItem
@@ -23,6 +25,71 @@ def _get_department_staffing_rule(department):
         return department.staffing_rule
     except department.__class__.staffing_rule.RelatedObjectDoesNotExist:
         return None
+
+
+def _iter_month_day_weights(start_date, end_date):
+    cursor = date(start_date.year, start_date.month, 1)
+    final_month = date(end_date.year, end_date.month, 1)
+    while cursor <= final_month:
+        month_last_day = date(cursor.year, cursor.month, calendar.monthrange(cursor.year, cursor.month)[1])
+        segment_start = max(start_date, cursor)
+        segment_end = min(end_date, month_last_day)
+        if segment_start <= segment_end:
+            yield cursor.year, cursor.month, (segment_end - segment_start).days + 1
+
+        if cursor.month == 12:
+            cursor = date(cursor.year + 1, 1, 1)
+        else:
+            cursor = date(cursor.year, cursor.month + 1, 1)
+
+
+def _round_weighted_metric(total, day_count, *, minimum=0, maximum=None):
+    if day_count <= 0:
+        return minimum
+
+    value = int((Decimal(total) / Decimal(day_count)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    value = max(value, minimum)
+    if maximum is not None:
+        value = min(value, maximum)
+    return value
+
+
+def _get_weighted_department_workload(department, start_date, end_date, staffing_rule):
+    month_weights = list(_iter_month_day_weights(start_date, end_date))
+    if not month_weights:
+        return {
+            "department_load_level": 1,
+            "min_staff_required": staffing_rule.min_staff_required if staffing_rule else 0,
+            "max_absent": staffing_rule.max_absent if staffing_rule else 1,
+        }
+
+    workloads = {
+        (workload.year, workload.month): workload
+        for workload in DepartmentWorkload.objects.filter(
+            department=department,
+            year__in={year for year, _, _ in month_weights},
+            month__in={month for _, month, _ in month_weights},
+        )
+    }
+    fallback_min_staff = staffing_rule.min_staff_required if staffing_rule else 0
+    fallback_max_absent = staffing_rule.max_absent if staffing_rule else 1
+    total_days = sum(days for _, _, days in month_weights)
+    load_total = 0
+    min_staff_total = 0
+    max_absent_total = 0
+
+    for year, month, days in month_weights:
+        workload = workloads.get((year, month))
+        load_total += (workload.load_level if workload else 1) * days
+        min_staff_total += (workload.min_staff_required if workload else fallback_min_staff) * days
+        max_absent_total += (workload.max_absent if workload else fallback_max_absent) * days
+
+    return {
+        "department_load_level": _round_weighted_metric(load_total, total_days, minimum=1, maximum=5),
+        "min_staff_required": _round_weighted_metric(min_staff_total, total_days, minimum=0),
+        "max_absent": _round_weighted_metric(max_absent_total, total_days, minimum=1),
+    }
+
 
 def calculate_vacation_request_risk(
     employee,
@@ -53,20 +120,16 @@ def calculate_vacation_request_risk(
 
     department = employee.department
     staffing_rule = _get_department_staffing_rule(department)
-    workload = None
     if department is not None:
-        workload = DepartmentWorkload.objects.filter(
-            department=department,
-            year=start_date.year,
-            month=start_date.month,
-        ).first()
-
-    department_load_level = workload.load_level if workload else 1
-    min_staff_required = (
-        workload.min_staff_required
-        if workload
-        else (staffing_rule.min_staff_required if staffing_rule else 0)
-    )
+        weighted_workload = _get_weighted_department_workload(department, start_date, end_date, staffing_rule)
+    else:
+        weighted_workload = {
+            "department_load_level": 1,
+            "min_staff_required": staffing_rule.min_staff_required if staffing_rule else 0,
+            "max_absent": staffing_rule.max_absent if staffing_rule else 1,
+        }
+    department_load_level = weighted_workload["department_load_level"]
+    min_staff_required = weighted_workload["min_staff_required"]
 
     if department is None:
         return {
@@ -88,6 +151,14 @@ def calculate_vacation_request_risk(
         .exclude(role__in=Employees.SERVICE_ROLES)
         .values_list("id", flat=True)
     )
+    department_staff_count = len(department_employee_ids)
+    max_absent = weighted_workload["max_absent"]
+    if department_staff_count:
+        min_staff_required = min(min_staff_required, department_staff_count)
+        max_absent = min(max_absent, department_staff_count)
+    else:
+        min_staff_required = 0
+        max_absent = 0
 
     overlapping_requests = VacationRequest.objects.filter(
         employee_id__in=department_employee_ids,
@@ -116,9 +187,8 @@ def calculate_vacation_request_risk(
     )
     overlapping_employee_ids = (request_employee_ids | schedule_employee_ids) - {employee.id}
     overlapping_absences_count = len(overlapping_employee_ids)
-    remaining_staff_count = max(len(department_employee_ids) - overlapping_absences_count - 1, 0)
+    remaining_staff_count = max(department_staff_count - overlapping_absences_count - 1, 0)
 
-    max_absent = workload.max_absent if workload else (staffing_rule.max_absent if staffing_rule else 1)
     criticality_level = staffing_rule.criticality_level if staffing_rule else 3
     role_boost = 16 if employee.role == Employees.ROLE_DEPARTMENT_HEAD else 0
     paid_exception_boost = 12 if vacation_type == "paid" else 0

@@ -4,16 +4,21 @@
         <strong>{{ current_user.full_name }}</strong>
     </article>
     <article class="calendar-modal__badge">
+        {% if paid_leave_waiting_period_active %}
+        <span>Дата права на оплачиваемый отпуск</span>
+        <strong>{{ paid_leave_available_from|date:"j E Y" }}</strong>
+        {% else %}
         <span>Должность</span>
         <strong>{{ current_user.position }}</strong>
+        {% endif %}
     </article>
     <article class="calendar-modal__badge">
-        <span>Доступно к заявке</span>
+        <span>Баланс на сегодня</span>
         <strong id="calendar-balance" data-balance="{{ calendar_charge_preview.available_balance }}">{{ current_user_leave_summary.available|floatformat:"-2" }} д.</strong>
     </article>
 </div>
 
-<form method="post" class="calendar-modal__form" id="vacation-plan-form">
+<form method="post" class="calendar-modal__form" id="vacation-plan-form" data-preview-url="{% url 'vacation_request_preview' %}">
     {% csrf_token %}
     <input type="hidden" name="next_view_mode" value="{{ calendar_view_mode }}">
     <input type="hidden" name="next_year" value="{{ calendar_filters.selected_year }}">
@@ -23,25 +28,17 @@
         <span>Тип отпуска</span>
         <div class="calendar-select calendar-select--modal" data-modal-select="vacation-type">
             <select name="type_vacation" id="type_vacation_select" class="calendar-select__native">
-                {% if paid_request_allowed %}
                 <option value="paid" selected>Ежегодный оплачиваемый</option>
                 <option value="unpaid">Неоплачиваемый</option>
-                {% else %}
-                <option value="unpaid" selected>Неоплачиваемый</option>
-                {% endif %}
                 <option value="study">Учебный</option>
             </select>
             <button type="button" class="calendar-select__trigger" data-select-trigger aria-haspopup="listbox" aria-expanded="false">
-                <span class="calendar-select__value" data-select-value>{% if paid_request_allowed %}Ежегодный оплачиваемый{% else %}Неоплачиваемый{% endif %}</span>
+                <span class="calendar-select__value" data-select-value>Ежегодный оплачиваемый</span>
                 <span class="material-icons-sharp">expand_more</span>
             </button>
             <div class="calendar-select__menu" data-select-menu role="listbox">
-                {% if paid_request_allowed %}
                 <button type="button" class="calendar-select__option is-selected" data-select-option data-value="paid" role="option" aria-selected="true">Ежегодный оплачиваемый</button>
                 <button type="button" class="calendar-select__option" data-select-option data-value="unpaid" role="option" aria-selected="false">Неоплачиваемый</button>
-                {% else %}
-                <button type="button" class="calendar-select__option is-selected" data-select-option data-value="unpaid" role="option" aria-selected="true">Неоплачиваемый</button>
-                {% endif %}
                 <button type="button" class="calendar-select__option" data-select-option data-value="study" role="option" aria-selected="false">Учебный</button>
             </div>
         </div>
@@ -73,20 +70,30 @@
             <strong id="chargeable_days">0 д.</strong>
         </article>
         <article class="calendar-modal__badge">
+            <span>Доступно на дату начала</span>
+            <strong id="available_on_start">0 д.</strong>
+        </article>
+        <article class="calendar-modal__badge">
             <span>Останется после заявки</span>
             <strong id="remaining_balance">{{ current_user_leave_summary.available|floatformat:"-2" }} д.</strong>
         </article>
     </div>
 
+    <section class="calendar-modal__source" aria-label="Источник отпускных дней">
+        <span class="calendar-modal__source-eyebrow">Источник дней</span>
+        <strong id="entitlement_source_label">Выберите даты, чтобы определить рабочий год списания.</strong>
+        <ul id="entitlement_source_list" class="calendar-modal__source-list" hidden></ul>
+    </section>
+
     <p
         class="calendar-modal__hint"
         id="vacation-form-hint"
-        data-default-hint="{% if paid_request_allowed %}Оплачиваемый отпуск можно запросить из свободного остатка; система проверит баланс, пересечения и нагрузку отдела. Неоплачиваемый и учебный отпуск не уменьшают оплачиваемый баланс.{% else %}{{ paid_request_hint }} Неоплачиваемый и учебный отпуск не уменьшают оплачиваемый баланс.{% endif %}"
-    >{% if paid_request_allowed %}Оплачиваемый отпуск можно запросить из свободного остатка; система проверит баланс, пересечения и нагрузку отдела. Неоплачиваемый и учебный отпуск не уменьшают оплачиваемый баланс.{% else %}{{ paid_request_hint }} Неоплачиваемый и учебный отпуск не уменьшают оплачиваемый баланс.{% endif %}</p>
+        data-default-hint="Выберите тип и даты отпуска, чтобы система рассчитала право, баланс и остаток на дату начала отпуска."
+    >Выберите тип и даты отпуска, чтобы система рассчитала право, баланс и остаток на дату начала отпуска.</p>
 
     <div class="app-modal__actions calendar-modal__actions">
         <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>
-        <button type="submit" class="app-modal__button app-modal__button--primary" id="submit-vacation-btn" disabled>Запланировать отпуск</button>
+        <button type="submit" class="app-modal__button app-modal__button--primary" id="submit-vacation-btn" disabled>Отправить заявку</button>
     </div>
 </form>
 

@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.accounts.services import sync_employee_user
 from apps.employees.models import Employees
 from apps.leave.models import (
+    DepartmentWorkload,
     VacationEntitlementAllocation,
     VacationRequest,
     VacationRequestHistory,
@@ -26,12 +27,65 @@ from apps.leave.services.requests import (
     delete_pending_vacation_request,
     reject_vacation_request,
 )
+from apps.leave.services.risk import calculate_vacation_request_risk
 from apps.leave.services.validation import get_paid_request_eligibility_for_year
 
 from .base import LeaveTestCase
 
 
 class VacationRequestTests(LeaveTestCase):
+    def test_department_load_is_weighted_by_days_across_months(self):
+        Employees.objects.bulk_create(
+            [
+                Employees(
+                    last_name=f"Нагрузка{index}",
+                    first_name="Тест",
+                    middle_name="Сотрудник",
+                    login=f"risk-weight-staff-{index}",
+                    position="Инженер",
+                    department=self.engineering,
+                    date_joined=date(2025, 1, 1),
+                    annual_paid_leave_days=52,
+                    role=Employees.ROLE_EMPLOYEE,
+                )
+                for index in range(25)
+            ]
+        )
+        DepartmentWorkload.objects.create(
+            department=self.engineering,
+            year=2026,
+            month=4,
+            load_level=2,
+            min_staff_required=10,
+            max_absent=3,
+        )
+        DepartmentWorkload.objects.create(
+            department=self.engineering,
+            year=2026,
+            month=5,
+            load_level=4,
+            min_staff_required=20,
+            max_absent=9,
+        )
+
+        mostly_may = calculate_vacation_request_risk(
+            self.employee,
+            date(2026, 4, 29),
+            date(2026, 5, 9),
+            "unpaid",
+        )
+        mostly_april = calculate_vacation_request_risk(
+            self.employee,
+            date(2026, 4, 20),
+            date(2026, 5, 2),
+            "unpaid",
+        )
+
+        self.assertEqual(mostly_may["department_load_level"], 4)
+        self.assertEqual(mostly_may["min_staff_required"], 18)
+        self.assertEqual(mostly_april["department_load_level"], 2)
+        self.assertEqual(mostly_april["min_staff_required"], 12)
+
     def test_rejected_request_does_not_block_new_request(self):
         VacationRequest.objects.create(
             employee=self.employee,

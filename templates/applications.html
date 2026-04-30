@@ -4,8 +4,8 @@
 {% block title %}Кабинет.pro - Заявки{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260428-radius-system">
-<link rel="stylesheet" href="{% static 'css/pages/applications.css' %}?v=20260428-panel-unified">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260430-header-readable-copy">
+<link rel="stylesheet" href="{% static 'css/pages/applications.css' %}?v=20260430-app-copy-match-departments">
 {% endblock %}
 
 {% block content %}
@@ -15,13 +15,13 @@
             <section class="profile-page__section profile-page__section--overview is-active" data-profile-section="overview">
                 <div class="profile-page__section-body">
                     <div class="profile-page__section-stack">
-                        {% include 'includes/page_header.html' with eyebrow='Согласование' title='Заявки сотрудников' subtitle='Сначала проверьте переносы утверждённого графика, затем перейдите к обычным заявлениям сотрудников.' header_actions_template='includes/page_headers/applications_controls.html' %}
+                        {% include 'includes/page_header.html' with eyebrow='Согласование' title='Заявки сотрудников' subtitle='Проверяйте переносы утверждённого графика и заявки сотрудников с оценкой риска и быстрым согласованием.' header_actions_template='includes/page_headers/applications_controls.html' %}
 
                         <section class="applications-board applications-board--transfers">
                             <div class="panel-heading panel-heading--with-controls applications-board__topline">
                                 <div class="panel-heading__copy applications-board__heading">
                                     <h2>Переносы графика</h2>
-                                    <p>Запросы на изменение утверждённых отпусков с оценкой риска и быстрым согласованием.</p>
+                                    <p>Переносы утверждённых отпусков с оценкой риска и быстрым согласованием.</p>
                                 </div>
                                 <div class="panel-heading__controls">
                                     {% include 'includes/applications/status_segmented.html' with form_id='applications-status-form-transfers' %}
@@ -46,7 +46,7 @@
                             <div class="panel-heading panel-heading--with-controls applications-board__topline">
                                 <div class="panel-heading__copy applications-board__heading">
                                     <h2>Заявки</h2>
-                                    <p>Неоплачиваемые, учебные и оплачиваемые заявки из свободного остатка.</p>
+                                    <p>Заявки на неоплачиваемый, учебный и оплачиваемый отпуск из свободного остатка.</p>
                                 </div>
                                 <div class="panel-heading__controls">
                                     {% include 'includes/applications/status_segmented.html' with form_id='applications-status-form-requests' %}

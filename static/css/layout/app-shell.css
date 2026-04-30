@@ -33,8 +33,10 @@
     border-radius: var(--ui-radius-sized);
     background: rgba(0, 175, 245, 0.12);
     border: 1px solid rgba(0, 175, 245, 0.24);
-    color: var(--color-primary);
-    font-size: 0.76rem;
+    color: rgba(56, 200, 255, 0.96);
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.2;
     letter-spacing: 0.04em;
     text-transform: uppercase;
 }

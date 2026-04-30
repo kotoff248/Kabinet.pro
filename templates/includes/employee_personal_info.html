@@ -111,6 +111,8 @@
             </div>
         </dl>
 
+        {% include 'includes/employee_planned_vacations.html' with planned_vacations=planned_vacations %}
+
         {% if entitlement_rows %}
         <section class="entitlement-ledger" aria-labelledby="entitlement-ledger-title">
             <div class="entitlement-ledger__header">

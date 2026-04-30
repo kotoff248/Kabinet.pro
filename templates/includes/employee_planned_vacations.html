@@ -1,0 +1,33 @@
+<section class="planned-vacations" aria-labelledby="planned-vacations-title">
+    <div class="planned-vacations__header">
+        <div>
+            <span class="personal-info__section-eyebrow">График</span>
+            <h3 id="planned-vacations-title">Запланированные отпуска</h3>
+        </div>
+        {% if planned_vacations.upcoming %}
+        <span class="planned-vacations__upcoming">Ближайший: {{ planned_vacations.upcoming.period_label }}</span>
+        {% endif %}
+    </div>
+
+    {% if planned_vacations.entries %}
+    <div class="planned-vacations__list" aria-label="Запланированные отпуска на {{ planned_vacations.year }} год">
+        {% for item in planned_vacations.entries %}
+        <article class="planned-vacations__item status-{{ item.status }}">
+            <div class="planned-vacations__main">
+                <strong>{{ item.period_label }}</strong>
+                <span>{{ item.source_label }} &bull; {{ item.vacation_type_label }} &bull; {{ item.days }} д.</span>
+            </div>
+            <div class="planned-vacations__side">
+                <span class="planned-vacations__status">{{ item.status_label }}</span>
+                <a class="planned-vacations__link" href="{{ item.calendar_url }}" data-app-link>Открыть в графике</a>
+                {% if item.detail_url %}
+                <a class="planned-vacations__link planned-vacations__link--secondary" href="{{ item.detail_url }}" data-app-link>{{ item.detail_label }}</a>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="planned-vacations__empty">На {{ planned_vacations.year }} год отпусков в графике пока нет.</p>
+    {% endif %}
+</section>

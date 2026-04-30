@@ -8,6 +8,7 @@
         const monthSelect = filtersForm.querySelector("select[name='month']");
         const balanceNode = document.getElementById("calendar-balance");
         const chargePreview = Calendar.readJsonScript("calendar-charge-preview", {});
+        const vacationForm = document.getElementById("vacation-plan-form");
 
         const context = {
             signal: signal,
@@ -31,6 +32,7 @@
             detailModal: document.getElementById("calendar-detail-drawer"),
             detailName: document.getElementById("calendar-detail-name"),
             detailMeta: document.getElementById("calendar-detail-meta"),
+            detailProfileLink: document.getElementById("calendar-detail-profile-link"),
             detailPeriod: document.getElementById("calendar-detail-period"),
             detailSchedule: document.getElementById("calendar-detail-schedule"),
             detailRequests: document.getElementById("calendar-detail-requests"),
@@ -41,6 +43,7 @@
             yearList: document.getElementById("calendar-year-list"),
 
             modal: document.getElementById("vacation-modal"),
+            vacationForm: vacationForm,
             transferModal: document.getElementById("schedule-transfer-modal"),
             transferForm: document.getElementById("schedule-transfer-form"),
             transferCurrentPeriod: document.getElementById("transfer-current-period"),
@@ -49,12 +52,16 @@
             submitButton: document.getElementById("submit-vacation-btn"),
             countDays: document.getElementById("count_days"),
             chargeableDaysNode: document.getElementById("chargeable_days"),
+            availableOnStart: document.getElementById("available_on_start"),
             remainingBalance: document.getElementById("remaining_balance"),
+            entitlementSourceLabel: document.getElementById("entitlement_source_label"),
+            entitlementSourceList: document.getElementById("entitlement_source_list"),
             balanceNode: balanceNode,
             vacationTypeSelect: document.getElementById("type_vacation_select"),
             vacationFormHint: document.getElementById("vacation-form-hint"),
             chargePreviewNode: document.getElementById("calendar-charge-preview"),
             chargePreview: chargePreview,
+            previewUrl: vacationForm ? vacationForm.dataset.previewUrl || "" : "",
             holidayDates: new Set(chargePreview.holiday_dates || []),
         };
 

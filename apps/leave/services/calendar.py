@@ -91,6 +91,8 @@ def build_calendar_base_data(year, employee_ids=None):
             "employee_id": employee.id,
             "source_kind": "request",
             "source_id": record.id,
+            "detail_url": reverse("vacation_detail", args=[record.id]),
+            "detail_label": "Открыть заявку",
             "employee_name": employee.full_name,
             "employee_position": employee.position,
             "department_name": employee.department.name if employee.department else "Не указан",
@@ -116,7 +118,12 @@ def build_calendar_base_data(year, employee_ids=None):
             if DISPLAY_STATUS_PRIORITY[display_status] >= DISPLAY_STATUS_PRIORITY[current_status]:
                 employee_day_status[employee.id][current_date] = display_status
 
-    schedule_items = VacationScheduleItem.objects.select_related("employee", "employee__department", "schedule").filter(
+    schedule_items = VacationScheduleItem.objects.select_related(
+        "employee",
+        "employee__department",
+        "schedule",
+        "created_from_vacation_request",
+    ).filter(
         start_date__lte=year_end,
         end_date__gte=year_start,
         status__in=SCHEDULE_STATUS_TO_DISPLAY_STATUS.keys(),
@@ -141,6 +148,10 @@ def build_calendar_base_data(year, employee_ids=None):
             "employee_id": employee.id,
             "source_kind": "schedule",
             "source_id": item.id,
+            "detail_url": reverse("vacation_detail", args=[item.created_from_vacation_request_id])
+            if item.created_from_vacation_request_id
+            else "",
+            "detail_label": "Открыть заявку" if item.created_from_vacation_request_id else "",
             "employee_name": employee.full_name,
             "employee_position": employee.position,
             "department_name": employee.department.name if employee.department else "Не указан",
@@ -227,6 +238,8 @@ def _serialize_calendar_entry(entry, current_employee_id=None, today=None):
     payload = {
         "source_kind": entry.get("source_kind", ""),
         "source_id": entry.get("source_id"),
+        "detail_url": entry.get("detail_url", ""),
+        "detail_label": entry.get("detail_label", ""),
         "period_label": entry["period_label"],
         "status_label": entry["status_label"],
         "display_label": entry["display_label"],
@@ -367,6 +380,7 @@ def build_calendar_rows(
             {
                 "employee_id": employee.id,
                 "employee_name": employee.full_name,
+                "profile_url": reverse("employee_profile", args=[employee.id]),
                 "position": employee.position,
                 "department": employee.department.name if employee.department else "Не указан",
                 "status": row_status,
@@ -395,6 +409,7 @@ def build_calendar_rows(
             "employee_name": employee.full_name,
             "position": employee.position,
             "department": employee.department.name if employee.department else "Не указан",
+            "profile_url": reverse("employee_profile", args=[employee.id]),
             "selected_period_label": f"{RUSSIAN_MONTH_NAMES[month - 1]} {year}" if view_mode == "month" else f"Годовой обзор {year}",
             "selected_schedule_days": period_counts["schedule_days"],
             "selected_request_days": period_counts["request_days"],

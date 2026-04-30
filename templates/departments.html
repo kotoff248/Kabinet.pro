@@ -4,29 +4,29 @@
 {% block title %}Кабинет.pro - Отделы{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260428-panel-unified">
-<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260428-radius-system">
-<link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260428-delete-modal">
+<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260430-department-metrics-centered-card">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260430-header-readable-copy">
+<link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260430-modal-readable-copy">
 {% endblock %}
 
 {% block content %}
 <section class="profile-page">
-    {% include 'includes/page_header.html' with eyebrow='Структура компании' title='Отделы' subtitle='Список подразделений компании с закрепленными руководителями и датой добавления в систему.' header_actions_template='includes/page_headers/departments_controls.html' %}
+    {% include 'includes/page_header.html' with eyebrow='Структура компании' title='Отделы' subtitle='Подразделения компании и структура управления.' header_actions_template='includes/page_headers/departments_controls.html' %}
 
     <section class="staff_main">
         <div class="panel-heading panel-heading--solo">
             <div class="panel-heading__copy">
                 <h2>Структура отделов</h2>
-                <p>Подразделения компании, закрепленные руководители и численность сотрудников.</p>
+                <p>Выберите отдел, чтобы открыть сотрудников и посмотреть состав команды.</p>
             </div>
         </div>
 
         <div class="department-cards-shell">
             <div class="department-cards-list">
                 {% for department in departments %}
-                <article class="department-card" aria-label="Отдел {{ department.name }}">
+                <article class="department-card" data-href="{% url 'employees' %}?department={{ department.id }}" tabindex="0" role="link" aria-label="Открыть сотрудников отдела {{ department.name }}">
                     <div class="department-card__hero">
-                        <span class="department-card__index">Отдел {{ forloop.counter }}</span>
+                        <span class="department-card__index">Подразделение</span>
                         <h2 class="department-card__title">{{ department.name }}</h2>
                     </div>
 
@@ -34,16 +34,45 @@
                         <div class="department-card__cell">
                             <span class="department-card__label">Руководитель</span>
                             <strong class="department-card__value">{% if department.head %}{{ department.head.full_name }}{% else %}Не назначен{% endif %}</strong>
-                        </div>
-
-                        <div class="department-card__cell department-card__cell--count">
-                            <span class="department-card__label">Численность</span>
-                            <strong class="department-card__value">{{ department.employee_count }}</strong>
+                            {% if department.head_position_label %}
+                                <span class="department-card__note">{{ department.head_position_label }}</span>
+                            {% endif %}
                         </div>
 
                         <div class="department-card__cell department-card__cell--date">
-                            <span class="department-card__label">Дата добавления</span>
-                            <strong class="department-card__value">{{ department.date_added|date:"j E Y, H:i" }}</strong>
+                            <span class="department-card__label">Отдел с</span>
+                            <strong class="department-card__value">{{ department.date_added|date:"j E Y" }}</strong>
+                        </div>
+
+                        <div class="department-card__metrics" aria-label="Показатели отдела">
+                            <span class="department-card__metric">
+                                <span class="material-icons-sharp" aria-hidden="true">groups</span>
+                                <span class="department-card__metric-copy">
+                                    <span class="department-card__metric-label">Сотрудников</span>
+                                    <strong>{{ department.employee_count }}</strong>
+                                </span>
+                            </span>
+                            <span class="department-card__metric">
+                                <span class="material-icons-sharp" aria-hidden="true">beach_access</span>
+                                <span class="department-card__metric-copy">
+                                    <span class="department-card__metric-label">В отпуске сейчас</span>
+                                    <strong>{{ department.current_vacation_count }}</strong>
+                                </span>
+                            </span>
+                            <span class="department-card__metric">
+                                <span class="material-icons-sharp" aria-hidden="true">pending_actions</span>
+                                <span class="department-card__metric-copy">
+                                    <span class="department-card__metric-label">Заявок</span>
+                                    <strong>{{ department.pending_applications_count }}</strong>
+                                </span>
+                            </span>
+                            <span class="department-card__metric department-card__metric--workload department-card__metric--level-{{ department.workload_level|default:'none' }}">
+                                <span class="material-icons-sharp" aria-hidden="true">speed</span>
+                                <span class="department-card__metric-copy">
+                                    <span class="department-card__metric-label">Нагрузка</span>
+                                    <strong>{{ department.workload_label }}</strong>
+                                </span>
+                            </span>
                         </div>
                     </div>
                 </article>

@@ -43,6 +43,15 @@
                 side.appendChild(status);
                 side.appendChild(days);
 
+                if (item.detail_url) {
+                    const detailAction = document.createElement("a");
+                    detailAction.className = "calendar-drawer__entry-action calendar-drawer__entry-action--link";
+                    detailAction.href = item.detail_url;
+                    detailAction.dataset.appLink = "";
+                    detailAction.textContent = item.detail_label || "Открыть заявку";
+                    side.appendChild(detailAction);
+                }
+
                 if (item.can_request_transfer && item.transfer_url) {
                     const action = document.createElement("button");
                     action.type = "button";
@@ -90,6 +99,15 @@
 
             context.detailName.textContent = detail.employee_name;
             context.detailMeta.textContent = detail.position + " • " + detail.department;
+            if (context.detailProfileLink) {
+                if (detail.profile_url) {
+                    context.detailProfileLink.href = detail.profile_url;
+                    context.detailProfileLink.classList.remove("is-hidden");
+                } else {
+                    context.detailProfileLink.href = "#";
+                    context.detailProfileLink.classList.add("is-hidden");
+                }
+            }
             context.detailPeriod.textContent = detail.selected_period_label;
             context.detailSchedule.textContent = detail.selected_schedule_days + " д.";
             context.detailRequests.textContent = detail.selected_request_days + " д.";
@@ -104,7 +122,21 @@
         function bindRows() {
             context.rows = Array.from(document.querySelectorAll("[data-employee-id]"));
             context.rows.forEach(function (row) {
-                row.addEventListener("click", function () {
+                row.addEventListener("click", function (event) {
+                    if (event.target.closest("a, button")) {
+                        return;
+                    }
+                    updateDetailCard(row.dataset.employeeId);
+                }, { signal: signal });
+                row.addEventListener("keydown", function (event) {
+                    if (event.target.closest("a, button")) {
+                        return;
+                    }
+                    if (event.key !== "Enter" && event.key !== " ") {
+                        return;
+                    }
+
+                    event.preventDefault();
                     updateDetailCard(row.dataset.employeeId);
                 }, { signal: signal });
             });

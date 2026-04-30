@@ -140,7 +140,12 @@ class NotificationWorkflowTests(LeaveTestCase):
         )
 
         self.assertEqual(approver_task.status, Notification.STATUS_DONE)
+        self.assertIn(reverse("applications"), approver_task.action_url)
+        self.assertIn("status=pending", approver_task.action_url)
+        self.assertIn("search=", approver_task.action_url)
         self.assertIn(reverse("calendar"), employee_notice.action_url)
+        self.assertIn(f"employee={self.employee.id}", employee_notice.action_url)
+        self.assertIn("view=month", employee_notice.action_url)
 
     def test_backfill_creates_missing_pending_approval_notifications(self):
         request_obj = VacationRequest.objects.create(

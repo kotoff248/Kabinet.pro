@@ -103,6 +103,32 @@ class SeedVacationDataCommandTests(TestCase):
         self.assertTrue(historical_special_requests.filter(vacation_type="unpaid").exists())
         self.assertFalse(VacationRequest.objects.filter(reason="").exists())
         self.assertFalse(VacationRequest.objects.filter(risk_score=0).exists())
+        historical_requests = list(
+            VacationRequest.objects.select_related("employee__department", "employee__department__staffing_rule")
+            .filter(start_date__year__lt=current_year)
+            .exclude(employee__department=None)
+        )
+        scaled_historical_risk_count = 0
+        for request_obj in historical_requests:
+            department = request_obj.employee.department
+            final_staff_count = Employees.objects.filter(
+                department=department,
+                is_active_employee=True,
+            ).exclude(role__in=Employees.SERVICE_ROLES).count()
+            period_staff_count = Employees.objects.filter(
+                department=department,
+                is_active_employee=True,
+                date_joined__lte=request_obj.end_date,
+            ).exclude(role__in=Employees.SERVICE_ROLES).count()
+
+            with self.subTest(request=request_obj.id, employee=request_obj.employee.login):
+                self.assertGreater(request_obj.risk_score, 0)
+                self.assertLessEqual(request_obj.min_staff_required, department.staffing_rule.min_staff_required)
+                if period_staff_count:
+                    self.assertLessEqual(request_obj.min_staff_required, period_staff_count)
+                if period_staff_count < final_staff_count and request_obj.min_staff_required < department.staffing_rule.min_staff_required:
+                    scaled_historical_risk_count += 1
+        self.assertGreater(scaled_historical_risk_count, 0)
         self.assertFalse(
             VacationRequest.objects.filter(
                 status__in=[VacationRequest.STATUS_APPROVED, VacationRequest.STATUS_REJECTED],

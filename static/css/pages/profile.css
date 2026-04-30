@@ -133,10 +133,11 @@ main{
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    color: var(--color-info-dark);
+    color: rgba(205, 218, 236, 0.86);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    font-size: 0.73rem;
+    font-size: 0.75rem;
+    font-weight: 700;
 }
 
 .personal-info__summary,
@@ -159,7 +160,8 @@ main{
 
 .personal-info__summary-value,
 .vacation-requests__counter{
-    color: var(--color-white);
+    color: rgba(255, 255, 255, 0.98);
+    font-weight: 700;
     font-size: clamp(1.45rem, 2vw, 2rem);
     line-height: 1;
 }
@@ -173,7 +175,7 @@ main{
 
 .personal-info__body{
     display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
     gap: 0.58rem;
     align-content: start;
     min-height: 0;
@@ -183,7 +185,8 @@ main{
 .vacation-requests__copy p,
 .personal-info__note{
     margin: 0;
-    color: var(--color-info-dark);
+    color: rgba(205, 218, 236, 0.78);
+    font-weight: 600;
     line-height: 1.6;
 }
 
@@ -235,12 +238,13 @@ main{
 
 .profile-facts dd{
     margin: 0;
-    color: var(--color-white);
+    color: rgba(255, 255, 255, 0.98);
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.86rem;
+    font-size: 0.9rem;
+    font-weight: 650;
     line-height: 1.25;
 }
 
@@ -264,24 +268,140 @@ main{
 }
 
 .balance-strip__item dt{
-    color: var(--color-info-dark);
+    color: rgba(205, 218, 236, 0.84);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    font-size: 0.62rem;
+    font-size: 0.66rem;
+    font-weight: 700;
     line-height: 1.25;
 }
 
 .balance-strip__item dd{
     margin: 0;
-    color: var(--color-white);
-    font-size: 0.84rem;
-    font-weight: 600;
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 0.87rem;
+    font-weight: 700;
     line-height: 1.18;
 }
 
 .balance-strip__item--advance{
     border-color: rgba(0, 175, 245, 0.16);
     background: rgba(0, 175, 245, 0.07);
+}
+
+.planned-vacations{
+    display: grid;
+    gap: 0.48rem;
+    min-height: 0;
+    padding: 0.62rem;
+    border-radius: var(--ui-radius-control);
+    background: rgba(18, 20, 28, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.planned-vacations__header{
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 0.85rem;
+}
+
+.planned-vacations__header h3{
+    margin: 0.08rem 0 0;
+    color: var(--color-white);
+    font-size: 0.95rem;
+    line-height: 1.15;
+}
+
+.planned-vacations__upcoming{
+    color: rgba(205, 218, 236, 0.78);
+    font-size: 0.74rem;
+    font-weight: 600;
+    line-height: 1.25;
+    text-align: right;
+}
+
+.planned-vacations__list{
+    display: grid;
+    gap: 0.45rem;
+    max-height: 7.4rem;
+    min-height: 0;
+    overflow: auto;
+    padding-right: 0.2rem;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+.planned-vacations__item{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.7rem;
+    min-width: 0;
+    padding: 0.52rem 0.62rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background: rgba(18, 20, 28, 0.34);
+    border: 1px solid rgba(255, 255, 255, 0.055);
+    transition: var(--card-ignite-transition);
+}
+
+.planned-vacations__item:hover{
+    transform: translateY(var(--card-ignite-y));
+    background: var(--card-ignite-bg);
+    border-color: var(--card-ignite-border);
+    box-shadow: var(--card-ignite-shadow);
+}
+
+.planned-vacations__main,
+.planned-vacations__side{
+    display: grid;
+    gap: 0.18rem;
+    min-width: 0;
+}
+
+.planned-vacations__main strong{
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 0.86rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.planned-vacations__main span,
+.planned-vacations__status,
+.planned-vacations__empty{
+    color: rgba(205, 218, 236, 0.78);
+    font-size: 0.74rem;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+.planned-vacations__side{
+    justify-items: end;
+    text-align: right;
+}
+
+.planned-vacations__link{
+    color: var(--color-primary);
+    font-size: 0.72rem;
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.planned-vacations__link:hover{
+    color: #ffffff;
+}
+
+.planned-vacations__link--secondary{
+    color: rgba(219, 228, 242, 0.78);
+}
+
+.planned-vacations__empty{
+    margin: 0;
+    padding: 0.72rem;
+    border-radius: var(--ui-radius-panel-inner);
+    text-align: center;
+    background: rgba(18, 20, 28, 0.28);
+    border: 1px dashed rgba(255, 255, 255, 0.08);
 }
 
 .personal-info__note{
@@ -316,8 +436,9 @@ main{
 
 .entitlement-ledger__header p{
     margin: 0;
-    color: var(--color-info-dark);
-    font-size: 0.72rem;
+    color: rgba(205, 218, 236, 0.78);
+    font-size: 0.74rem;
+    font-weight: 600;
     line-height: 1.25;
     text-align: right;
 }
@@ -357,15 +478,17 @@ main{
     top: 0;
     z-index: 2;
     background: rgba(33, 38, 52, 0.96);
-    color: var(--color-info-dark);
-    font-size: 0.61rem;
+    color: rgba(205, 218, 236, 0.84);
+    font-size: 0.66rem;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
 
 .entitlement-ledger__row:not(.entitlement-ledger__row--head) > span{
-    color: var(--color-white);
-    font-size: 0.76rem;
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 0.78rem;
+    font-weight: 600;
 }
 
 .entitlement-ledger__status{
@@ -438,7 +561,9 @@ main{
     flex: 1 1 auto;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-bottom: 0.2rem;
+    margin: var(--card-ignite-bleed-offset);
+    padding: var(--card-ignite-bleed-space);
+    padding-bottom: calc(var(--card-ignite-bleed-space) + 0.2rem);
     scrollbar-gutter: stable both-edges;
     overscroll-behavior: contain;
 }
@@ -466,9 +591,21 @@ main{
     min-height: 7rem;
     padding: 1rem;
     border-radius: var(--ui-radius-control);
-    color: var(--color-info-dark);
+    color: rgba(205, 218, 236, 0.78);
+    font-weight: 600;
     text-align: center;
     background: rgba(18, 20, 28, 0.3);
     border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+@media (max-width: 768px){
+    .planned-vacations__item{
+        grid-template-columns: 1fr;
+    }
+
+    .planned-vacations__side{
+        justify-items: start;
+        text-align: left;
+    }
 }
 

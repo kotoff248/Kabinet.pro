@@ -8,6 +8,15 @@
         Выберите строку сотрудника на графике
         {% endif %}
     </p>
+    <a
+        id="calendar-detail-profile-link"
+        class="calendar-drawer__profile-link{% if not selected_employee_detail.profile_url %} is-hidden{% endif %}"
+        href="{{ selected_employee_detail.profile_url|default:'#' }}"
+        data-app-link
+    >
+        <span class="material-icons-sharp" aria-hidden="true">person</span>
+        <span>Открыть профиль</span>
+    </a>
 </div>
 
 <div class="calendar-drawer__body">
@@ -52,6 +61,9 @@
                         <div class="calendar-drawer__entry-side">
                             <span>{{ item.status_label }}</span>
                             <strong>{{ item.days }} д.</strong>
+                            {% if item.detail_url %}
+                            <a class="calendar-drawer__entry-action calendar-drawer__entry-action--link" href="{{ item.detail_url }}" data-app-link>{{ item.detail_label|default:'Открыть заявку' }}</a>
+                            {% endif %}
                             {% if item.can_request_transfer %}
                             <button
                                 type="button"
@@ -87,6 +99,9 @@
                         <div class="calendar-drawer__entry-side">
                             <span>{{ item.status_label }}</span>
                             <strong>{{ item.days }} д.</strong>
+                            {% if item.detail_url %}
+                            <a class="calendar-drawer__entry-action calendar-drawer__entry-action--link" href="{{ item.detail_url }}" data-app-link>{{ item.detail_label|default:'Открыть заявку' }}</a>
+                            {% endif %}
                             {% if item.can_request_transfer %}
                             <button
                                 type="button"

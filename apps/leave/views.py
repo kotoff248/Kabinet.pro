@@ -1,8 +1,11 @@
+from datetime import date
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
+from django.utils.formats import date_format
 
 from apps.accounts.services import (
     can_access_analytics,
@@ -15,10 +18,13 @@ from apps.accounts.services import (
     is_authorized_person_employee,
 )
 from apps.employees.services import update_context_with_departments
-from apps.leave.models import VacationRequest, VacationScheduleItem
+from apps.leave.models import VACATION_TYPE_CHOICES, VacationRequest, VacationScheduleItem
 
 from .forms import ScheduleChangeRequestCreateForm, VacationRequestCreateForm
 from .services.calendar import get_calendar_redirect_url
+from .services.constants import LEAVE_ADVANCE_MONTHS
+from .services.dates import add_months_safe, get_chargeable_leave_days
+from .services.ledger import get_employee_available_balance, get_employee_entitlement_source_preview
 from .services.page_contexts import (
     build_analytics_page_context,
     build_applications_json_payload,
@@ -27,6 +33,7 @@ from .services.page_contexts import (
     build_vacation_detail_context,
 )
 from .services.querysets import get_vacation_requests_queryset
+from .services.risk import calculate_vacation_request_risk
 from .services.requests import (
     approve_vacation_request,
     create_vacation_request,
@@ -39,6 +46,7 @@ from .services.schedule_changes import (
     get_schedule_change_requests_queryset,
     reject_schedule_change_request,
 )
+from .services.validation import validate_vacation_request_for_employee
 
 
 def _form_errors_to_messages(form):
@@ -57,6 +65,156 @@ def _normalize_vacation_form_data(post_data):
     if "type_vacation" in data and "vacation_type" not in data:
         data["vacation_type"] = data.get("type_vacation")
     return data
+
+
+def _json_number(value):
+    return float(value or 0)
+
+
+def _serialize_entitlement_source_preview(preview):
+    return {
+        "entitlement_source_label": preview["label"],
+        "entitlement_allocations": [
+            {
+                "working_year_number": row["working_year_number"],
+                "period_label": row["period_label"],
+                "period_start": row["period_start"].isoformat(),
+                "period_end": row["period_end"].isoformat(),
+                "days": _json_number(row["days"]),
+                "balance_before": _json_number(row["balance_before"]),
+                "balance_after": _json_number(row["balance_after"]),
+            }
+            for row in preview["allocations"]
+        ],
+    }
+
+
+def _parse_preview_date(value, field_label):
+    if not value:
+        raise ValidationError(f"Выберите поле «{field_label}».")
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError):
+        raise ValidationError(f"Некорректная дата в поле «{field_label}».")
+
+
+def _vacation_preview_message(vacation_type, start_date, employee, can_submit):
+    available_from = add_months_safe(employee.date_joined, LEAVE_ADVANCE_MONTHS)
+    if vacation_type == "paid" and start_date < available_from:
+        return (
+            f"Оплачиваемый отпуск доступен с {date_format(available_from, 'j E Y')}. "
+            "Выберите дату начала не раньше этой даты."
+        )
+    if not can_submit:
+        return ""
+    if vacation_type == "paid":
+        return "Заявку можно отправить: право на отпуск и баланс проверены на дату начала отпуска."
+    if vacation_type == "study":
+        return "Заявку можно отправить. Учебный отпуск не уменьшает оплачиваемый баланс."
+    return "Заявку можно отправить. Неоплачиваемый отпуск не уменьшает оплачиваемый баланс."
+
+
+def _build_vacation_preview_payload(employee, start_date, end_date, vacation_type):
+    calendar_days = (end_date - start_date).days + 1 if end_date >= start_date else 0
+    chargeable_days = get_chargeable_leave_days(start_date, end_date, vacation_type) if calendar_days else 0
+    balance_today = get_employee_available_balance(employee)
+    available_on_start = get_employee_available_balance(employee, as_of_date=start_date)
+    available_from = add_months_safe(employee.date_joined, LEAVE_ADVANCE_MONTHS)
+    risk_payload = calculate_vacation_request_risk(employee, start_date, end_date, vacation_type)
+    entitlement_source_preview = get_employee_entitlement_source_preview(
+        employee,
+        start_date,
+        end_date,
+        vacation_type,
+    )
+    can_submit = True
+    message = ""
+
+    try:
+        validate_vacation_request_for_employee(employee, start_date, end_date, vacation_type)
+    except ValidationError as exc:
+        can_submit = False
+        message = _vacation_preview_message(vacation_type, start_date, employee, False) or _validation_error_message(exc)
+
+    if can_submit:
+        message = _vacation_preview_message(vacation_type, start_date, employee, True)
+
+    risk_label = dict(VacationRequest.RISK_CHOICES).get(risk_payload["risk_level"], "Низкий")
+    payload = {
+        "can_submit": can_submit,
+        "message": message,
+        "calendar_days": calendar_days,
+        "chargeable_days": chargeable_days,
+        "balance_today": _json_number(balance_today),
+        "available_on_start": _json_number(available_on_start),
+        "remaining_after_request": _json_number(risk_payload["balance_after_request"]),
+        "available_from": available_from.isoformat(),
+        "risk_label": risk_label,
+        "risk_score": risk_payload["risk_score"],
+    }
+    payload.update(_serialize_entitlement_source_preview(entitlement_source_preview))
+    return payload
+
+
+@employee_required
+def vacation_request_preview(request):
+    current_user = get_current_employee(request)
+    if is_authorized_person_employee(current_user):
+        return JsonResponse(
+            {
+                "can_submit": False,
+                "message": "Уполномоченное лицо не создаёт заявки через календарь.",
+            },
+            status=403,
+        )
+    if request.method != "GET":
+        return JsonResponse(
+            {"can_submit": False, "message": "Проверка заявки доступна только GET-запросом."},
+            status=405,
+        )
+
+    vacation_type = request.GET.get("vacation_type") or "paid"
+    allowed_types = {choice[0] for choice in VACATION_TYPE_CHOICES}
+    if vacation_type not in allowed_types:
+        return JsonResponse(
+            {
+                "can_submit": False,
+                "message": "Выберите корректный тип отпуска.",
+                "calendar_days": 0,
+                "chargeable_days": 0,
+                "balance_today": _json_number(get_employee_available_balance(current_user)),
+                "available_on_start": 0,
+                "remaining_after_request": 0,
+                "available_from": add_months_safe(current_user.date_joined, LEAVE_ADVANCE_MONTHS).isoformat(),
+                "risk_label": "Низкий",
+                "risk_score": 0,
+                "entitlement_source_label": "Выберите корректный тип отпуска.",
+                "entitlement_allocations": [],
+            }
+        )
+
+    try:
+        start_date = _parse_preview_date(request.GET.get("start_date"), "Дата начала")
+        end_date = _parse_preview_date(request.GET.get("end_date"), "Дата окончания")
+    except ValidationError as exc:
+        return JsonResponse(
+            {
+                "can_submit": False,
+                "message": _validation_error_message(exc),
+                "calendar_days": 0,
+                "chargeable_days": 0,
+                "balance_today": _json_number(get_employee_available_balance(current_user)),
+                "available_on_start": 0,
+                "remaining_after_request": 0,
+                "available_from": add_months_safe(current_user.date_joined, LEAVE_ADVANCE_MONTHS).isoformat(),
+                "risk_label": "Низкий",
+                "risk_score": 0,
+                "entitlement_source_label": "Выберите даты, чтобы определить рабочий год списания.",
+                "entitlement_allocations": [],
+            }
+        )
+
+    return JsonResponse(_build_vacation_preview_payload(current_user, start_date, end_date, vacation_type))
 
 
 @employee_required

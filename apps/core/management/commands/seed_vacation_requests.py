@@ -45,6 +45,10 @@ from apps.leave.services.schedule_items import create_schedule_item_from_paid_va
 DEPARTMENT_SPECS = [
     {
         "name": "Производство",
+        "formation_month": 1,
+        "formation_day": 11,
+        "formation_hour": 9,
+        "formation_minute": 0,
         "employee_count": 30,
         "recent_hires": 3,
         "head_position": "Начальник производства",
@@ -65,6 +69,10 @@ DEPARTMENT_SPECS = [
     },
     {
         "name": "Техническое обслуживание",
+        "formation_month": 2,
+        "formation_day": 8,
+        "formation_hour": 9,
+        "formation_minute": 30,
         "employee_count": 24,
         "recent_hires": 2,
         "head_position": "Руководитель службы ТОиР",
@@ -85,6 +93,10 @@ DEPARTMENT_SPECS = [
     },
     {
         "name": "Промышленная безопасность",
+        "formation_month": 3,
+        "formation_day": 15,
+        "formation_hour": 10,
+        "formation_minute": 0,
         "employee_count": 12,
         "recent_hires": 1,
         "head_position": "Начальник службы промышленной безопасности",
@@ -105,6 +117,10 @@ DEPARTMENT_SPECS = [
     },
     {
         "name": "Логистика",
+        "formation_month": 4,
+        "formation_day": 12,
+        "formation_hour": 9,
+        "formation_minute": 15,
         "employee_count": 18,
         "recent_hires": 1,
         "head_position": "Руководитель логистики",
@@ -125,6 +141,10 @@ DEPARTMENT_SPECS = [
     },
     {
         "name": "Финансы и закупки",
+        "formation_month": 5,
+        "formation_day": 17,
+        "formation_hour": 10,
+        "formation_minute": 30,
         "employee_count": 16,
         "recent_hires": 1,
         "head_position": "Руководитель финансов и закупок",
@@ -440,6 +460,7 @@ class Command(BaseCommand):
         history_years = FAST_SCHEDULE_HISTORY_YEARS if self.fast_mode else max(1, options["history_years"])
         self.schedule_end_year = self.today.year
         self.schedule_start_year = self.schedule_end_year - history_years
+        self.enterprise_start_year = self.schedule_end_year - DEFAULT_SCHEDULE_HISTORY_YEARS
         self.schedule_approval_cutoff = date(self.schedule_end_year - 1, 12, 31)
         self.department_specs = self._build_department_specs()
         self.total_employee_count = sum(spec["employee_count"] for spec in self.department_specs)
@@ -526,7 +547,22 @@ class Command(BaseCommand):
             get_user_model().objects.filter(id__in=user_ids).delete()
 
     def _create_departments(self):
-        return [Departments.objects.create(name=spec["name"]) for spec in self.department_specs]
+        departments = []
+        for spec in self.department_specs:
+            departments.append(Departments.objects.create(name=spec["name"], date_added=self._department_formation_at(spec)))
+        return departments
+
+    def _department_formation_at(self, spec):
+        return timezone.make_aware(
+            datetime(
+                self.enterprise_start_year,
+                spec["formation_month"],
+                spec["formation_day"],
+                spec["formation_hour"],
+                spec["formation_minute"],
+            ),
+            timezone.get_current_timezone(),
+        )
 
     def _create_staffing_rules(self, departments):
         for department, spec in zip(departments, self.department_specs):
@@ -538,6 +574,47 @@ class Command(BaseCommand):
                 criticality_level=rule_spec["criticality_level"],
                 substitution_group=rule_spec["substitution_group"],
             )
+
+    def _month_end_date(self, year, month):
+        if month == 12:
+            return date(year, 12, 31)
+        return date(year, month + 1, 1) - timedelta(days=1)
+
+    def _department_active_count_on(self, department, as_of_date):
+        return Employees.objects.filter(
+            department=department,
+            is_active_employee=True,
+            date_joined__lte=as_of_date,
+        ).exclude(role__in=Employees.SERVICE_ROLES).count()
+
+    def _scale_staffing_metric(self, final_value, active_count, final_count, *, minimum=1):
+        if final_count <= 0 or active_count <= 0:
+            return minimum
+
+        scaled_value = round(final_value * active_count / final_count)
+        return min(final_value, max(minimum, scaled_value))
+
+    def _historical_staffing_for_month(self, department, rule, year, month):
+        month_end = self._month_end_date(year, month)
+        final_count = self._department_active_count_on(department, date(self.schedule_end_year, 12, 31))
+        active_count = self._department_active_count_on(department, month_end)
+        if final_count <= 0 or active_count <= 0:
+            return 1, 1
+
+        min_staff_required = self._scale_staffing_metric(
+            rule.min_staff_required,
+            active_count,
+            final_count,
+            minimum=1,
+        )
+        min_staff_required = min(min_staff_required, active_count)
+        max_absent = self._scale_staffing_metric(
+            rule.max_absent,
+            active_count,
+            final_count,
+            minimum=1,
+        )
+        return min_staff_required, max_absent
 
     def _create_department_workload(self, departments):
         for department, spec in zip(departments, self.department_specs):
@@ -553,13 +630,19 @@ class Command(BaseCommand):
                         load_level = min(5, load_level + 1)
                     elif self.rng.random() < 0.04:
                         load_level = max(1, load_level - 1)
+                    min_staff_required, max_absent = self._historical_staffing_for_month(
+                        department,
+                        rule,
+                        year,
+                        month,
+                    )
                     workload = DepartmentWorkload.objects.create(
                         department=department,
                         year=year,
                         month=month,
                         load_level=load_level,
-                        min_staff_required=rule.min_staff_required,
-                        max_absent=rule.max_absent,
+                        min_staff_required=min_staff_required,
+                        max_absent=max_absent,
                     )
                     self.department_workload[(department.id, year, month)] = workload
 
@@ -661,6 +744,7 @@ class Command(BaseCommand):
             gender="male",
             min_years=8,
             max_years=12,
+            date_joined=date(self.enterprise_start_year, 1, 4),
         )
 
     def _create_authorized_person(self):
@@ -669,6 +753,7 @@ class Command(BaseCommand):
             role=Employees.ROLE_AUTHORIZED_PERSON,
             position="Уполномоченное лицо",
             department=None,
+            date_joined=date(self.enterprise_start_year, 1, 4),
         )
         sync_employee_user(employee, raw_password=DEFAULT_PASSWORD)
         return employee
@@ -677,6 +762,7 @@ class Command(BaseCommand):
         positions = ["HR бизнес-партнер", "Ведущий HR-специалист"]
         genders = ["female", "female"]
         hr_team = []
+        hr_min_join_date = date(self.enterprise_start_year, 6, 1)
         for index in range(HR_COUNT):
             hr_team.append(
                 self._create_employee(
@@ -687,6 +773,7 @@ class Command(BaseCommand):
                     gender=genders[index % len(genders)],
                     min_years=4,
                     max_years=9,
+                    min_join_date=hr_min_join_date,
                 )
             )
         return hr_team
@@ -703,6 +790,7 @@ class Command(BaseCommand):
                     gender="male" if index % 2 else "female",
                     min_years=6,
                     max_years=11,
+                    date_joined=timezone.localtime(department.date_added).date(),
                 )
             )
         return heads
@@ -711,6 +799,7 @@ class Command(BaseCommand):
         employees = []
         employee_index = 1
         for department, spec in zip(departments, self.department_specs):
+            min_join_date = timezone.localtime(department.date_added).date() + timedelta(days=1)
             for slot in range(spec["employee_count"]):
                 date_joined = self._recent_hire_date(employee_index) if slot < spec.get("recent_hires", 0) else None
                 employees.append(
@@ -723,6 +812,7 @@ class Command(BaseCommand):
                         min_years=0 if date_joined else 1,
                         max_years=10,
                         date_joined=date_joined,
+                        min_join_date=min_join_date,
                     )
                 )
                 employee_index += 1
@@ -735,7 +825,7 @@ class Command(BaseCommand):
             latest_date = base_date
         return base_date + timedelta(days=(employee_index * 11) % ((latest_date - base_date).days + 1))
 
-    def _create_employee(self, login, role, position, department, gender, min_years, max_years, date_joined=None):
+    def _create_employee(self, login, role, position, department, gender, min_years, max_years, date_joined=None, min_join_date=None):
         last_name, first_name, middle_name = self.name_factory.next_name(gender)
         if date_joined is None:
             start_days = self.rng.randint(min_years * 365, max_years * 365)
@@ -746,6 +836,12 @@ class Command(BaseCommand):
                 if latest_join_date < earliest_join_date:
                     latest_join_date = earliest_join_date
                 date_joined = earliest_join_date + timedelta(days=self.rng.randint(0, (latest_join_date - earliest_join_date).days))
+        if min_join_date is not None and date_joined < min_join_date:
+            latest_join_date = min(self.schedule_approval_cutoff, self.today - timedelta(days=365))
+            if latest_join_date < min_join_date:
+                date_joined = min_join_date
+            else:
+                date_joined = min_join_date + timedelta(days=self.rng.randint(0, (latest_join_date - min_join_date).days))
 
         employee = Employees.objects.create(
             login=login,

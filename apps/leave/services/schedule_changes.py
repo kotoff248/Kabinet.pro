@@ -47,6 +47,7 @@ def serialize_schedule_change_request_row(change_request):
         "id": change_request.id,
         "employee_name": change_request.employee.full_name,
         "employee_department": change_request.employee.department.name if change_request.employee.department else "Не указан",
+        "profile_url": reverse("employee_profile", args=[change_request.employee_id]),
         "old_period_label": change_request.old_period_label,
         "new_period_label": change_request.new_period_label,
         "status": change_request.status,

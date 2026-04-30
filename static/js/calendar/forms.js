@@ -6,6 +6,9 @@
 
     Calendar.createFormsController = function (context, dependencies) {
         const signal = context.signal;
+        let previewRequestId = 0;
+        let previewAbortController = null;
+        let latestPreviewCanSubmit = false;
 
         function closeVacationModal() {
             dependencies.closeCustomSelects();
@@ -32,92 +35,187 @@
             window.appModal.open(context.transferModal);
         }
 
-        function calculateChargeableDays(start, end, vacationType) {
-            if (vacationType !== "paid") {
-                return 0;
-            }
-
-            return Calendar.getDateRange(start, end).filter(function (currentDate) {
-                return !context.holidayDates.has(Calendar.toIsoDate(currentDate));
-            }).length;
-        }
-
-        function updateVacationHint(message, isError) {
+        function updateVacationHint(message, isError, isLoading) {
             if (!context.vacationFormHint) {
                 return;
             }
 
             context.vacationFormHint.textContent = message || context.vacationFormHint.dataset.defaultHint || "";
             context.vacationFormHint.classList.toggle("is-error", Boolean(isError));
+            context.vacationFormHint.classList.toggle("is-loading", Boolean(isLoading));
         }
 
-        function calculateVacationForm() {
+        function formatDaysValue(value) {
+            return Calendar.formatDays(Calendar.parseNumber(value, 0)) + " д.";
+        }
+
+        function updateEntitlementSource(payload) {
+            const label = payload && payload.entitlement_source_label
+                ? payload.entitlement_source_label
+                : "Выберите даты, чтобы определить рабочий год списания.";
+            const allocations = payload && Array.isArray(payload.entitlement_allocations)
+                ? payload.entitlement_allocations
+                : [];
+
+            if (context.entitlementSourceLabel) {
+                context.entitlementSourceLabel.textContent = label;
+            }
+            if (!context.entitlementSourceList) {
+                return;
+            }
+
+            context.entitlementSourceList.replaceChildren();
+            if (!allocations.length) {
+                context.entitlementSourceList.hidden = true;
+                return;
+            }
+
+            allocations.forEach(function (allocation) {
+                const item = document.createElement("li");
+                const period = document.createElement("span");
+                const days = document.createElement("strong");
+
+                period.textContent = allocation.period_label || "";
+                days.textContent = "Списывается: " + formatDaysValue(allocation.days);
+                item.append(period, days);
+                context.entitlementSourceList.appendChild(item);
+            });
+            context.entitlementSourceList.hidden = false;
+        }
+
+        function setSubmitState(canSubmit) {
+            latestPreviewCanSubmit = Boolean(canSubmit);
+            if (context.submitButton) {
+                context.submitButton.disabled = !latestPreviewCanSubmit;
+            }
+        }
+
+        function setPreviewValues(payload) {
+            const vacationType = context.vacationTypeSelect ? context.vacationTypeSelect.value : "paid";
+
+            if (context.countDays) {
+                context.countDays.textContent = (payload.calendar_days || 0) + " д.";
+            }
+            if (context.chargeableDaysNode) {
+                context.chargeableDaysNode.textContent = vacationType === "paid"
+                    ? (payload.chargeable_days || 0) + " д."
+                    : "Не списывается";
+            }
+            if (context.availableOnStart) {
+                context.availableOnStart.textContent = formatDaysValue(payload.available_on_start);
+            }
+            if (context.remainingBalance) {
+                context.remainingBalance.textContent = formatDaysValue(payload.remaining_after_request);
+            }
+            if (context.balanceNode && payload.balance_today !== undefined) {
+                context.availableBalance = Calendar.parseNumber(payload.balance_today, context.availableBalance || 0);
+                context.balanceNode.dataset.balance = String(context.availableBalance);
+                context.balanceNode.textContent = formatDaysValue(context.availableBalance);
+            }
+            updateEntitlementSource(payload);
+        }
+
+        function resetVacationPreview(message, isError) {
             if (
                 !context.startDateInput ||
                 !context.endDateInput ||
-                !context.submitButton ||
                 !context.countDays ||
                 !context.remainingBalance ||
-                !context.chargeableDaysNode
+                !context.chargeableDaysNode ||
+                !context.availableOnStart
             ) {
+                return;
+            }
+
+            const defaultHint = context.vacationFormHint ? context.vacationFormHint.dataset.defaultHint : "";
+
+            context.countDays.textContent = "0 д.";
+            context.chargeableDaysNode.textContent = "0 д.";
+            context.availableOnStart.textContent = "0 д.";
+            context.remainingBalance.textContent = formatDaysValue(context.availableBalance);
+            updateEntitlementSource(null);
+            updateVacationHint(message || defaultHint, Boolean(isError), false);
+            setSubmitState(false);
+        }
+
+        function calculateVacationForm() {
+            if (!context.startDateInput || !context.endDateInput || !context.previewUrl) {
+                resetVacationPreview("Не удалось найти адрес проверки заявки.", true);
                 return;
             }
 
             const startValue = context.startDateInput.value;
             const endValue = context.endDateInput.value;
-            const defaultHint = context.vacationFormHint ? context.vacationFormHint.dataset.defaultHint : "";
 
             if (!startValue || !endValue) {
-                context.countDays.textContent = "0 д.";
-                context.chargeableDaysNode.textContent = "0 д.";
-                context.remainingBalance.textContent = Calendar.formatDays(context.availableBalance) + " д.";
-                updateVacationHint(defaultHint, false);
-                context.submitButton.disabled = true;
+                resetVacationPreview("", false);
                 return;
             }
 
             const start = new Date(startValue + "T00:00:00");
             const end = new Date(endValue + "T00:00:00");
             if (end < start) {
-                context.countDays.textContent = "0 д.";
-                context.chargeableDaysNode.textContent = "0 д.";
-                context.remainingBalance.textContent = Calendar.formatDays(context.availableBalance) + " д.";
-                updateVacationHint("Дата окончания не может быть раньше даты начала.", true);
-                context.submitButton.disabled = true;
+                resetVacationPreview("Дата окончания не может быть раньше даты начала.", true);
                 return;
             }
 
             const vacationType = context.vacationTypeSelect ? context.vacationTypeSelect.value : "paid";
-            const calendarDays = Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1;
-            const chargeableDays = calculateChargeableDays(start, end, vacationType);
-            const remaining = vacationType === "paid"
-                ? context.availableBalance - chargeableDays
-                : context.availableBalance;
+            const requestId = previewRequestId + 1;
+            previewRequestId = requestId;
+            setSubmitState(false);
+            updateVacationHint("Проверяем данные...", false, true);
 
-            context.countDays.textContent = calendarDays + " д.";
-            context.chargeableDaysNode.textContent = chargeableDays + " д.";
-            context.remainingBalance.textContent = Calendar.formatDays(remaining) + " д.";
-
-            if (vacationType !== "paid") {
-                updateVacationHint("Неоплачиваемый и учебный отпуск не уменьшают оплачиваемый баланс.", false);
-                context.submitButton.disabled = false;
-                return;
+            if (previewAbortController) {
+                previewAbortController.abort();
             }
+            previewAbortController = new AbortController();
 
-            if (remaining < 0) {
-                updateVacationHint("Недостаточно доступных дней для этой заявки.", true);
-                context.submitButton.disabled = true;
-                return;
-            }
+            const params = new URLSearchParams({
+                start_date: startValue,
+                end_date: endValue,
+                vacation_type: vacationType,
+            });
 
-            if (chargeableDays === 0) {
-                updateVacationHint("В выбранном периоде нет дней, которые спишутся с баланса.", true);
-                context.submitButton.disabled = true;
-                return;
-            }
+            fetch(context.previewUrl + "?" + params.toString(), {
+                credentials: "same-origin",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                signal: previewAbortController.signal,
+            })
+                .then(function (response) {
+                    return response.json().catch(function () {
+                        return {
+                            can_submit: false,
+                            message: "Не удалось прочитать ответ проверки заявки.",
+                        };
+                    }).then(function (payload) {
+                        return { ok: response.ok, payload: payload };
+                    });
+                })
+                .then(function (result) {
+                    if (signal.aborted || requestId !== previewRequestId) {
+                        return;
+                    }
 
-            updateVacationHint(defaultHint, false);
-            context.submitButton.disabled = false;
+                    const payload = result.payload || {};
+                    setPreviewValues(payload);
+                    setSubmitState(result.ok && payload.can_submit);
+                    updateVacationHint(
+                        payload.message || "Проверка завершена.",
+                        !(result.ok && payload.can_submit),
+                        false
+                    );
+                })
+                .catch(function (error) {
+                    if (error && error.name === "AbortError") {
+                        return;
+                    }
+                    if (signal.aborted || requestId !== previewRequestId) {
+                        return;
+                    }
+                    resetVacationPreview("Не удалось проверить заявку. Попробуйте ещё раз.", true);
+                });
         }
 
         function init() {
@@ -136,15 +234,20 @@
                 context.modal.addEventListener("app-modal:open", function () {
                     dependencies.closeDetailModal();
                     dependencies.closeCustomSelects();
-                    const vacationForm = document.getElementById("vacation-plan-form");
+                    const vacationForm = context.vacationForm || document.getElementById("vacation-plan-form");
                     dependencies.syncFormNavigationFields(vacationForm);
                     calculateVacationForm();
                 }, { signal: signal });
             }
 
-            const vacationForm = document.getElementById("vacation-plan-form");
+            const vacationForm = context.vacationForm || document.getElementById("vacation-plan-form");
             if (vacationForm) {
-                vacationForm.addEventListener("submit", function () {
+                vacationForm.addEventListener("submit", function (event) {
+                    if (!latestPreviewCanSubmit) {
+                        event.preventDefault();
+                        calculateVacationForm();
+                        return;
+                    }
                     dependencies.syncFormNavigationFields(vacationForm);
                 }, { signal: signal });
             }

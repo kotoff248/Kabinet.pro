@@ -945,6 +945,13 @@ document.addEventListener("DOMContentLoaded", function () {
         clearSectionMemory: clearSectionMemory,
         clearSectionListMemory: clearSectionListMemory,
         getSectionListHref: getSectionListHref,
+        navigate: function (targetUrl, pushState) {
+            if (canNavigateWithFetch(targetUrl)) {
+                navigateWithFetch(targetUrl, pushState !== false);
+                return true;
+            }
+            return false;
+        },
     });
 
     function hasTextSelection() {
@@ -1057,6 +1064,35 @@ document.addEventListener("DOMContentLoaded", function () {
         window.location.href = href;
     }
 
+    function handleAppLinkNavigation(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const link = target ? target.closest("a[data-app-link], a.calendar-drawer__entry-action--link") : null;
+        if (!link || !isPlainLeftClick(event, link)) {
+            return false;
+        }
+
+        if (navigationState.isNavigating) {
+            event.preventDefault();
+            return true;
+        }
+
+        if (isCurrentPageUrl(link.href)) {
+            event.preventDefault();
+            return true;
+        }
+
+        if (!canNavigateWithFetch(link.href)) {
+            return false;
+        }
+
+        event.preventDefault();
+        if (link.closest(".app-modal")) {
+            closeAllModals();
+        }
+        navigateWithFetch(link.href, true);
+        return true;
+    }
+
     window.appModal = {
         open: function (target) {
             setModalState(target, true);
@@ -1081,6 +1117,10 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     document.addEventListener("click", function (event) {
+        if (handleAppLinkNavigation(event)) {
+            return;
+        }
+
         const openButton = event.target.closest("[data-modal-open]");
         if (openButton) {
             setModalState(openButton.dataset.modalOpen, true);

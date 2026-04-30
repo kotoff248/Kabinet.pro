@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from io import StringIO
 
 from django.core.management import call_command, CommandError
@@ -53,6 +54,7 @@ class SeedEnterpriseCommandTests(TestCase):
         self.assertTrue(Employees.objects.filter(login="director_1", role=Employees.ROLE_ENTERPRISE_HEAD).exists())
         self.assertTrue(Employees.objects.filter(login="admin_1", role=Employees.ROLE_AUTHORIZED_PERSON).exists())
         self.assertTrue(Employees.objects.filter(login="hr_1", role=Employees.ROLE_HR).exists())
+        self.assertTrue(Employees.objects.filter(login="hr_2", role=Employees.ROLE_HR).exists())
         self.assertTrue(Employees.objects.filter(login="manager_5", role=Employees.ROLE_DEPARTMENT_HEAD).exists())
         self.assertTrue(Employees.objects.filter(login="employ_100", role=Employees.ROLE_EMPLOYEE).exists())
 
@@ -81,7 +83,15 @@ class SeedEnterpriseCommandTests(TestCase):
         self.assertTrue(Employees.objects.get(login="manager_1").user.check_password("1234"))
         self.assertTrue(Employees.objects.get(login="employ_1").user.check_password("1234"))
         current_year = timezone.localdate().year
+        enterprise_start_year = current_year - 5
         expected_schedule_years = list(range(current_year - 5, current_year + 1))
+        expected_department_formation_dates = {
+            "Производство": date(enterprise_start_year, 1, 11),
+            "Техническое обслуживание": date(enterprise_start_year, 2, 8),
+            "Промышленная безопасность": date(enterprise_start_year, 3, 15),
+            "Логистика": date(enterprise_start_year, 4, 12),
+            "Финансы и закупки": date(enterprise_start_year, 5, 17),
+        }
         self.assertEqual(
             list(VacationSchedule.objects.order_by("year").values_list("year", flat=True)),
             expected_schedule_years,
@@ -96,10 +106,17 @@ class SeedEnterpriseCommandTests(TestCase):
         self.assertGreaterEqual(len(set(employee_last_names)), 90)
         most_common_last_name_count = max(employee_last_names.count(last_name) for last_name in set(employee_last_names))
         self.assertLessEqual(most_common_last_name_count, 2)
+        self.assertEqual(Employees.objects.get(login="director_1").date_joined, date(enterprise_start_year, 1, 4))
 
         for department in Departments.objects.all():
             with self.subTest(department=department.name):
                 self.assertIsNotNone(department.head)
+                formation_date = expected_department_formation_dates[department.name]
+                self.assertEqual(timezone.localtime(department.date_added).date(), formation_date)
+                self.assertEqual(department.head.date_joined, formation_date)
+                self.assertFalse(
+                    department.employees.exclude(pk=department.head_id).filter(date_joined__lt=formation_date + timedelta(days=1)).exists()
+                )
                 self.assertEqual(
                     department.employees.filter(role=Employees.ROLE_EMPLOYEE).count(),
                     expected_department_counts[department.name],
@@ -114,3 +131,29 @@ class SeedEnterpriseCommandTests(TestCase):
                     ),
                     expected_rules[department.name],
                 )
+                december_workload = DepartmentWorkload.objects.get(
+                    department=department,
+                    year=current_year,
+                    month=12,
+                )
+                self.assertEqual(december_workload.min_staff_required, rule.min_staff_required)
+                self.assertEqual(december_workload.max_absent, rule.max_absent)
+
+        for workload in DepartmentWorkload.objects.select_related("department", "department__staffing_rule"):
+            if workload.month == 12:
+                month_end = date(workload.year, 12, 31)
+            else:
+                month_end = date(workload.year, workload.month + 1, 1) - timedelta(days=1)
+            active_count = Employees.objects.filter(
+                department=workload.department,
+                is_active_employee=True,
+                date_joined__lte=month_end,
+            ).exclude(role__in=Employees.SERVICE_ROLES).count()
+
+            with self.subTest(department=workload.department.name, year=workload.year, month=workload.month):
+                self.assertGreaterEqual(workload.min_staff_required, 1)
+                self.assertGreaterEqual(workload.max_absent, 1)
+                self.assertLessEqual(workload.min_staff_required, workload.department.staffing_rule.min_staff_required)
+                self.assertLessEqual(workload.max_absent, workload.department.staffing_rule.max_absent)
+                if active_count:
+                    self.assertLessEqual(workload.min_staff_required, active_count)

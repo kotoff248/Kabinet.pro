@@ -221,6 +221,12 @@ When editing frontend behavior:
 
 - preserve backend-provided URLs such as `profile_url`; avoid hardcoded URL
   concatenation in JS
+- authenticated in-app links that move between pages, cards, drawers, modals, or
+  newly added feature pages should use the existing PJAX-style navigation:
+  render links with `data-app-link` when possible, or call
+  `window.KabinetNavigation.navigate(...)` from JS. Do not introduce ordinary
+  full-page reloads for internal same-origin navigation unless the flow truly
+  requires it, such as logout or a destructive POST redirect.
 - preserve custom selects and segmented controls used by calendar, employees,
   and applications pages
 - new authenticated pages should use the shared `includes/page_header.html`

@@ -12,6 +12,7 @@ from apps.leave.services.dates import get_chargeable_leave_days
 from apps.leave.services.ledger import (
     get_employee_accrued_leave,
     get_employee_entitlement_rows,
+    get_employee_entitlement_source_preview,
     get_employee_leave_summaries,
     get_employee_leave_summary,
     get_employee_list_leave_summaries,
@@ -269,6 +270,97 @@ class LeaveLedgerTests(LeaveTestCase):
         self.assertIn("period_label", rows[0])
         self.assertIn("remaining_days", rows[0])
         self.assertIn("status_label", rows[0])
+
+    def test_entitlement_source_preview_uses_single_working_year(self):
+        employee = Employees.objects.create(
+            last_name="Источников",
+            first_name="Иван",
+            middle_name="Игоревич",
+            login="single-source-preview",
+            position="Инженер",
+            department=self.engineering,
+            date_joined=date(2025, 9, 10),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        schedule = VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=employee,
+            start_date=date(2026, 4, 1),
+            end_date=date(2026, 5, 22),
+            vacation_type="paid",
+            chargeable_days=52,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        preview = get_employee_entitlement_source_preview(
+            employee,
+            date(2026, 11, 13),
+            date(2026, 12, 10),
+            "paid",
+        )
+
+        self.assertEqual(preview["label"], "Дни будут списаны из рабочего года 10.09.2026 - 09.09.2027")
+        self.assertEqual(len(preview["allocations"]), 1)
+        self.assertEqual(preview["allocations"][0]["period_label"], "10.09.2026 - 09.09.2027")
+        self.assertEqual(preview["allocations"][0]["days"], 28)
+
+    def test_entitlement_source_preview_can_span_working_years(self):
+        employee = Employees.objects.create(
+            last_name="Переходов",
+            first_name="Петр",
+            middle_name="Игоревич",
+            login="split-source-preview",
+            position="Инженер",
+            department=self.engineering,
+            date_joined=date(2025, 9, 10),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        schedule = VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=employee,
+            start_date=date(2026, 4, 1),
+            end_date=date(2026, 5, 19),
+            vacation_type="paid",
+            chargeable_days=49,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        preview = get_employee_entitlement_source_preview(
+            employee,
+            date(2026, 11, 5),
+            date(2026, 11, 14),
+            "paid",
+        )
+
+        self.assertEqual(preview["label"], "Дни будут списаны из нескольких рабочих годов")
+        self.assertEqual([row["period_label"] for row in preview["allocations"]], [
+            "10.09.2025 - 09.09.2026",
+            "10.09.2026 - 09.09.2027",
+        ])
+        self.assertEqual([row["days"] for row in preview["allocations"]], [3, 7])
+
+    def test_entitlement_source_preview_ignores_non_paid_leave(self):
+        preview = get_employee_entitlement_source_preview(
+            self.employee,
+            date(2026, 11, 1),
+            date(2026, 11, 10),
+            "unpaid",
+        )
+
+        self.assertEqual(preview["label"], "Оплачиваемый баланс не списывается")
+        self.assertEqual(preview["allocations"], [])
 
     def test_leave_summary_exposes_advance_breakdown(self):
         six_month_employee = Employees.objects.create(

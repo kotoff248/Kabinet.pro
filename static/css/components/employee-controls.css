@@ -43,16 +43,14 @@
         rgba(18, 20, 28, 0.38);
     border: 1px solid rgba(255, 255, 255, 0.07);
     box-shadow: 0 0.75rem 1.8rem rgba(0, 0, 0, 0.12);
-    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+    transition: var(--card-ignite-transition);
 }
 
 .department-summary-card:hover {
-    transform: translateY(-1px);
-    border-color: rgba(56, 200, 255, 0.16);
-    box-shadow: 0 1rem 2.1rem rgba(0, 0, 0, 0.18);
-    background:
-        linear-gradient(135deg, rgba(0, 175, 245, 0.1), rgba(56, 200, 255, 0.035)),
-        rgba(18, 20, 28, 0.44);
+    transform: translateY(var(--card-ignite-y));
+    border-color: var(--card-ignite-border);
+    box-shadow: var(--card-ignite-shadow);
+    background: var(--card-ignite-bg);
 }
 
 .department-summary-card__icon {
@@ -74,17 +72,19 @@
 }
 
 .department-summary-card__label {
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: rgba(255, 255, 255, 0.56);
+    letter-spacing: 0.05em;
+    color: rgba(205, 218, 236, 0.86);
+    font-weight: 700;
+    line-height: 1.2;
 }
 
 .department-summary-card__value {
     font-size: 1.28rem;
     line-height: 1.1;
-    font-weight: 700;
-    color: var(--color-white);
+    font-weight: 750;
+    color: rgba(255, 255, 255, 0.98);
 }
 
 .department-summary-card--employees {
@@ -98,7 +98,7 @@
 }
 
 .department-summary-card--employees .department-summary-card__label {
-    font-size: 0.66rem;
+    font-size: 0.72rem;
 }
 
 .employee-select {
@@ -128,7 +128,8 @@
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
         linear-gradient(180deg, rgba(18, 20, 28, 0.5), rgba(18, 20, 28, 0.5));
-    color: var(--color-white);
+    color: rgba(255, 255, 255, 0.98);
+    font-weight: 650;
     transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease, background-color 0.25s ease;
 }
 
@@ -148,7 +149,7 @@
 .employee-select.is-disabled .employee-select__trigger {
     cursor: not-allowed;
     transform: none;
-    color: var(--color-info-dark);
+    color: rgba(205, 218, 236, 0.64);
     border-color: rgba(255, 255, 255, 0.08);
     box-shadow: none;
     background:
@@ -242,9 +243,10 @@
     border: 1px solid transparent;
     border-radius: var(--ui-radius-control);
     background: transparent;
-    color: var(--color-white);
+    color: rgba(255, 255, 255, 0.96);
     text-align: left;
     font-size: 0.95rem;
+    font-weight: 600;
     transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease, color 0.2s ease;
 }
 

@@ -66,6 +66,23 @@
     --panel-lift-y: -2px;
     --panel-lift-border: rgba(56, 200, 255, 0.18);
     --panel-lift-shadow: 0 1.8rem 3rem rgba(0, 0, 0, 0.3);
+    --card-ignite-y: -2px;
+    --card-ignite-bleed-space: 0.45rem;
+    --card-ignite-bleed-offset: calc(var(--card-ignite-bleed-space) * -1);
+    --card-ignite-bg:
+        linear-gradient(135deg, rgba(0, 175, 245, 0.22), rgba(56, 200, 255, 0.09)),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.02)),
+        rgba(12, 15, 24, 0.5);
+    --card-ignite-border: rgba(56, 200, 255, 0.4);
+    --card-ignite-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.085),
+        0 1rem 2rem rgba(0, 0, 0, 0.16),
+        0 0.9rem 2rem rgba(0, 175, 245, 0.16),
+        0 0 0 1px rgba(56, 200, 255, 0.1) inset;
+    --card-ignite-transition:
+        transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+        border-color 0.38s ease,
+        box-shadow 0.38s ease;
     --sidebar-compact-duration: 0.32s;
     --sidebar-compact-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }

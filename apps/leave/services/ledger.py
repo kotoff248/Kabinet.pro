@@ -415,8 +415,11 @@ def _build_allocation_rows(employee, periods, sources, strict=True, for_save=Fal
                         schedule_item=source["schedule_item"],
                         schedule_item_id=source["schedule_item"].id if source["schedule_item"] is not None else None,
                         source_kind=source["kind"],
+                        source_marker=source.get("marker"),
                         state=source["state"],
                         allocated_days=allocated_days,
+                        period_balance_before=period_left,
+                        period_balance_after=quantize_leave_days(period_left - allocated_days),
                     )
                 )
             allocated_by_period[period_key] = quantize_leave_days(allocated_by_period[period_key] + allocated_days)
@@ -430,6 +433,89 @@ def _build_allocation_rows(employee, periods, sources, strict=True, for_save=Fal
             )
 
     return allocations
+
+def _empty_entitlement_source_preview(label="Оплачиваемый баланс не списывается"):
+    return {
+        "label": label,
+        "allocations": [],
+    }
+
+def get_employee_entitlement_source_preview(
+    employee,
+    start_date,
+    end_date,
+    vacation_type,
+    exclude_request_id=None,
+    exclude_schedule_item_id=None,
+):
+    start_date = normalize_date_value(start_date)
+    end_date = normalize_date_value(end_date)
+    if vacation_type not in BALANCE_AFFECTING_TYPES:
+        return _empty_entitlement_source_preview()
+
+    chargeable_days = quantize_leave_days(get_chargeable_leave_days(start_date, end_date, vacation_type))
+    if chargeable_days <= 0:
+        return _empty_entitlement_source_preview("Оплачиваемые дни не списываются")
+
+    sources = _filter_paid_ledger_sources(
+        _collect_paid_ledger_sources(employee),
+        exclude_request_id=exclude_request_id,
+        exclude_schedule_item_id=exclude_schedule_item_id,
+    )
+    source_horizon = _source_horizon(end_date, sources)
+    periods = get_employee_entitlement_periods_for_read(employee, source_horizon)
+    preview_marker = "preview-request"
+    preview_sources = [
+        *sources,
+        {
+            "kind": VacationEntitlementAllocation.SOURCE_REQUEST,
+            "id": 0,
+            "start_date": start_date,
+            "end_date": end_date,
+            "days": chargeable_days,
+            "state": VacationEntitlementAllocation.STATE_RESERVED,
+            "request": None,
+            "schedule_item": None,
+            "marker": preview_marker,
+        },
+    ]
+    preview_sources.sort(key=lambda source: (source["start_date"], source["end_date"], source["kind"], source["id"]))
+
+    try:
+        preview_allocations = _build_allocation_rows(employee, periods, preview_sources, strict=True, for_save=False)
+    except ValidationError:
+        return _empty_entitlement_source_preview("Недостаточно доступных дней для списания")
+
+    rows = []
+    for allocation in preview_allocations:
+        if getattr(allocation, "source_marker", None) != preview_marker:
+            continue
+        period = allocation.entitlement_period
+        days = quantize_leave_days(allocation.allocated_days)
+        rows.append(
+            {
+                "working_year_number": period.working_year_number,
+                "period_label": f"{format_ru_date(period.period_start)} - {format_ru_date(period.period_end)}",
+                "period_start": period.period_start,
+                "period_end": period.period_end,
+                "days": days,
+                "balance_before": quantize_leave_days(allocation.period_balance_before),
+                "balance_after": quantize_leave_days(allocation.period_balance_after),
+            }
+        )
+
+    if not rows:
+        return _empty_entitlement_source_preview("Недостаточно доступных дней для списания")
+
+    label = (
+        f"Дни будут списаны из рабочего года {rows[0]['period_label']}"
+        if len(rows) == 1
+        else "Дни будут списаны из нескольких рабочих годов"
+    )
+    return {
+        "label": label,
+        "allocations": rows,
+    }
 
 @transaction.atomic
 def rebuild_employee_leave_ledger(employee, as_of_date=None, strict=True):

@@ -52,9 +52,10 @@
 
 .page-hero__subtitle{
     margin: 0;
-    color: var(--color-info-dark);
-    font-size: 0.96rem;
-    line-height: 1.6;
+    color: rgba(196, 209, 226, 0.72);
+    font-size: 0.94rem;
+    font-weight: 500;
+    line-height: 1.5;
     max-width: 56rem;
     overflow: hidden;
     text-overflow: ellipsis;

@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 from django.db.models import Q
 from django.urls import reverse
 
@@ -84,6 +86,10 @@ def _schedule_change_action_prefix(change_request):
     return f"{Notification.TYPE_SCHEDULE_CHANGE_CREATED}:{change_request.id}:"
 
 
+def _build_url(name, query):
+    return f"{reverse(name)}?{urlencode(query)}"
+
+
 def notify_vacation_request_created(vacation):
     period = format_period_label(vacation.start_date, vacation.end_date)
     employee_name = _employee_label(vacation.employee)
@@ -136,7 +142,13 @@ def notify_schedule_change_created(change_request):
             event_type=Notification.TYPE_SCHEDULE_CHANGE_CREATED,
             title="Новый запрос переноса отпуска",
             message=f"{employee_name} запросил(а) перенос утверждённого отпуска на {period}.",
-            action_url=f'{reverse("applications")}?status=pending',
+            action_url=_build_url(
+                "applications",
+                {
+                    "status": VacationScheduleChangeRequest.STATUS_PENDING,
+                    "search": employee_name,
+                },
+            ),
             priority=Notification.PRIORITY_HIGH,
             requires_action=True,
             dedupe_key=f"{_schedule_change_action_prefix(change_request)}{approver.id}",
@@ -161,7 +173,15 @@ def notify_schedule_change_reviewed(change_request):
         event_type=event_type,
         title=title,
         message=f"{reviewer_name}: ваш запрос переноса на {period} {status_text}.",
-        action_url=f'{reverse("calendar")}?view=month&year={change_request.new_start_date.year}&month={change_request.new_start_date.month}',
+        action_url=_build_url(
+            "calendar",
+            {
+                "view": "month",
+                "year": change_request.new_start_date.year,
+                "month": change_request.new_start_date.month,
+                "employee": change_request.employee_id,
+            },
+        ),
         priority=Notification.PRIORITY_NORMAL,
         requires_action=False,
         dedupe_key=f"{event_type}:{change_request.id}:{change_request.employee_id}",

@@ -20,21 +20,28 @@
         {% if calendar_rows %}
         <div class="calendar-grid-rows">
             {% for row in calendar_rows %}
-            <button
-                type="button"
+            <div
                 class="timeline-grid timeline-row {% if row.employee_id == selected_employee_id %}is-active{% endif %}"
                 style="--days-count: {{ row.cells|length }};"
                 data-employee-id="{{ row.employee_id }}"
+                role="button"
+                tabindex="0"
             >
                 <span class="timeline-employee-card">
                     <span class="timeline-employee-card__top">
                         <strong>{{ row.employee_name }}</strong>
-                        <span class="timeline-employee-card__badge timeline-employee-card__badge--{{ row.status }}">
-                            {% if row.selected_total_days %}
-                            {{ row.selected_total_days }} д.
-                            {% else %}
-                            Нет отпусков
-                            {% endif %}
+                        <span class="timeline-employee-card__status-stack">
+                            <span class="timeline-employee-card__badge timeline-employee-card__badge--{{ row.status }}">
+                                {% if row.selected_total_days %}
+                                {{ row.selected_total_days }} д.
+                                {% else %}
+                                Нет отпусков
+                                {% endif %}
+                            </span>
+                            <a class="timeline-employee-card__profile-link" href="{{ row.profile_url }}" data-app-link aria-label="Открыть профиль сотрудника {{ row.employee_name }}">
+                                <span class="material-icons-sharp" aria-hidden="true">person</span>
+                                <span>Профиль</span>
+                            </a>
                         </span>
                     </span>
                     <span class="timeline-employee-card__bottom">
@@ -52,7 +59,7 @@
                     title="{{ cell.tooltip }}"
                 ></span>
                 {% endfor %}
-            </button>
+            </div>
             {% endfor %}
         </div>
         {% else %}
@@ -83,16 +90,22 @@
         {% if calendar_rows %}
         <div class="calendar-grid-rows">
             {% for row in calendar_rows %}
-            <button type="button" class="year-grid year-row {% if row.employee_id == selected_employee_id %}is-active{% endif %}" data-employee-id="{{ row.employee_id }}">
+            <div class="year-grid year-row {% if row.employee_id == selected_employee_id %}is-active{% endif %}" data-employee-id="{{ row.employee_id }}" role="button" tabindex="0">
                 <span class="timeline-employee-card year-employee-card">
                     <span class="timeline-employee-card__top">
                         <strong>{{ row.employee_name }}</strong>
-                        <span class="timeline-employee-card__badge timeline-employee-card__badge--{{ row.status }}">
-                            {% if row.year_total_days %}
-                            {{ row.year_total_days }} д.
-                            {% else %}
-                            Нет отпусков
-                            {% endif %}
+                        <span class="timeline-employee-card__status-stack">
+                            <span class="timeline-employee-card__badge timeline-employee-card__badge--{{ row.status }}">
+                                {% if row.year_total_days %}
+                                {{ row.year_total_days }} д.
+                                {% else %}
+                                Нет отпусков
+                                {% endif %}
+                            </span>
+                            <a class="timeline-employee-card__profile-link" href="{{ row.profile_url }}" data-app-link aria-label="Открыть профиль сотрудника {{ row.employee_name }}">
+                                <span class="material-icons-sharp" aria-hidden="true">person</span>
+                                <span>Профиль</span>
+                            </a>
                         </span>
                     </span>
                     <span class="timeline-employee-card__bottom">
@@ -124,7 +137,7 @@
                     </span>
                 </span>
                 {% endfor %}
-            </button>
+            </div>
             {% endfor %}
         </div>
         {% else %}

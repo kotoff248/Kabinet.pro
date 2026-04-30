@@ -15,9 +15,15 @@ from apps.leave.models import VacationRequest, VacationScheduleChangeRequest, Va
 from .analytics import build_analytics_payload
 from .approval_routes import get_expected_vacation_approver
 from .calendar import build_calendar_base_data, build_calendar_rows, build_calendar_summary
-from .constants import RUSSIAN_MONTH_NAMES, RUSSIAN_MONTH_SHORT_NAMES, WEEKDAY_SHORT_NAMES
-from .dates import get_chargeable_leave_days, get_russian_holiday_iso_dates
-from .ledger import get_employee_entitlement_rows, get_employee_leave_summary, get_employee_remaining_balance
+from .constants import LEAVE_ADVANCE_MONTHS, RUSSIAN_MONTH_NAMES, RUSSIAN_MONTH_SHORT_NAMES, WEEKDAY_SHORT_NAMES
+from .dates import add_months_safe, get_chargeable_leave_days, get_russian_holiday_iso_dates
+from .ledger import (
+    get_employee_available_balance,
+    get_employee_entitlement_rows,
+    get_employee_entitlement_source_preview,
+    get_employee_leave_summary,
+    get_employee_remaining_balance,
+)
 from .metrics import sync_employee_vacation_metrics
 from .querysets import get_vacation_requests_queryset
 from .request_history import get_vacation_request_history
@@ -125,6 +131,8 @@ def build_calendar_page_context(current_employee, query_params):
         else "Обзор отпусков по месяцам за выбранный год."
     )
     paid_request_allowed, paid_request_hint = get_paid_request_eligibility_for_year(current_employee, selected_year)
+    paid_leave_available_from = add_months_safe(current_employee.date_joined, LEAVE_ADVANCE_MONTHS)
+    paid_leave_waiting_period_active = today < paid_leave_available_from
 
     context.update(
         {
@@ -138,6 +146,8 @@ def build_calendar_page_context(current_employee, query_params):
             },
             "paid_request_allowed": paid_request_allowed,
             "paid_request_hint": paid_request_hint,
+            "paid_leave_available_from": paid_leave_available_from,
+            "paid_leave_waiting_period_active": paid_leave_waiting_period_active,
             "calendar_view_mode": calendar_view_mode,
             "calendar_period_label": calendar_period_label,
             "calendar_period_description": calendar_period_description,
@@ -284,26 +294,26 @@ def _get_balance_notice_for_vacation(vacation):
     return "", ""
 
 
-def _format_absence_count(value):
+def _format_employee_count(value):
     value = int(value or 0)
     if value == 1:
-        return "1 отсутствие"
+        return "1 сотрудник"
     if 2 <= value <= 4:
-        return f"{value} отсутствия"
-    return f"{value} отсутствий"
+        return f"{value} сотрудника"
+    return f"{value} сотрудников"
 
 
 def _get_vacation_risk_summary(vacation):
     label = vacation.risk_label.lower()
     if vacation.min_staff_required:
         summary = (
-            f"Риск {label}: в отделе останется {vacation.remaining_staff_count} "
-            f"сотрудников при минимуме {vacation.min_staff_required}."
+            f"Риск {label}: в отделе останется {_format_employee_count(vacation.remaining_staff_count)} "
+            f"при минимуме {_format_employee_count(vacation.min_staff_required)}."
         )
     else:
         summary = f"Риск {label}: нагрузка отдела оценивается как {vacation.department_load_level}/5."
     if vacation.overlapping_absences_count:
-        summary += f" Пересечения: {_format_absence_count(vacation.overlapping_absences_count)}."
+        summary += f" Одновременно отсутствуют: {_format_employee_count(vacation.overlapping_absences_count)}."
     return summary
 
 
@@ -336,10 +346,22 @@ def build_vacation_detail_context(vacation, current_employee):
     can_delete = vacation.status == VacationRequest.STATUS_PENDING and (
         vacation.employee_id == (current_employee.id if current_employee else None) or can_approve_vacation
     )
-    employee_leave_summary = get_employee_leave_summary(vacation.employee)
-    entitlement_rows = get_employee_entitlement_rows(vacation.employee)
+    employee_leave_summary = get_employee_leave_summary(vacation.employee, as_of_date=vacation.start_date)
+    entitlement_rows = get_employee_entitlement_rows(vacation.employee, as_of_date=vacation.start_date)
     current_balance = get_employee_remaining_balance(vacation.employee)
+    available_on_start_before_request = get_employee_available_balance(
+        vacation.employee,
+        as_of_date=vacation.start_date,
+        exclude_request_id=vacation.id,
+    )
     is_paid_vacation = vacation.vacation_type == "paid"
+    entitlement_source_preview = get_employee_entitlement_source_preview(
+        vacation.employee,
+        vacation.start_date,
+        vacation.end_date,
+        vacation.vacation_type,
+        exclude_request_id=vacation.id,
+    )
     balance_notice_title, balance_notice_text = _get_balance_notice_for_vacation(vacation)
 
     return {
@@ -350,12 +372,15 @@ def build_vacation_detail_context(vacation, current_employee):
         "status_icon": vacation.status_icon,
         "status_css_class": vacation.status_css_class,
         "current_balance": current_balance,
+        "available_on_start_before_request": available_on_start_before_request,
         "employee_leave_summary": employee_leave_summary,
         "entitlement_rows": entitlement_rows,
+        "entitlement_source_preview": entitlement_source_preview,
         "is_paid_vacation": is_paid_vacation,
         "balance_notice_title": balance_notice_title,
         "balance_notice_text": balance_notice_text,
         "vacation_risk_summary": _get_vacation_risk_summary(vacation),
+        "overlapping_absences_employee_label": _format_employee_count(vacation.overlapping_absences_count),
         "approval_route": _get_vacation_approval_route(vacation, current_employee, can_approve_vacation),
         "vacation_history": get_vacation_request_history(vacation),
         "system_recommendation_text": "Рекомендация системы будет доступна после подключения аналитического модуля.",

@@ -12,7 +12,7 @@
     align-items: center;
     gap: 0.95rem;
     min-height: 8.25rem;
-    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    transition: var(--card-ignite-transition);
 }
 
 .calendar-summary-card__icon{
@@ -38,12 +38,15 @@
 }
 
 .calendar-summary-card__value{
+    color: rgba(255, 255, 255, 0.98);
     font-size: 1.35rem;
+    font-weight: 700;
     line-height: 1.2;
 }
 
 .calendar-summary-card__hint{
-    color: var(--color-info-dark);
+    color: rgba(205, 218, 236, 0.78);
+    font-weight: 600;
     line-height: 1.5;
 }
 
@@ -79,6 +82,12 @@
     box-shadow: var(--calendar-panel-shadow);
 }
 
+.calendar-summary-card:hover{
+    background: var(--card-ignite-bg);
+    border-color: var(--card-ignite-border);
+    box-shadow: var(--card-ignite-shadow);
+}
+
 .calendar-board-card__header{
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -88,6 +97,17 @@
     padding: var(--calendar-board-padding) var(--calendar-board-padding-inline) 0;
     border-bottom: 0;
     flex-shrink: 0;
+    position: relative;
+    z-index: 60;
+    overflow: visible;
+}
+
+.calendar-board-card.has-open-select .calendar-board-card__header{
+    z-index: 120;
+}
+
+.calendar-board-card.has-open-select .calendar-board-scroll{
+    pointer-events: none;
 }
 
 .calendar-board-card__controls{
@@ -98,6 +118,9 @@
     flex-wrap: wrap;
     min-width: 0;
     width: 100%;
+    position: relative;
+    z-index: 1;
+    overflow: visible;
 }
 
 .calendar-board-card__intro{
@@ -114,7 +137,8 @@
 
 .calendar-board-card__header p{
     margin: 0;
-    color: var(--color-info-dark);
+    color: rgba(205, 218, 236, 0.78);
+    font-weight: 600;
     line-height: 1.25;
     font-size: 0.84rem;
     min-height: 1.1rem;
@@ -145,8 +169,8 @@
 }
 
 .calendar-legend__group-title{
-    color: var(--color-info-dark);
-    font-size: 0.62rem;
+    color: rgba(205, 218, 236, 0.84);
+    font-size: 0.66rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -163,9 +187,9 @@
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.08);
     gap: 0.32rem;
-    color: rgba(232, 240, 252, 0.9);
-    font-size: 0.72rem;
-    font-weight: 600;
+    color: rgba(245, 249, 255, 0.94);
+    font-size: 0.74rem;
+    font-weight: 650;
     line-height: 1;
     white-space: nowrap;
 }

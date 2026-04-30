@@ -3,16 +3,20 @@
         <span class="application-card__label">Сотрудник</span>
         <strong class="application-card__value application-card__value--name">{{ change_request.employee.full_name }}</strong>
         <span class="application-card__muted">{{ change_request.employee.department.name|default:'Не указан' }}</span>
+        <a class="application-card__profile-link" href="{% url 'employee_profile' change_request.employee.id %}" data-app-link aria-label="Открыть профиль сотрудника {{ change_request.employee.full_name }}">
+            <span class="material-icons-sharp" aria-hidden="true">person</span>
+            <span>Профиль</span>
+        </a>
     </div>
 
     <div class="application-card__meta application-card__meta--transfer">
         <div class="application-card__cell">
             <span class="application-card__label">Старый период</span>
-            <span class="application-card__value">{{ change_request.old_period_label }}</span>
+            <span class="application-card__value application-card__value--period">{{ change_request.old_period_label }}</span>
         </div>
         <div class="application-card__cell">
             <span class="application-card__label">Новый период</span>
-            <span class="application-card__value">{{ change_request.new_period_label }}</span>
+            <span class="application-card__value application-card__value--period">{{ change_request.new_period_label }}</span>
         </div>
         <div class="application-card__cell">
             <span class="application-card__label">Риск</span>
@@ -44,7 +48,7 @@
         {% elif change_request.decision_locked %}
         <span class="application-availability application-availability--locked" title="Решение недоступно для вашей роли">
             <span class="material-icons-sharp" aria-hidden="true">lock</span>
-            <span>Не ваша задача</span>
+            <span>Недоступно</span>
         </span>
         {% else %}
         <span class="applications-transfer-muted">Нет действий</span>

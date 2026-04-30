@@ -3,10 +3,12 @@ from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
 from apps.leave.models import VacationRequest, VacationScheduleItem
-from apps.leave.services.metrics import sync_employee_vacation_metrics
+from apps.leave.services.metrics import is_vacation_metric_sync_enabled, sync_employee_vacation_metrics
 
 
 def _sync_metrics_on_commit(employee):
+    if not is_vacation_metric_sync_enabled():
+        return
     transaction.on_commit(lambda: sync_employee_vacation_metrics(employee))
 
 

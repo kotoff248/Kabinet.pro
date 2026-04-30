@@ -15,6 +15,18 @@
         const customSelects = context.customSelects;
         const signal = context.signal;
 
+        function syncFilterSelectLayerState() {
+            const boardCard = filtersForm ? filtersForm.closest(".calendar-board-card") : null;
+            if (!boardCard) {
+                return;
+            }
+
+            const hasOpenFilterSelect = Array.from(filtersForm.querySelectorAll("[data-filter-select]")).some(function (selectWrapper) {
+                return selectWrapper.classList.contains("is-open");
+            });
+            boardCard.classList.toggle("has-open-select", hasOpenFilterSelect);
+        }
+
         function submitFilters() {
             if (typeof dependencies.flushBoardScrollState === "function") {
                 dependencies.flushBoardScrollState();
@@ -73,6 +85,7 @@
                     trigger.setAttribute("aria-expanded", "false");
                 }
             });
+            syncFilterSelectLayerState();
         }
 
         function syncCustomSelect(selectWrapper) {
@@ -215,6 +228,7 @@
                     closeCustomSelects(selectWrapper);
                     selectWrapper.classList.toggle("is-open", willOpen);
                     trigger.setAttribute("aria-expanded", willOpen ? "true" : "false");
+                    syncFilterSelectLayerState();
                 }, { signal: signal });
 
                 selectWrapper.querySelectorAll("[data-select-option]").forEach(function (optionButton) {

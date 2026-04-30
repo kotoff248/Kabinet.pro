@@ -37,11 +37,13 @@ class ApplicationsBoardTests(LeaveTestCase):
         self.assertEqual(payload["vacations"][0]["employee_name"], self.employee.full_name)
         self.assertEqual(payload["vacations"][0]["employee_department"], self.employee.department.name)
         self.assertEqual(payload["vacations"][0]["detail_url"], reverse("vacation_detail", args=[request_obj.id]))
+        self.assertEqual(payload["vacations"][0]["profile_url"], reverse("employee_profile", args=[self.employee.id]))
         self.assertIn("period_label", payload["vacations"][0])
         self.assertIn("vacations_html", payload)
         self.assertIn("change_requests_html", payload)
         self.assertIn(f'data-vacation-id="{request_obj.id}"', payload["vacations_html"])
         self.assertIn(f'data-href="{reverse("vacation_detail", args=[request_obj.id])}"', payload["vacations_html"])
+        self.assertIn(f'href="{reverse("employee_profile", args=[self.employee.id])}"', payload["vacations_html"])
         self.assertIn('role="link"', payload["vacations_html"])
 
     def test_applications_search_filters_requests_and_transfers_by_employee_name(self):
@@ -97,6 +99,7 @@ class ApplicationsBoardTests(LeaveTestCase):
         self.assertEqual([item["id"] for item in payload["change_requests"]], [change_request.id])
         self.assertIn(f'data-vacation-id="{request_obj.id}"', payload["vacations_html"])
         self.assertIn(f'data-change-request-id="{change_request.id}"', payload["change_requests_html"])
+        self.assertIn(f'href="{reverse("employee_profile", args=[self.employee.id])}"', payload["change_requests_html"])
 
     def test_applications_search_respects_department_head_scope(self):
         VacationRequest.objects.create(
@@ -162,6 +165,7 @@ class ApplicationsBoardTests(LeaveTestCase):
         self.assertContains(response, "data-applications-request-scroll")
         self.assertContains(response, f'data-vacation-id="{request_obj.id}"')
         self.assertContains(response, f'data-change-request-id="{change_request.id}"')
+        self.assertContains(response, reverse("employee_profile", args=[self.employee.id]))
         self.assertContains(response, reverse("schedule_change_approve", args=[change_request.id]))
         self.assertContains(response, 'name="csrfmiddlewaretoken"')
         self.assertContains(response, 'class="employee-select__native"')
@@ -224,6 +228,7 @@ class ApplicationsBoardTests(LeaveTestCase):
         self.assertEqual([item["id"] for item in payload["vacations"]], [pending_request.id])
         self.assertEqual([item["id"] for item in payload["change_requests"]], [change_request.id])
         self.assertEqual(payload["change_requests"][0]["employee_department"], self.employee.department.name)
+        self.assertEqual(payload["change_requests"][0]["profile_url"], reverse("employee_profile", args=[self.employee.id]))
         self.assertIn("approve_url", payload["change_requests"][0])
         self.assertIn("reject_url", payload["change_requests"][0])
         self.assertIn(f'data-vacation-id="{pending_request.id}"', payload["vacations_html"])

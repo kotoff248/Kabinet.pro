@@ -73,6 +73,7 @@ def serialize_vacation_request_row(request_obj):
         "id": request_obj.id,
         "employee_name": request_obj.employee.full_name,
         "employee_department": request_obj.employee.department.name if request_obj.employee.department else "Не указан",
+        "profile_url": reverse("employee_profile", args=[request_obj.employee_id]),
         "detail_url": reverse("vacation_detail", args=[request_obj.id]),
         "period_label": format_period_label(request_obj.start_date, request_obj.end_date),
         "start_date_formatted": request_obj.start_date_formatted,

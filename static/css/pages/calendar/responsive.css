@@ -30,6 +30,10 @@
     .timeline-head--day{
         min-height: 2.25rem;
     }
+
+    .timeline-employee-card__profile-link > span:not(.material-icons-sharp){
+        display: none;
+    }
 }
 
 @media (max-width: 992px){

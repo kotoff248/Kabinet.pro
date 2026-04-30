@@ -1,6 +1,9 @@
-from django.urls import reverse
+from datetime import date
 
-from apps.leave.models import VacationRequest
+from django.urls import reverse
+from django.utils import timezone
+
+from apps.leave.models import VacationRequest, VacationSchedule, VacationScheduleItem
 
 from .base import EmployeeTestCase
 
@@ -73,6 +76,35 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertContains(response, 'data-modal-open="employee-delete-modal"')
         self.assertContains(response, 'id="employee-delete-modal"')
         self.assertContains(response, reverse("delete_employee", args=[self.employee.id]))
+
+    def test_employee_profile_shows_planned_vacations_with_calendar_link(self):
+        year = timezone.localdate().year
+        schedule = VacationSchedule.objects.create(
+            year=year,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(year, 10, 1),
+            end_date=date(year, 10, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employee_profile", args=[self.employee.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Запланированные отпуска")
+        self.assertContains(response, "Годовой график")
+        self.assertContains(response, "Открыть в графике")
+        self.assertContains(
+            response,
+            f'{reverse("calendar")}?view=month&amp;year={year}&amp;month=10&amp;employee={self.employee.id}',
+        )
 
     def test_enterprise_head_can_view_profile_without_edit_modal(self):
         self.client.force_login(self.enterprise_head.user)

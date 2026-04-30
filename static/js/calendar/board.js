@@ -292,8 +292,11 @@
             const yearHeaderGrid = boardShell
                 ? boardShell.querySelector("[data-calendar-grid-head] .year-grid--head")
                 : null;
-            const employeeHead = yearHeaderGrid
-                ? yearHeaderGrid.querySelector(".year-head--employee")
+            const headerGrid = boardShell
+                ? boardShell.querySelector("[data-calendar-grid-head] .year-grid--head, [data-calendar-grid-head] .timeline-grid--head")
+                : null;
+            const employeeHead = headerGrid
+                ? headerGrid.querySelector(".year-head--employee, .timeline-head--employee")
                 : null;
 
             if (!boardShell || !boardScroll) {
@@ -304,17 +307,19 @@
             boardShell.style.setProperty("--calendar-scrollbar-width", scrollbarWidth + "px");
             syncGridHeaderScroll();
 
-            if (window.matchMedia("(max-width: 900px)").matches || !yearHeaderGrid || !employeeHead) {
+            if (window.matchMedia("(max-width: 900px)").matches || !headerGrid || !employeeHead) {
                 boardShell.style.removeProperty("--calendar-row-height");
                 boardShell.style.removeProperty("--calendar-year-tile-size");
                 return;
             }
 
             const rootFontSize = parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
-            const gridStyles = window.getComputedStyle(yearHeaderGrid);
+            const gridStyles = window.getComputedStyle(headerGrid);
             const parsedColumnGap = parseFloat(gridStyles.columnGap || gridStyles.gap || "0");
-            const columnGap = Number.isFinite(parsedColumnGap) ? parsedColumnGap : 0;
-            const gridWidth = yearHeaderGrid.clientWidth;
+            const columnGap = yearHeaderGrid
+                ? (Number.isFinite(parsedColumnGap) ? parsedColumnGap : 0)
+                : getVirtualYearColumnGap(rootFontSize);
+            const gridWidth = headerGrid.clientWidth;
             const employeeWidth = employeeHead.getBoundingClientRect().width;
             const targetHeight = (gridWidth - employeeWidth - (12 * columnGap)) / 12;
 
@@ -329,6 +334,15 @@
 
             boardShell.style.setProperty("--calendar-row-height", yearTileSize + "px");
             boardShell.style.setProperty("--calendar-year-tile-size", yearTileSize + "px");
+        }
+
+        function getVirtualYearColumnGap(rootFontSize) {
+            if (window.matchMedia("(max-width: 1100px)").matches) {
+                return 0.18 * rootFontSize;
+            }
+
+            const viewportGap = window.innerWidth * 0.0032;
+            return Math.min(Math.max(0.16 * rootFontSize, viewportGap), 0.42 * rootFontSize);
         }
 
         function scheduleCalendarBoardMetricsSync() {

@@ -1,3 +1,6 @@
+from collections import Counter
+from urllib.parse import urlencode
+
 from django.db.models import Count, Q
 from django.urls import reverse
 from django.utils import timezone
@@ -12,7 +15,8 @@ from apps.accounts.services import (
     is_hr_employee,
 )
 from apps.employees.models import Departments, Employees
-from apps.leave.models import VacationRequest, VacationScheduleItem
+from apps.leave.models import DepartmentWorkload, VacationRequest, VacationScheduleChangeRequest, VacationScheduleItem
+from apps.leave.services.calendar import build_calendar_base_data
 from apps.leave.services.ledger import (
     get_employee_entitlement_rows,
     get_employee_list_leave_summaries,
@@ -80,6 +84,45 @@ def _get_employee_status_context(employee):
     }
 
 
+def _build_planned_vacations_context(employee, year=None):
+    today = timezone.localdate()
+    year = year or today.year
+    _, _, employee_entries = build_calendar_base_data(year, employee_ids=[employee.id])
+    entries = employee_entries.get(employee.id, [])
+    rows = []
+
+    for entry in entries:
+        calendar_query = urlencode({
+            "view": "month",
+            "year": entry["start_date"].year,
+            "month": entry["start_date"].month,
+            "employee": employee.id,
+        })
+        calendar_url = f'{reverse("calendar")}?{calendar_query}'
+        rows.append(
+            {
+                "period_label": entry["period_label"],
+                "source_label": entry["source_label"],
+                "vacation_type_label": entry["vacation_type_label"],
+                "status_label": entry["status_label"],
+                "status": entry["display_status"],
+                "days": entry["days"],
+                "calendar_url": calendar_url,
+                "detail_url": entry.get("detail_url", ""),
+                "detail_label": entry.get("detail_label", "Открыть заявку"),
+                "start_date": entry["start_date"],
+                "end_date": entry["end_date"],
+            }
+        )
+
+    upcoming = next((row for row in rows if row["end_date"] >= today), None)
+    return {
+        "year": year,
+        "entries": rows,
+        "upcoming": upcoming,
+    }
+
+
 def _get_visible_employees_queryset(current_employee):
     queryset = Employees.objects.select_related("department", "managed_department").filter(is_active_employee=True).exclude(
         role__in=Employees.SERVICE_ROLES
@@ -121,6 +164,7 @@ def _build_leave_profile_context(employee):
         "all_requests": get_employee_vacation_requests(employee),
         "leave_summary": leave_summary,
         "entitlement_rows": get_employee_entitlement_rows(employee),
+        "planned_vacations": _build_planned_vacations_context(employee),
         "total_balance": leave_summary["available"],
     }
     context.update(_get_employee_status_context(employee))
@@ -210,14 +254,83 @@ def build_departments_queryset(current_employee):
     return departments_qs
 
 
+def _get_department_workload_label(load_level):
+    labels = {
+        1: "Низкая",
+        2: "Спокойная",
+        3: "Средняя",
+        4: "Высокая",
+        5: "Критичная",
+    }
+    return labels.get(load_level, "Нет данных")
+
+
+def _decorate_departments_for_page(departments_qs):
+    departments = list(departments_qs)
+    department_ids = [department.id for department in departments]
+    if not department_ids:
+        return departments
+
+    today = timezone.localdate()
+    employees = list(
+        Employees.objects.filter(
+            department_id__in=department_ids,
+            is_active_employee=True,
+        )
+        .exclude(role__in=Employees.SERVICE_ROLES)
+        .values("id", "department_id")
+    )
+    employee_ids = [employee["id"] for employee in employees]
+    employee_department = {employee["id"]: employee["department_id"] for employee in employees}
+
+    current_vacation_employee_ids = _get_current_vacation_employee_ids(employee_ids, as_of_date=today)
+    current_vacation_counts = Counter(
+        employee_department[employee_id]
+        for employee_id in current_vacation_employee_ids
+        if employee_id in employee_department
+    )
+    pending_request_counts = Counter(
+        VacationRequest.objects.filter(
+            employee__department_id__in=department_ids,
+            status=VacationRequest.STATUS_PENDING,
+        ).values_list("employee__department_id", flat=True)
+    )
+    pending_change_counts = Counter(
+        VacationScheduleChangeRequest.objects.filter(
+            employee__department_id__in=department_ids,
+            status=VacationScheduleChangeRequest.STATUS_PENDING,
+        ).values_list("employee__department_id", flat=True)
+    )
+    workloads = {
+        workload.department_id: workload
+        for workload in DepartmentWorkload.objects.filter(
+            department_id__in=department_ids,
+            year=today.year,
+            month=today.month,
+        )
+    }
+
+    for department in departments:
+        workload = workloads.get(department.id)
+        workload_level = workload.load_level if workload else None
+        department.head_position_label = department.head.position if department.head and department.head.position else ""
+        department.current_vacation_count = current_vacation_counts[department.id]
+        department.pending_applications_count = pending_request_counts[department.id] + pending_change_counts[department.id]
+        department.workload_level = workload_level
+        department.workload_label = _get_department_workload_label(workload_level)
+
+    return departments
+
+
 def serialize_departments_queryset(departments_qs):
     return list(departments_qs.values("id", "name", "date_added"))
 
 
 def build_departments_page_context(departments_qs, department_create_form, department_modal_open, can_create_department):
+    departments = _decorate_departments_for_page(departments_qs)
     return {
-        "departments": departments_qs,
-        "departments_count": departments_qs.count(),
+        "departments": departments,
+        "departments_count": len(departments),
         "can_create_department": can_create_department,
         "department_create_form": department_create_form,
         "department_head_candidates": department_create_form.fields["head"].queryset,

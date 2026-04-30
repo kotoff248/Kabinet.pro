@@ -19,14 +19,16 @@
     background-color: var(--color-background-panel);
     padding: 1.5rem 1rem;
     border-radius: var(--ui-radius-panel);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
-    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    transition: var(--card-ignite-transition);
 }
 
 .analyse > div:hover{
-    transform: translateY(var(--panel-lift-y));
-    border-color: var(--panel-lift-border);
-    box-shadow: var(--panel-lift-shadow);
+    transform: translateY(var(--card-ignite-y));
+    background: var(--card-ignite-bg);
+    border-color: var(--card-ignite-border);
+    box-shadow: var(--card-ignite-shadow);
 }
 
 .analyse > div .status_analytics{
@@ -134,15 +136,17 @@
     gap: 10px;
     background-color: var(--color-background-panel);
     border-radius: var(--ui-radius-panel);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
-    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    transition: var(--card-ignite-transition);
     padding: 10px; /* Добавим padding чтобы график не перекрывался кнопками */
 }
 
 .analytics_graphics:hover{
-    transform: translateY(var(--panel-lift-y));
-    border-color: var(--panel-lift-border);
-    box-shadow: var(--panel-lift-shadow);
+    transform: translateY(var(--card-ignite-y));
+    background: var(--card-ignite-bg);
+    border-color: var(--card-ignite-border);
+    box-shadow: var(--card-ignite-shadow);
 }
 
 .analytics_graphics > div{

@@ -14,11 +14,12 @@ class DepartmentPageTests(EmployeeTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, self.engineering.name)
         self.assertContains(response, self.department_head.full_name)
-        self.assertContains(response, "Численность")
+        self.assertContains(response, "Сотрудников")
         self.assertContains(response, "1")
         self.assertNotContains(response, self.hr_department.name)
         self.assertNotContains(response, "<table", html=False)
         self.assertNotContains(response, 'data-modal-open="department-create-modal"')
+        self.assertContains(response, f'data-href="{reverse("employees")}?department={self.engineering.id}"')
 
     def test_hr_and_enterprise_head_can_view_all_departments(self):
         for actor in (self.hr_employee, self.enterprise_head):
@@ -28,6 +29,7 @@ class DepartmentPageTests(EmployeeTestCase):
             self.assertContains(response, self.engineering.name)
             self.assertContains(response, self.hr_department.name)
             self.assertContains(response, 'class="department-card"')
+            self.assertContains(response, f'data-href="{reverse("employees")}?department={self.engineering.id}"')
             self.assertNotContains(response, "<thead>", html=False)
 
     def test_only_hr_sees_department_create_controls(self):
