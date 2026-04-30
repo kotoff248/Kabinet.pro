@@ -4,8 +4,8 @@
 {% block title %}Кабинет.pro - Заявки{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260430-header-readable-copy">
-<link rel="stylesheet" href="{% static 'css/pages/applications.css' %}?v=20260430-app-copy-match-departments">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260430-dropdown-hidden-scrollbar">
+<link rel="stylesheet" href="{% static 'css/pages/applications.css' %}?v=20260430-application-profile-hover-soft">
 {% endblock %}
 
 {% block content %}
@@ -70,6 +70,6 @@
 
 {% block extra_scripts %}
 <script src="{% static 'js/employee-form.js' %}" defer></script>
-<script src="{% static 'js/profile-sections.js' %}?v=20260428-repeat-scroll-dom" defer></script>
-<script src="{% static 'js/applications-page.js' %}?v=20260428-repeat-scroll-final" defer></script>
+<script src="{% static 'js/profile-sections.js' %}?v=20260430-repeat-filter-memory" defer></script>
+<script src="{% static 'js/applications-page.js' %}?v=20260430-repeat-filter-first" defer></script>
 {% endblock %}

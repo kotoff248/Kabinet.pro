@@ -28,6 +28,7 @@
     left: var(--profile-mask-bleed-x);
     display: flex;
     flex-direction: column;
+    gap: var(--profile-section-gap);
     transform: translate3d(0, 0, 0);
     transition: transform 0.48s cubic-bezier(0.22, 1, 0.36, 1);
     will-change: transform;
@@ -58,13 +59,6 @@
     height: 100%;
 }
 
-.profile-page--sectioned.is-enhanced .profile-page__section--requests .profile-page__section-stack{
-    box-sizing: border-box;
-    min-height: calc(100% + var(--profile-section-gap));
-    height: calc(100% + var(--profile-section-gap));
-    padding-top: var(--profile-section-gap);
-}
-
 .profile-page--sectioned.is-enhanced .profile-page__section--overview .page-hero{
     flex-shrink: 0;
 }
@@ -79,6 +73,12 @@
     min-height: 0;
 }
 
+.profile-page--sectioned.is-enhanced .profile-page__section--schedule .profile-schedule{
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+}
+
 .profile-page--sectioned.is-enhanced .profile-page__section--requests .vacation-requests{
     flex: 1 1 auto;
     min-height: 0;
@@ -91,8 +91,16 @@
     overscroll-behavior: contain;
 }
 
+.profile-page--sectioned.is-enhanced[data-active-section="schedule"] .profile-page__viewport{
+    transform: translate3d(0, calc(-100% - var(--profile-section-gap)), 0);
+}
+
 .profile-page--sectioned.is-enhanced[data-active-section="requests"] .profile-page__viewport{
     transform: translate3d(0, calc(-100% - var(--profile-section-gap)), 0);
+}
+
+.profile-page--sectioned.is-enhanced.profile-page--has-schedule[data-active-section="requests"] .profile-page__viewport{
+    transform: translate3d(0, calc(-200% - var(--profile-section-gap) - var(--profile-section-gap)), 0);
 }
 
 @media (max-width: 992px){
@@ -154,6 +162,8 @@
         gap: var(--panel-gap);
     }
 
+    .profile-page--sectioned .profile-page__section--schedule .profile-page__section-stack,
+    .profile-page--sectioned.is-enhanced .profile-page__section--schedule .profile-page__section-stack,
     .profile-page--sectioned .profile-page__section--requests .profile-page__section-stack,
     .profile-page--sectioned.is-enhanced .profile-page__section--requests .profile-page__section-stack{
         padding-top: 0;
@@ -161,6 +171,8 @@
 
     .profile-page--sectioned .personal-info,
     .profile-page--sectioned.is-enhanced .profile-page__section--overview .personal-info,
+    .profile-page--sectioned .profile-schedule,
+    .profile-page--sectioned.is-enhanced .profile-page__section--schedule .profile-schedule,
     .profile-page--sectioned .vacation-requests,
     .profile-page--sectioned.is-enhanced .profile-page__section--requests .vacation-requests{
         flex: 0 1 auto;
@@ -177,6 +189,8 @@
     }
 
     .profile-page--sectioned .vacation-requests__list-shell,
+    .profile-page--sectioned .profile-schedule__list-shell,
+    .profile-page--sectioned.is-enhanced .profile-schedule__list-shell,
     .profile-page--sectioned.is-enhanced .vacation-requests__list-shell{
         flex: 0 1 auto;
         min-height: 0;
@@ -199,7 +213,9 @@
         overflow-y: visible;
     }
 
-    .profile-page--sectioned.is-enhanced[data-active-section="requests"] .profile-page__viewport{
+    .profile-page--sectioned.is-enhanced[data-active-section="schedule"] .profile-page__viewport,
+    .profile-page--sectioned.is-enhanced[data-active-section="requests"] .profile-page__viewport,
+    .profile-page--sectioned.is-enhanced.profile-page--has-schedule[data-active-section="requests"] .profile-page__viewport{
         transform: none;
     }
 }

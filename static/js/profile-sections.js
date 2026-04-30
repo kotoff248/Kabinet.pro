@@ -17,12 +17,23 @@ function initProfileSectionsPage() {
     const signal = controller.signal;
     window.__profileSectionsPageController = controller;
 
-    const requestsScroll = root.querySelector("[data-profile-requests-scroll]");
-    const overviewScrolls = Array.from(root.querySelectorAll("[data-profile-overview-scroll], [data-entitlement-scroll]"));
-    const requestScrolls = Array.from(root.querySelectorAll("[data-profile-requests-scroll]"));
     const viewport = root.querySelector("[data-profile-viewport]");
     const sections = Array.from(root.querySelectorAll("[data-profile-section]"));
+    const sectionNames = sections
+        .map(function (section) {
+            return section.dataset.profileSection;
+        })
+        .filter(Boolean);
+    const sectionScrolls = buildSectionScrollMap();
+    const requestsScroll = getSectionScrolls("requests")[0] || null;
     const mobileSectionsMedia = window.matchMedia("(max-width: 992px)");
+    const preserveRequestsScrollOnSectionSwitch = root.hasAttribute("data-applications-page");
+    const shouldUseGenericScrollMemory = !root.hasAttribute("data-applications-page");
+    const sectionStorageKey = "profile-sections:" + window.location.pathname;
+    const storedState = readSectionState();
+    let activeSection = getInitialActiveSection();
+    let ignoreNextWheelSection = "";
+    let hasRestoredStoredScroll = false;
 
     bindModeChange();
 
@@ -31,19 +42,11 @@ function initProfileSectionsPage() {
         return;
     }
 
-    const preserveRequestsScrollOnSectionSwitch = root.hasAttribute("data-applications-page");
-    const shouldUseGenericScrollMemory = !root.hasAttribute("data-applications-page");
-    const sectionStorageKey = "profile-sections:" + window.location.pathname;
-    const storedState = readSectionState();
-    let activeSection = getInitialActiveSection();
-    let ignoreNextRequestsWheel = false;
-    let hasRestoredStoredScroll = false;
-
     if (pageMain) {
         pageMain.classList.add("is-profile-sections");
     }
 
-    if (viewport && activeSection === "requests") {
+    if (viewport && activeSection !== sectionNames[0]) {
         viewport.style.transition = "none";
     }
 
@@ -65,6 +68,16 @@ function initProfileSectionsPage() {
                 mobileSectionsMedia.removeListener(handleModeChange);
             }, { once: true });
         }
+    }
+
+    function buildSectionScrollMap() {
+        return sectionNames.reduce(function (scrolls, sectionName) {
+            const selector = sectionName === "overview"
+                ? "[data-profile-overview-scroll], [data-entitlement-scroll]"
+                : "[data-profile-" + sectionName + "-scroll]";
+            scrolls[sectionName] = Array.from(root.querySelectorAll(selector));
+            return scrolls;
+        }, {});
     }
 
     function setupMobileSections() {
@@ -89,11 +102,12 @@ function initProfileSectionsPage() {
             }
 
             event.preventDefault();
+            if (requestFilterReset(event.detail.sectionKey)) {
+                return;
+            }
             scrollDocumentToTop();
-            scrollRootsToTop(overviewScrolls);
-            scrollRootsToTop(requestScrolls);
+            scrollAllSectionRootsToTop();
         }, { signal: signal });
-
     }
 
     function readSectionState() {
@@ -109,16 +123,25 @@ function initProfileSectionsPage() {
             activeSection: activeSection,
         };
 
-        if (
-            shouldUseGenericScrollMemory
-            && requestsScroll
-            && !hasRestoredStoredScroll
-            && storedState
-            && storedState.requestsTop !== undefined
-        ) {
-            state.requestsTop = Number(storedState.requestsTop) || 0;
-        } else if (shouldUseGenericScrollMemory && requestsScroll) {
-            state.requestsTop = requestsScroll.scrollTop;
+        if (shouldUseGenericScrollMemory) {
+            if (!hasRestoredStoredScroll && storedState) {
+                if (storedState.scrollTops) {
+                    state.scrollTops = storedState.scrollTops;
+                }
+                if (storedState.requestsTop !== undefined) {
+                    state.requestsTop = Number(storedState.requestsTop) || 0;
+                }
+            } else {
+                state.scrollTops = {};
+                Object.keys(sectionScrolls).forEach(function (sectionName) {
+                    state.scrollTops[sectionName] = getSectionScrolls(sectionName).map(function (scrollRoot) {
+                        return scrollRoot ? scrollRoot.scrollTop : 0;
+                    });
+                });
+                if (requestsScroll) {
+                    state.requestsTop = requestsScroll.scrollTop;
+                }
+            }
         }
 
         try {
@@ -128,28 +151,40 @@ function initProfileSectionsPage() {
     }
 
     function getInitialActiveSection() {
-        if (root.dataset.activeSection === "requests") {
-            return "requests";
+        if (sectionNames.indexOf(root.dataset.activeSection) !== -1) {
+            return root.dataset.activeSection;
         }
 
-        if (root.dataset.activeSection === "overview") {
-            return "overview";
+        if (storedState && sectionNames.indexOf(storedState.activeSection) !== -1) {
+            return storedState.activeSection;
         }
 
-        if (storedState && storedState.activeSection === "requests") {
-            return "requests";
-        }
-
-        return "overview";
+        return sectionNames[0] || "overview";
     }
 
     function restoreStoredScroll() {
-        if (!shouldUseGenericScrollMemory || !requestsScroll || !storedState) {
+        if (!shouldUseGenericScrollMemory || !storedState) {
             return;
         }
 
         requestAnimationFrame(function () {
-            requestsScroll.scrollTop = Number(storedState.requestsTop) || 0;
+            Object.keys(sectionScrolls).forEach(function (sectionName) {
+                getSectionScrolls(sectionName).forEach(function (scrollRoot, index) {
+                    if (!scrollRoot) {
+                        return;
+                    }
+
+                    const sectionTops = storedState.scrollTops && storedState.scrollTops[sectionName];
+                    let savedTop = Array.isArray(sectionTops) ? sectionTops[index] : undefined;
+                    if (savedTop === undefined && sectionName === "requests" && index === 0) {
+                        savedTop = storedState.requestsTop;
+                    }
+
+                    if (savedTop !== undefined) {
+                        scrollRoot.scrollTop = Number(savedTop) || 0;
+                    }
+                });
+            });
             hasRestoredStoredScroll = true;
             writeSectionState();
         });
@@ -167,6 +202,10 @@ function initProfileSectionsPage() {
 
     function activateSection(sectionName, options) {
         const nextOptions = options || {};
+        if (sectionNames.indexOf(sectionName) === -1) {
+            return;
+        }
+
         if (sectionName === activeSection && !nextOptions.force) {
             return;
         }
@@ -176,8 +215,25 @@ function initProfileSectionsPage() {
             requestsScroll.scrollTop = 0;
         }
 
-        ignoreNextRequestsWheel = sectionName === "requests" && Boolean(nextOptions.ignoreInitialScroll);
+        ignoreNextWheelSection = nextOptions.ignoreInitialScroll ? sectionName : "";
         syncSectionState();
+    }
+
+    function getSectionScrolls(sectionName) {
+        return sectionScrolls[sectionName] || [];
+    }
+
+    function getActiveSectionIndex() {
+        return Math.max(0, sectionNames.indexOf(activeSection));
+    }
+
+    function getAdjacentSection(direction) {
+        const currentIndex = getActiveSectionIndex();
+        const nextIndex = currentIndex + direction;
+        if (nextIndex < 0 || nextIndex >= sectionNames.length) {
+            return "";
+        }
+        return sectionNames[nextIndex];
     }
 
     function scrollRootsToTop(scrollRoots) {
@@ -195,6 +251,12 @@ function initProfileSectionsPage() {
         });
     }
 
+    function scrollAllSectionRootsToTop() {
+        Object.keys(sectionScrolls).forEach(function (sectionName) {
+            scrollRootsToTop(sectionScrolls[sectionName]);
+        });
+    }
+
     function scrollDocumentToTop() {
         const scrollingElement = document.scrollingElement || document.documentElement;
         if (scrollingElement && typeof scrollingElement.scrollTo === "function") {
@@ -203,6 +265,16 @@ function initProfileSectionsPage() {
         }
 
         window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+    }
+
+    function requestFilterReset(sectionKey) {
+        const resetFiltersEvent = new CustomEvent("app:section-filters-reset", {
+            cancelable: true,
+            detail: {
+                sectionKey: sectionKey,
+            },
+        });
+        return !document.dispatchEvent(resetFiltersEvent);
     }
 
     function shouldHandleSidebarRepeat(event) {
@@ -223,12 +295,20 @@ function initProfileSectionsPage() {
         );
     }
 
-    function isRequestsScrollAtTop() {
-        return !requestsScroll || requestsScroll.scrollTop <= 1;
-    }
-
     function getEventElement(event) {
         return event.target instanceof Element ? event.target : null;
+    }
+
+    function isVerticalWheel(event) {
+        return Math.abs(event.deltaY) > Math.abs(event.deltaX || 0);
+    }
+
+    function hasVerticalOverflow(element) {
+        if (!element) {
+            return false;
+        }
+
+        return element.scrollHeight - element.clientHeight > 1;
     }
 
     function canScrollElementVertically(element, deltaY, deltaX) {
@@ -252,31 +332,30 @@ function initProfileSectionsPage() {
         return false;
     }
 
-    function findScrollableElement(event, scrollRoots) {
+    function findContainingScrollRoot(event, scrollRoots) {
         const target = getEventElement(event);
         if (!target) {
             return null;
         }
 
-        const scrollRoot = scrollRoots.find(function (candidate) {
+        return scrollRoots.find(function (candidate) {
             return candidate.contains(target);
-        });
-        if (!scrollRoot) {
-            return null;
-        }
-
-        return canScrollElementVertically(scrollRoot, event.deltaY, event.deltaX) ? scrollRoot : null;
+        }) || null;
     }
 
-    function eventStartedInside(event, scrollRoots) {
-        const target = getEventElement(event);
-        if (!target) {
+    function keepWheelInsideElement(element, event) {
+        if (!element || !isVerticalWheel(event)) {
             return false;
         }
 
-        return scrollRoots.some(function (candidate) {
-            return candidate.contains(target);
-        });
+        if (
+            !hasVerticalOverflow(element)
+            || !canScrollElementVertically(element, event.deltaY, event.deltaX)
+        ) {
+            event.preventDefault();
+        }
+
+        return true;
     }
 
     function shouldLeaveWheelAlone(event) {
@@ -285,64 +364,64 @@ function initProfileSectionsPage() {
             return false;
         }
 
-        const floatingMenu = target.closest(".employee-select__menu--floating, [data-employee-select-menu]");
-        if (floatingMenu && canScrollElementVertically(floatingMenu, event.deltaY, event.deltaX)) {
-            return true;
-        }
-
-        return false;
+        const dropdownMenu = target.closest(
+            ".employee-select__menu--floating, [data-employee-select-menu], " +
+            "[data-profile-schedule-year-menu], [data-select-menu], .calendar-select__menu"
+        );
+        return keepWheelInsideElement(dropdownMenu, event);
     }
 
     document.addEventListener("wheel", function (event) {
+        const activeScrolls = getSectionScrolls(activeSection);
+        const nextSection = getAdjacentSection(1);
+        const previousSection = getAdjacentSection(-1);
+
         if (shouldLeaveWheelAlone(event)) {
             return;
         }
 
-        if (activeSection === "overview") {
-            if (findScrollableElement(event, overviewScrolls)) {
-                return;
-            }
-
-            if (event.deltaY > 12) {
-                event.preventDefault();
-                activateSection("requests", {
-                    resetScroll: !preserveRequestsScrollOnSectionSwitch,
-                    ignoreInitialScroll: true,
-                });
-            }
-            return;
-        }
-
-        if (activeSection !== "requests") {
-            return;
-        }
-
-        if (ignoreNextRequestsWheel) {
+        if (ignoreNextWheelSection === activeSection) {
             if (event.deltaY > 0) {
                 event.preventDefault();
-                ignoreNextRequestsWheel = false;
+                ignoreNextWheelSection = "";
                 return;
             }
-            ignoreNextRequestsWheel = false;
+            ignoreNextWheelSection = "";
         }
 
-        if (findScrollableElement(event, requestScrolls)) {
+        const activeScrollRoot = findContainingScrollRoot(event, activeScrolls);
+        if (activeScrollRoot) {
+            keepWheelInsideElement(activeScrollRoot, event);
             return;
         }
 
-        if (
-            event.deltaY < -12
-            && (!eventStartedInside(event, requestScrolls) || isRequestsScrollAtTop())
-        ) {
+        if (event.deltaY > 12 && nextSection) {
             event.preventDefault();
-            activateSection("overview");
+            activateSection(nextSection, {
+                resetScroll: nextSection === "requests" && !preserveRequestsScrollOnSectionSwitch,
+                ignoreInitialScroll: true,
+            });
+            return;
+        }
+
+        if (event.deltaY < -12 && previousSection) {
+            event.preventDefault();
+            activateSection(previousSection);
         }
     }, { passive: false, signal: signal });
 
-    if (shouldUseGenericScrollMemory && requestsScroll) {
-        requestsScroll.addEventListener("scroll", function () {
-            writeSectionState();
-        }, { passive: true, signal: signal });
+    if (shouldUseGenericScrollMemory) {
+        Object.keys(sectionScrolls).forEach(function (sectionName) {
+            getSectionScrolls(sectionName).forEach(function (scrollRoot) {
+                if (!scrollRoot) {
+                    return;
+                }
+
+                scrollRoot.addEventListener("scroll", function () {
+                    writeSectionState();
+                }, { passive: true, signal: signal });
+            });
+        });
     }
 
     document.addEventListener("app:section-sidebar-repeat", function (event) {
@@ -351,9 +430,12 @@ function initProfileSectionsPage() {
         }
 
         event.preventDefault();
-        activateSection("overview", { force: true });
-        scrollRootsToTop(overviewScrolls);
-        scrollRootsToTop(requestScrolls);
+        if (requestFilterReset(event.detail.sectionKey)) {
+            return;
+        }
+        activateSection(sectionNames[0] || "overview", { force: true });
+        scrollDocumentToTop();
+        scrollAllSectionRootsToTop();
     }, { signal: signal });
 
     syncSectionState();

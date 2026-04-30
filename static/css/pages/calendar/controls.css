@@ -450,6 +450,17 @@
     overflow: auto;
 }
 
+.calendar-select__menu{
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.calendar-select__menu::-webkit-scrollbar{
+    display: none;
+    width: 0;
+    height: 0;
+}
+
 .calendar-select.is-open .calendar-select__menu{
     opacity: 1;
     transform: translateY(0) scale(1);

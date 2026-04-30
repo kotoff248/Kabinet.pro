@@ -3,18 +3,13 @@
         {% for request in requests %}
         <article class="vacation-request-card is-clickable" data-href="{% url 'vacation_detail' request.id %}" tabindex="0" role="link">
             <div class="vacation-request-card__cell">
-                <span class="vacation-request-card__label">Дата начала</span>
-                <strong class="vacation-request-card__value">{{ request.start_date|date:"j E Y" }}</strong>
+                <span class="vacation-request-card__label">Период</span>
+                <strong class="vacation-request-card__value">{{ request.period_label }}</strong>
             </div>
 
             <div class="vacation-request-card__cell">
-                <span class="vacation-request-card__label">Дата окончания</span>
-                <strong class="vacation-request-card__value">{{ request.end_date|date:"j E Y" }}</strong>
-            </div>
-
-            <div class="vacation-request-card__cell">
-                <span class="vacation-request-card__label">Тип отпуска</span>
-                <strong class="vacation-request-card__value">{{ request.get_vacation_type_display }}</strong>
+                <span class="vacation-request-card__label">Тип</span>
+                <strong class="vacation-request-card__value">{{ request.vacation_type_display_label }}</strong>
             </div>
 
             <div class="vacation-request-card__cell vacation-request-card__cell--status">

@@ -1,0 +1,34 @@
+{% if entitlement_rows %}
+<div class="entitlement-ledger entitlement-ledger--modal" aria-label="Расшифровка баланса по рабочим годам">
+    <div class="entitlement-ledger__table-shell" data-entitlement-scroll tabindex="0">
+        <div class="entitlement-ledger__table" role="table" aria-label="Рабочие годы и остатки отпуска">
+            <div class="entitlement-ledger__row entitlement-ledger__row--head" role="row">
+                <span role="columnheader">Рабочий год</span>
+                <span role="columnheader">Право</span>
+                <span role="columnheader">Использовано</span>
+                <span role="columnheader">В резерве</span>
+                <span role="columnheader">Остаток</span>
+                <span role="columnheader">Использовать до</span>
+                <span role="columnheader">Статус</span>
+            </div>
+            {% for row in entitlement_rows %}
+            <div class="entitlement-ledger__row" role="row">
+                <span role="cell">{{ row.period_label }}</span>
+                <span role="cell">{{ row.entitled_days|floatformat:"-2" }} д.</span>
+                <span role="cell">{{ row.used_days|floatformat:"-2" }} д.</span>
+                <span role="cell">{{ row.reserved_days|floatformat:"-2" }} д.</span>
+                <span role="cell">{{ row.remaining_days|floatformat:"-2" }} д.</span>
+                <span role="cell">{{ row.must_use_by|date:"j E Y" }}</span>
+                <span role="cell">
+                    <span class="entitlement-ledger__status entitlement-ledger__status--{{ row.status_key }}">
+                        {{ row.status_label }}
+                    </span>
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% else %}
+<p class="table-empty">Расшифровка баланса пока недоступна.</p>
+{% endif %}

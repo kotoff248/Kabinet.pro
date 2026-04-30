@@ -72,6 +72,7 @@ document.addEventListener("DOMContentLoaded", function () {
     ];
     const SESSION_MEMORY_PREFIXES = [
         "profile-sections:",
+        "profile-schedule-filters:",
     ];
 
     const navigationState = {
@@ -79,6 +80,8 @@ document.addEventListener("DOMContentLoaded", function () {
         targetHref: null,
         pendingPopstateHref: null,
     };
+    let sidebarIndicatorFrame = 0;
+    let sidebarIndicatorSettledTimer = 0;
 
     function assetMatches(url, matchers) {
         return matchers.some(function (matcher) {
@@ -298,7 +301,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         scrollToTop(document.scrollingElement || document.documentElement, false);
-        root.querySelectorAll("[data-profile-overview-scroll], [data-profile-requests-scroll], [data-entitlement-scroll]").forEach(function (scrollRoot) {
+        root.querySelectorAll("[data-profile-overview-scroll], [data-profile-schedule-scroll], [data-profile-requests-scroll], [data-entitlement-scroll]").forEach(function (scrollRoot) {
             scrollToTop(scrollRoot, false);
         });
         return true;
@@ -366,7 +369,6 @@ document.addEventListener("DOMContentLoaded", function () {
         event.preventDefault();
         clearSectionMemory(sectionKey);
         clearSectionListMemory(sectionKey);
-        const wasHandledLocally = handleLocalSectionRepeat(sectionKey);
 
         const defaultHref = getSectionListHref(sectionKey);
         const resetEvent = new CustomEvent("app:section-sidebar-repeat", {
@@ -379,7 +381,12 @@ document.addEventListener("DOMContentLoaded", function () {
         const wasHandled = !document.dispatchEvent(resetEvent);
         syncSidebarRememberedHrefs(nav);
 
-        if (wasHandled || wasHandledLocally) {
+        if (wasHandled) {
+            return true;
+        }
+
+        const wasHandledLocally = handleLocalSectionRepeat(sectionKey);
+        if (wasHandledLocally) {
             return true;
         }
 
@@ -773,9 +780,23 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function scheduleSidebarIndicatorUpdate() {
-        window.requestAnimationFrame(function () {
+        if (sidebarIndicatorFrame) {
+            window.cancelAnimationFrame(sidebarIndicatorFrame);
+        }
+
+        sidebarIndicatorFrame = window.requestAnimationFrame(function () {
+            sidebarIndicatorFrame = 0;
             updateSidebarIndicator(document.querySelector("[data-sidebar-nav]"));
+            window.requestAnimationFrame(function () {
+                updateSidebarIndicator(document.querySelector("[data-sidebar-nav]"));
+            });
         });
+
+        window.clearTimeout(sidebarIndicatorSettledTimer);
+        sidebarIndicatorSettledTimer = window.setTimeout(function () {
+            sidebarIndicatorSettledTimer = 0;
+            updateSidebarIndicator(document.querySelector("[data-sidebar-nav]"));
+        }, 420);
     }
 
     async function navigateWithFetch(targetUrl, pushState) {
@@ -926,6 +947,26 @@ document.addEventListener("DOMContentLoaded", function () {
         }, { signal: signal });
 
         window.addEventListener("resize", scheduleSidebarIndicatorUpdate, { signal: signal });
+
+        nav.addEventListener("transitionend", function (event) {
+            const target = event.target instanceof Element ? event.target : null;
+            if (!target || target.closest(".sidebar__active-indicator")) {
+                return;
+            }
+
+            scheduleSidebarIndicatorUpdate();
+        }, { signal: signal });
+
+        if ("ResizeObserver" in window) {
+            const sidebarResizeObserver = new ResizeObserver(scheduleSidebarIndicatorUpdate);
+            sidebarResizeObserver.observe(nav);
+            links.forEach(function (link) {
+                sidebarResizeObserver.observe(link);
+            });
+            signal.addEventListener("abort", function () {
+                sidebarResizeObserver.disconnect();
+            }, { once: true });
+        }
 
         window.addEventListener("popstate", function () {
             const url = new URL(window.location.href);

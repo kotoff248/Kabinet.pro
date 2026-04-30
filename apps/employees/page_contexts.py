@@ -17,7 +17,7 @@ from apps.accounts.services import (
 from apps.employees.models import Departments, Employees
 from apps.employees.role_presentation import get_employee_role_card_meta
 from apps.leave.models import DepartmentWorkload, VacationRequest, VacationScheduleChangeRequest, VacationScheduleItem
-from apps.leave.services.calendar import build_calendar_base_data
+from apps.leave.services.dates import format_period_label, get_requested_days
 from apps.leave.services.ledger import (
     get_employee_entitlement_rows,
     get_employee_list_leave_summaries,
@@ -25,10 +25,26 @@ from apps.leave.services.ledger import (
 )
 from apps.leave.services.querysets import exclude_converted_paid_requests
 from apps.leave.services.requests import get_employee_vacation_requests
+from apps.leave.services.schedule_changes import enrich_schedule_change_request
 
 
 def _format_days(value):
     return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def _format_vacation_count_label(value):
+    value = int(value)
+    last_two_digits = value % 100
+    last_digit = value % 10
+    if 11 <= last_two_digits <= 14:
+        word = "отпусков"
+    elif last_digit == 1:
+        word = "отпуск"
+    elif 2 <= last_digit <= 4:
+        word = "отпуска"
+    else:
+        word = "отпусков"
+    return f"{value} {word}"
 
 
 def _format_short_date(value):
@@ -175,42 +191,235 @@ def _get_employee_status_context(employee):
     }
 
 
+def _get_period_years(start_date, end_date):
+    return list(range(start_date.year, end_date.year + 1))
+
+
+def _schedule_item_source_label(item):
+    if item.source == VacationScheduleItem.SOURCE_MANUAL:
+        return "Дополнение к графику"
+    if item.source == VacationScheduleItem.SOURCE_TRANSFER:
+        return "Перенос"
+    return "Годовой график"
+
+
+def _schedule_item_status_label(item):
+    if item.status == VacationScheduleItem.STATUS_APPROVED:
+        return "График утвержден"
+    return "Запланировано"
+
+
+def _vacation_stage_meta(start_date, end_date, today=None):
+    today = today or timezone.localdate()
+    if end_date < today:
+        return {
+            "stage": "past",
+            "stage_label": "Прошел",
+            "stage_icon": "task_alt",
+        }
+    if start_date <= today <= end_date:
+        return {
+            "stage": "current",
+            "stage_label": "Идет сейчас",
+            "stage_icon": "beach_access",
+        }
+    return {
+        "stage": "upcoming",
+        "stage_label": "Предстоит",
+        "stage_icon": "event",
+    }
+
+
+def _serialize_profile_schedule_item(item, today=None):
+    period_years = _get_period_years(item.start_date, item.end_date)
+    calendar_query = urlencode({
+        "view": "month",
+        "year": item.start_date.year,
+        "month": item.start_date.month,
+        "employee": item.employee_id,
+    })
+    stage_meta = _vacation_stage_meta(item.start_date, item.end_date, today=today)
+    return {
+        "id": f"schedule-{item.id}",
+        "period_label": format_period_label(item.start_date, item.end_date),
+        "source_label": _schedule_item_source_label(item),
+        "source_kind": "schedule",
+        "vacation_type": item.vacation_type,
+        "vacation_type_label": item.get_vacation_type_display(),
+        "status": f"schedule-{item.status}",
+        "status_label": _schedule_item_status_label(item),
+        "stage": stage_meta["stage"],
+        "stage_label": stage_meta["stage_label"],
+        "stage_icon": stage_meta["stage_icon"],
+        "days": get_requested_days(item.start_date, item.end_date),
+        "calendar_url": f'{reverse("calendar")}?{calendar_query}',
+        "detail_url": reverse("vacation_detail", args=[item.created_from_vacation_request_id])
+        if item.created_from_vacation_request_id
+        else "",
+        "start_date": item.start_date,
+        "end_date": item.end_date,
+        "years": period_years,
+        "years_attr": " ".join(str(year) for year in period_years),
+        "sort_key": item.start_date.toordinal(),
+    }
+
+
+def _serialize_profile_approved_request(request_obj, today=None):
+    period_years = _get_period_years(request_obj.start_date, request_obj.end_date)
+    calendar_query = urlencode({
+        "view": "month",
+        "year": request_obj.start_date.year,
+        "month": request_obj.start_date.month,
+        "employee": request_obj.employee_id,
+    })
+    stage_meta = _vacation_stage_meta(request_obj.start_date, request_obj.end_date, today=today)
+    return {
+        "id": f"request-{request_obj.id}",
+        "period_label": format_period_label(request_obj.start_date, request_obj.end_date),
+        "source_label": "Одобренная заявка",
+        "source_kind": "request",
+        "vacation_type": request_obj.vacation_type,
+        "vacation_type_label": request_obj.get_vacation_type_display(),
+        "status": "request-approved",
+        "status_label": "Одобрено",
+        "stage": stage_meta["stage"],
+        "stage_label": stage_meta["stage_label"],
+        "stage_icon": stage_meta["stage_icon"],
+        "days": get_requested_days(request_obj.start_date, request_obj.end_date),
+        "calendar_url": f'{reverse("calendar")}?{calendar_query}',
+        "detail_url": reverse("vacation_detail", args=[request_obj.id]),
+        "start_date": request_obj.start_date,
+        "end_date": request_obj.end_date,
+        "years": period_years,
+        "years_attr": " ".join(str(year) for year in period_years),
+        "sort_key": request_obj.start_date.toordinal(),
+    }
+
+
 def _build_planned_vacations_context(employee, year=None):
     today = timezone.localdate()
     year = year or today.year
-    _, _, employee_entries = build_calendar_base_data(year, employee_ids=[employee.id])
-    entries = employee_entries.get(employee.id, [])
-    rows = []
+    schedule_items = VacationScheduleItem.objects.select_related(
+        "schedule",
+        "created_from_vacation_request",
+    ).filter(
+        employee=employee,
+        status__in=VacationScheduleItem.ACTIVE_STATUSES,
+    )
+    request_qs = VacationRequest.objects.filter(
+        employee=employee,
+        status=VacationRequest.STATUS_APPROVED,
+    )
+    request_qs = exclude_converted_paid_requests(request_qs, employee_ids=[employee.id])
 
-    for entry in entries:
-        calendar_query = urlencode({
-            "view": "month",
-            "year": entry["start_date"].year,
-            "month": entry["start_date"].month,
-            "employee": employee.id,
-        })
-        calendar_url = f'{reverse("calendar")}?{calendar_query}'
-        rows.append(
-            {
-                "period_label": entry["period_label"],
-                "source_label": entry["source_label"],
-                "vacation_type_label": entry["vacation_type_label"],
-                "status_label": entry["status_label"],
-                "status": entry["display_status"],
-                "days": entry["days"],
-                "calendar_url": calendar_url,
-                "detail_url": entry.get("detail_url", ""),
-                "detail_label": entry.get("detail_label", "Открыть заявку"),
-                "start_date": entry["start_date"],
-                "end_date": entry["end_date"],
-            }
+    rows = [
+        _serialize_profile_schedule_item(item, today=today)
+        for item in schedule_items
+    ]
+    rows.extend(
+        _serialize_profile_approved_request(request_obj, today=today)
+        for request_obj in request_qs
+    )
+    rows.sort(
+        key=lambda row: (
+            row["start_date"],
+            row["end_date"],
+            row["id"],
+        ),
+        reverse=True,
+    )
+
+    available_years = {
+        row_year
+        for row in rows
+        for row_year in row["years"]
+    }
+    available_years.add(year)
+
+    initial_entries = [
+        row
+        for row in rows
+        if year in row["years"]
+    ]
+    upcoming_candidates = [row for row in rows if row["end_date"] >= today]
+    upcoming = (
+        min(
+            upcoming_candidates,
+            key=lambda row: (
+                0 if row["start_date"] <= today <= row["end_date"] else 1,
+                row["start_date"],
+                row["end_date"],
+            ),
         )
-
-    upcoming = next((row for row in rows if row["end_date"] >= today), None)
+        if upcoming_candidates
+        else None
+    )
     return {
         "year": year,
         "entries": rows,
+        "initial_entries": initial_entries,
+        "initial_count": len(initial_entries),
+        "available_years": sorted(available_years, reverse=True),
         "upcoming": upcoming,
+    }
+
+
+def _get_employee_schedule_change_rows(employee):
+    change_requests = VacationScheduleChangeRequest.objects.select_related(
+        "employee",
+        "employee__department",
+        "schedule_item",
+        "schedule_item__schedule",
+        "requested_by",
+        "reviewed_by",
+    ).filter(employee=employee).order_by("-created_at")
+    rows = []
+    for change_request in change_requests:
+        row = enrich_schedule_change_request(change_request)
+        period_years = sorted(
+            set(_get_period_years(row.old_start_date, row.old_end_date))
+            | set(_get_period_years(row.new_start_date, row.new_end_date))
+        )
+        row.years = period_years
+        row.years_attr = " ".join(str(year) for year in period_years)
+        rows.append(row)
+    rows.sort(
+        key=lambda row: (
+            row.new_start_date,
+            row.old_start_date,
+            row.id,
+        ),
+        reverse=True,
+    )
+    return rows
+
+
+def _build_profile_summary_context(employee, leave_summary, planned_vacations):
+    vacation_display = _collect_employee_vacation_display([employee.id]).get(
+        employee.id,
+        _empty_vacation_display(),
+    )
+    role_meta = get_employee_role_card_meta(employee)
+    planned_days = sum((entry["days"] for entry in planned_vacations["initial_entries"]), 0)
+    planned_vacation_count = len(planned_vacations["initial_entries"])
+    pending_requests_count = VacationRequest.objects.filter(
+        employee=employee,
+        status=VacationRequest.STATUS_PENDING,
+    ).count()
+    pending_change_requests_count = VacationScheduleChangeRequest.objects.filter(
+        employee=employee,
+        status=VacationScheduleChangeRequest.STATUS_PENDING,
+    ).count()
+    return {
+        "role_icon": role_meta["icon"],
+        "role_icon_type": role_meta["icon_type"],
+        "role_label": role_meta["label"],
+        "role_variant": role_meta["variant"],
+        "upcoming_vacation_label": vacation_display["upcoming_vacation_label"],
+        "planned_vacation_days": planned_days,
+        "planned_vacation_count": planned_vacation_count,
+        "planned_vacation_count_label": _format_vacation_count_label(planned_vacation_count),
+        "pending_requests_count": pending_requests_count + pending_change_requests_count,
     }
 
 
@@ -250,12 +459,20 @@ def _filter_employees_by_name(queryset, search_query):
 
 def _build_leave_profile_context(employee):
     leave_summary = get_employee_leave_summary(employee)
+    planned_vacations = _build_planned_vacations_context(employee)
+    schedule_change_requests = _get_employee_schedule_change_rows(employee)
+    available_years = set(planned_vacations["available_years"])
+    for change_request in schedule_change_requests:
+        available_years.update(change_request.years)
+    planned_vacations["available_years"] = sorted(available_years, reverse=True)
     context = {
         "employee": employee,
         "all_requests": get_employee_vacation_requests(employee),
         "leave_summary": leave_summary,
         "entitlement_rows": get_employee_entitlement_rows(employee),
-        "planned_vacations": _build_planned_vacations_context(employee),
+        "planned_vacations": planned_vacations,
+        "schedule_change_requests": schedule_change_requests,
+        "profile_summary": _build_profile_summary_context(employee, leave_summary, planned_vacations),
         "total_balance": leave_summary["available"],
     }
     context.update(_get_employee_status_context(employee))

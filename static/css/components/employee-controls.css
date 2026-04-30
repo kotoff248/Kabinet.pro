@@ -208,6 +208,19 @@
     transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
 }
 
+.employee-select__menu,
+.employee-select__menu--floating {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.employee-select__menu::-webkit-scrollbar,
+.employee-select__menu--floating::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
 .employee-select.is-open .employee-select__menu {
     opacity: 1;
     visibility: visible;

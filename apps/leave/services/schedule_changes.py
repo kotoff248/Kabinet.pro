@@ -9,6 +9,10 @@ from apps.leave.models import VacationScheduleChangeRequest, VacationScheduleIte
 
 from .constants import REQUEST_STATUS_UI
 from .dates import format_period_label
+from .employee_presentation import (
+    enrich_application_employee_presentation,
+    serialize_application_employee_presentation,
+)
 from .notifications import notify_schedule_change_created, notify_schedule_change_reviewed
 from .risk import calculate_schedule_change_risk
 from .validation import validate_schedule_change_request
@@ -39,6 +43,7 @@ def enrich_schedule_change_request(change_request):
     change_request.old_period_label = format_period_label(change_request.old_start_date, change_request.old_end_date)
     change_request.new_period_label = format_period_label(change_request.new_start_date, change_request.new_end_date)
     change_request.created_at_formatted = date_format(change_request.created_at, "j E Y")
+    enrich_application_employee_presentation(change_request)
     return change_request
 
 def serialize_schedule_change_request_row(change_request):
@@ -60,7 +65,7 @@ def serialize_schedule_change_request_row(change_request):
         "decision_locked": getattr(change_request, "decision_locked", False),
         "approve_url": reverse("schedule_change_approve", args=[change_request.id]),
         "reject_url": reverse("schedule_change_reject", args=[change_request.id]),
-    }
+    } | serialize_application_employee_presentation(change_request)
 
 @transaction.atomic
 def create_schedule_change_request(schedule_item_id, requested_by, new_start_date, new_end_date, reason=""):

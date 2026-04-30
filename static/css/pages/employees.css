@@ -140,6 +140,7 @@
 .staff_table {
     overflow: auto;
     scrollbar-gutter: stable both-edges;
+    overscroll-behavior: contain;
     border-radius: var(--ui-radius-panel-inner);
     flex: 1 1 auto;
     min-height: 0;
@@ -150,6 +151,7 @@
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-gutter: stable both-edges;
+    overscroll-behavior: contain;
     border-radius: var(--ui-radius-panel-inner);
     flex: 1 1 auto;
     min-height: 0;
@@ -353,6 +355,7 @@
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-gutter: stable both-edges;
+    overscroll-behavior: contain;
     border-radius: var(--ui-radius-panel-inner);
     flex: 1 1 auto;
     min-height: 0;

@@ -20,7 +20,7 @@ function clearKabinetSessionMemoryAfterLogout() {
         "calendar:last-url",
         "calendar:board-scroll-state",
     ];
-    const prefixes = ["profile-sections:"];
+    const prefixes = ["profile-sections:", "profile-schedule-filters:"];
 
     try {
         exactKeys.forEach(function (key) {

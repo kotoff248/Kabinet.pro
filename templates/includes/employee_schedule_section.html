@@ -1,0 +1,152 @@
+<section class="profile-schedule" data-profile-schedule data-profile-schedule-current-year="{{ planned_vacations.year }}">
+    <div class="section-heading profile-schedule__heading">
+        <div class="profile-schedule__copy">
+            <span class="profile-schedule__eyebrow">График</span>
+            <h2>Отпуска и график</h2>
+            <p>Подтверждённые отпуска, другие отсутствия и переносы по выбранному периоду.</p>
+        </div>
+        <div class="profile-schedule__summary" aria-label="Количество записей в графике">
+            <span class="profile-schedule__summary-label">В графике</span>
+            <span class="profile-schedule__counter" data-profile-schedule-counter>{{ planned_vacations.initial_count }}</span>
+        </div>
+    </div>
+
+    <div class="profile-schedule__filters" aria-label="Фильтры отпусков">
+        <div class="profile-schedule-year-filter" data-profile-schedule-year-controls aria-label="Год отображения отпусков">
+            <div class="profile-schedule-calendar-filter__control">
+                <button type="button" class="profile-schedule-calendar-filter__nav" data-profile-schedule-year-step="-1" aria-label="Предыдущий год">
+                    <span class="material-icons-sharp" aria-hidden="true">chevron_left</span>
+                </button>
+                <div class="profile-schedule-calendar-select" data-profile-schedule-year-select>
+                    <select name="profile_schedule_year_{{ employee.id }}" class="profile-schedule-calendar-select__native" data-profile-schedule-year>
+                        <option value="all">Все</option>
+                        {% for year_value in planned_vacations.available_years %}
+                        <option value="{{ year_value }}" {% if year_value == planned_vacations.year %}selected{% endif %}>{{ year_value }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="button" class="profile-schedule-calendar-select__trigger" data-profile-schedule-year-trigger aria-haspopup="listbox" aria-expanded="false">
+                        <span class="profile-schedule-calendar-select__value" data-profile-schedule-year-value>{{ planned_vacations.year }}</span>
+                        <span class="material-icons-sharp" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="profile-schedule-calendar-select__menu" data-profile-schedule-year-menu role="listbox">
+                        <button type="button" class="profile-schedule-calendar-select__option" data-profile-schedule-year-option data-value="all" role="option" aria-selected="false">
+                            Все
+                        </button>
+                        {% for year_value in planned_vacations.available_years %}
+                        <button type="button" class="profile-schedule-calendar-select__option {% if year_value == planned_vacations.year %}is-selected{% endif %}" data-profile-schedule-year-option data-value="{{ year_value }}" role="option" aria-selected="{% if year_value == planned_vacations.year %}true{% else %}false{% endif %}">
+                            {{ year_value }}
+                        </button>
+                        {% endfor %}
+                    </div>
+                </div>
+                <button type="button" class="profile-schedule-calendar-filter__nav" data-profile-schedule-year-step="1" aria-label="Следующий год">
+                    <span class="material-icons-sharp" aria-hidden="true">chevron_right</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="segmented-control segmented-control--count-4 profile-schedule-segmented profile-schedule-segmented--type" data-profile-schedule-type-toggle data-segmented-index="0" role="tablist" aria-label="Тип отпуска">
+            <span class="segmented-control__indicator" aria-hidden="true"></span>
+            <label class="segmented-control__item is-active">
+                <input type="radio" name="profile_schedule_type_{{ employee.id }}" value="all" checked data-profile-schedule-type>
+                <span>Все</span>
+            </label>
+            <label class="segmented-control__item">
+                <input type="radio" name="profile_schedule_type_{{ employee.id }}" value="paid" data-profile-schedule-type>
+                <span>Оплачиваемые</span>
+            </label>
+            <label class="segmented-control__item">
+                <input type="radio" name="profile_schedule_type_{{ employee.id }}" value="unpaid" data-profile-schedule-type>
+                <span>Неоплачиваемые</span>
+            </label>
+            <label class="segmented-control__item">
+                <input type="radio" name="profile_schedule_type_{{ employee.id }}" value="study" data-profile-schedule-type>
+                <span>Учебные</span>
+            </label>
+        </div>
+    </div>
+
+    <div class="profile-schedule__list-shell" data-profile-schedule-scroll>
+        <div class="profile-schedule__group">
+            <div class="profile-schedule__group-heading">
+                <div>
+                    <span class="profile-schedule__eyebrow">Подтверждено</span>
+                    <h3 data-profile-schedule-title>Отпуска на {{ planned_vacations.year }} год</h3>
+                </div>
+                {% if planned_vacations.upcoming %}
+                <span class="profile-schedule__upcoming">Ближайший: {{ planned_vacations.upcoming.period_label }}</span>
+                {% endif %}
+            </div>
+
+            <div class="profile-schedule__cards" data-profile-schedule-entries aria-label="Подтверждённые отпуска и отсутствия">
+                {% for item in planned_vacations.entries %}
+                <article class="profile-schedule-card status-{{ item.status }}" data-schedule-entry-card data-years="{{ item.years_attr }}" data-vacation-type="{{ item.vacation_type }}" data-source-kind="{{ item.source_kind }}" data-status="{{ item.status }}">
+                    <div class="profile-schedule-card__stage profile-schedule-card__stage--{{ item.stage }}" title="Этап: {{ item.stage_label }}" aria-label="Этап: {{ item.stage_label }}">
+                        <span class="profile-schedule-card__label">Этап</span>
+                        <span class="profile-schedule-card__stage-icon" aria-hidden="true">
+                            <span class="material-icons-sharp">{{ item.stage_icon }}</span>
+                        </span>
+                        <strong class="profile-schedule-card__value">{{ item.stage_label }}</strong>
+                    </div>
+                    <div class="profile-schedule-card__cell profile-schedule-card__cell--period">
+                        <span class="profile-schedule-card__label">Период</span>
+                        <strong class="profile-schedule-card__value">{{ item.period_label }}</strong>
+                    </div>
+                    <div class="profile-schedule-card__cell">
+                        <span class="profile-schedule-card__label">Тип</span>
+                        <strong class="profile-schedule-card__value">{{ item.vacation_type_label }}</strong>
+                    </div>
+                    <div class="profile-schedule-card__cell">
+                        <span class="profile-schedule-card__label">Дней</span>
+                        <strong class="profile-schedule-card__value">{{ item.days }} д.</strong>
+                    </div>
+                    <div class="profile-schedule-card__cell profile-schedule-card__cell--status">
+                        <span class="profile-schedule-card__label">Статус</span>
+                        <span class="profile-schedule-card__status">{{ item.status_label }}</span>
+                    </div>
+                    <div class="profile-schedule-card__cell">
+                        <span class="profile-schedule-card__label">Источник</span>
+                        <strong class="profile-schedule-card__value">{{ item.source_label }}</strong>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+            <p class="profile-schedule__empty" data-profile-schedule-empty hidden>За выбранный период записей нет.</p>
+        </div>
+
+        {% if schedule_change_requests %}
+        <div class="profile-schedule__group profile-schedule__group--transfers" data-schedule-transfer-group>
+            <div class="profile-schedule__group-heading">
+                <div>
+                    <span class="profile-schedule__eyebrow">Переносы</span>
+                    <h3>Переносы отпусков</h3>
+                </div>
+            </div>
+            <div class="profile-schedule__cards" aria-label="Переносы отпусков">
+                {% for change_request in schedule_change_requests %}
+                <article class="profile-schedule-card profile-schedule-card--transfer" data-schedule-transfer-card data-years="{{ change_request.years_attr }}">
+                    <div class="profile-schedule-card__cell">
+                        <span class="profile-schedule-card__label">Старый период</span>
+                        <strong class="profile-schedule-card__value">{{ change_request.old_period_label }}</strong>
+                    </div>
+                    <div class="profile-schedule-card__cell">
+                        <span class="profile-schedule-card__label">Новый период</span>
+                        <strong class="profile-schedule-card__value">{{ change_request.new_period_label }}</strong>
+                    </div>
+                    <div class="profile-schedule-card__cell">
+                        <span class="profile-schedule-card__label">Риск</span>
+                        <strong class="profile-schedule-card__value">{{ change_request.risk_label }} · {{ change_request.risk_score }}%</strong>
+                    </div>
+                    <div class="profile-schedule-card__cell profile-schedule-card__cell--status">
+                        <span class="profile-schedule-card__label">Статус</span>
+                        <span class="profile-schedule-card__status-badge">
+                            {% include 'includes/status_badge.html' with status_css_class=change_request.status_css_class status_icon=change_request.status_icon status_label=change_request.status_label %}
+                        </span>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</section>

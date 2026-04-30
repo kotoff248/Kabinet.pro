@@ -263,6 +263,125 @@ class LeaveLedgerTests(LeaveTestCase):
         self.assertEqual(after_start["reserved"], 0)
         self.assertEqual(after_start["used"], 7)
 
+    def test_past_leave_uses_oldest_year_before_future_reservations(self):
+        employee = Employees.objects.create(
+            last_name="Старогодов",
+            first_name="Алексей",
+            middle_name="Сергеевич",
+            login="oldest-year-before-future",
+            position="Инженер",
+            department=self.engineering,
+            date_joined=date(2024, 7, 7),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        schedule = VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=employee,
+            start_date=date(2026, 5, 20),
+            end_date=date(2026, 5, 22),
+            vacation_type="paid",
+            chargeable_days=3,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=employee,
+            start_date=date(2025, 8, 1),
+            end_date=date(2025, 9, 21),
+            vacation_type="paid",
+            chargeable_days=52,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        rows = get_employee_entitlement_rows(employee, as_of_date=date(2026, 4, 30), limit=6)
+        rows_by_year = {row["working_year_number"]: row for row in rows}
+
+        self.assertEqual(rows_by_year[1]["used_days"], 52)
+        self.assertEqual(rows_by_year[1]["reserved_days"], 0)
+        self.assertEqual(rows_by_year[1]["remaining_days"], 0)
+        self.assertEqual(rows_by_year[2]["used_days"], 0)
+        self.assertEqual(rows_by_year[2]["reserved_days"], 3)
+
+    def test_entitlement_rows_hide_empty_future_years(self):
+        employee = Employees.objects.create(
+            last_name="Будущев",
+            first_name="Олег",
+            middle_name="Иванович",
+            login="hidden-empty-future-year",
+            position="Инженер",
+            department=self.engineering,
+            date_joined=date(2025, 7, 7),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        schedule = VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=employee,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 3),
+            vacation_type="paid",
+            chargeable_days=3,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        rows = get_employee_entitlement_rows(employee, as_of_date=date(2026, 4, 30), limit=6)
+
+        self.assertIn("07.07.2025 - 06.07.2026", [row["period_label"] for row in rows])
+        self.assertNotIn("07.07.2026 - 06.07.2027", [row["period_label"] for row in rows])
+
+    def test_entitlement_rows_keep_future_years_with_reserved_days(self):
+        employee = Employees.objects.create(
+            last_name="Резервов",
+            first_name="Олег",
+            middle_name="Иванович",
+            login="visible-reserved-future-year",
+            position="Инженер",
+            department=self.engineering,
+            date_joined=date(2025, 7, 7),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        schedule = VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=employee,
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 6, 21),
+            vacation_type="paid",
+            chargeable_days=52,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=employee,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 3),
+            vacation_type="paid",
+            chargeable_days=3,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        rows = get_employee_entitlement_rows(employee, as_of_date=date(2026, 4, 30), limit=6)
+        rows_by_label = {row["period_label"]: row for row in rows}
+
+        self.assertIn("07.07.2026 - 06.07.2027", rows_by_label)
+        self.assertEqual(rows_by_label["07.07.2026 - 06.07.2027"]["reserved_days"], 3)
+
     def test_entitlement_rows_expose_working_year_balances(self):
         rows = get_employee_entitlement_rows(self.employee, self.today)
 
@@ -350,6 +469,47 @@ class LeaveLedgerTests(LeaveTestCase):
             "10.09.2026 - 09.09.2027",
         ])
         self.assertEqual([row["days"] for row in preview["allocations"]], [3, 7])
+
+    def test_entitlement_source_preview_keeps_existing_reservations_for_earlier_new_request(self):
+        employee = Employees.objects.create(
+            last_name="Резервова",
+            first_name="Ирина",
+            middle_name="Павловна",
+            login="fixed-reservation-preview",
+            position="Логист",
+            department=self.engineering,
+            date_joined=date(2025, 4, 11),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        schedule = VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=employee,
+            start_date=date(2026, 9, 1),
+            end_date=date(2026, 10, 20),
+            vacation_type="paid",
+            chargeable_days=50,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        preview = get_employee_entitlement_source_preview(
+            employee,
+            date(2026, 8, 1),
+            date(2026, 8, 15),
+            "paid",
+        )
+
+        self.assertEqual(preview["label"], "Дни будут списаны из нескольких рабочих годов")
+        self.assertEqual([row["period_label"] for row in preview["allocations"]], [
+            "11.04.2025 - 10.04.2026",
+            "11.04.2026 - 10.04.2027",
+        ])
+        self.assertEqual([row["days"] for row in preview["allocations"]], [2, 13])
 
     def test_entitlement_source_preview_ignores_non_paid_leave(self):
         preview = get_employee_entitlement_source_preview(

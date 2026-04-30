@@ -10,6 +10,10 @@ from apps.leave.models import VacationRequest
 
 from .constants import REQUEST_STATUS_UI
 from .dates import format_period_label
+from .employee_presentation import (
+    enrich_application_employee_presentation,
+    serialize_application_employee_presentation,
+)
 from .notifications import (
     delete_vacation_request_notifications,
     notify_vacation_request_created,
@@ -58,6 +62,7 @@ def enrich_vacation_request(request_obj):
         else request_obj.get_vacation_type_display()
     )
     request_obj.risk_label = request_obj.get_risk_level_display()
+    request_obj.period_label = format_period_label(request_obj.start_date, request_obj.end_date)
     request_obj.request_type = {
         VacationRequest.STATUS_APPROVED: "vacation",
         VacationRequest.STATUS_PENDING: "pre_holiday",
@@ -65,6 +70,7 @@ def enrich_vacation_request(request_obj):
     }[request_obj.status]
     request_obj.start_date_formatted = date_format(request_obj.start_date, "j E Y")
     request_obj.end_date_formatted = date_format(request_obj.end_date, "j E Y")
+    enrich_application_employee_presentation(request_obj)
     return request_obj
 
 def serialize_vacation_request_row(request_obj):
@@ -75,7 +81,7 @@ def serialize_vacation_request_row(request_obj):
         "employee_department": request_obj.employee.department.name if request_obj.employee.department else "Не указан",
         "profile_url": reverse("employee_profile", args=[request_obj.employee_id]),
         "detail_url": reverse("vacation_detail", args=[request_obj.id]),
-        "period_label": format_period_label(request_obj.start_date, request_obj.end_date),
+        "period_label": request_obj.period_label,
         "start_date_formatted": request_obj.start_date_formatted,
         "end_date_formatted": request_obj.end_date_formatted,
         "vacation_type_label": request_obj.vacation_type_display_label,
@@ -87,7 +93,7 @@ def serialize_vacation_request_row(request_obj):
         "risk_label": request_obj.risk_label,
         "can_approve": getattr(request_obj, "can_approve", False),
         "decision_locked": getattr(request_obj, "decision_locked", False),
-    }
+    } | serialize_application_employee_presentation(request_obj)
 
 def get_employee_vacation_requests(employee):
     requests = list(get_vacation_requests_queryset().filter(employee=employee).order_by("-created_at"))

@@ -4,8 +4,8 @@
 {% block title %}Кабинет.pro - Профиль{% endblock %}
 
 {% block profile_extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260428-soft-statuses">
-<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260430-header-readable-copy">
+<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260430-contained-list-scroll">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260430-dropdown-hidden-scrollbar">
 <link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260430-modal-readable-copy">
 {% endblock %}
 
@@ -14,12 +14,16 @@
 {% endblock %}
 
 {% block overview_content %}
-{% include 'includes/page_header.html' with eyebrow='Личный кабинет' title='Профиль сотрудника' subtitle='Ваши личные данные, начисление отпуска по стажу и история всех отправленных заявок.' header_action_label=can_edit_employee|yesno:'Изменить,' header_action_modal='employee-edit-modal' %}
+{% include 'includes/page_header.html' with eyebrow='Личный кабинет' title='Профиль сотрудника' subtitle='Сводка по сотруднику, ближайший отпуск, график и история заявок.' header_action_label=can_edit_employee|yesno:'Изменить,' header_action_modal='employee-edit-modal' %}
 {% include 'includes/employee_personal_info.html' with employee=employee leave_summary=leave_summary show_login=False %}
 {% endblock %}
 
+{% block schedule_content %}
+{% include 'includes/employee_schedule_section.html' with planned_vacations=planned_vacations schedule_change_requests=schedule_change_requests %}
+{% endblock %}
+
 {% block requests_content %}
-{% include 'includes/employee_requests_section.html' with heading='Мои заявки' description='Здесь собраны все отправленные и согласованные отпуска.' requests=all_requests empty_message='Заявок на отпуск пока нет.' %}
+{% include 'includes/employee_requests_section.html' with heading='История заявок' description='Все отправленные заявки: ожидание, одобрение и отклонение.' requests=all_requests empty_message='Заявок на отпуск пока нет.' %}
 {% endblock %}
 
 {% block profile_modals %}

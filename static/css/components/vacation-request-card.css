@@ -1,6 +1,6 @@
 ﻿.vacation-request-card{
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: minmax(12rem, 1.25fr) minmax(9rem, 1fr) minmax(9rem, 0.9fr);
     gap: 1rem;
     align-items: center;
     padding: 1rem 1.1rem;

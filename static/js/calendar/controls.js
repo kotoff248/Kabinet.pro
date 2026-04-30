@@ -166,6 +166,52 @@
             }
         }
 
+        function getAdjacentYearOptionIndex(direction) {
+            if (!yearSelect) {
+                return -1;
+            }
+
+            const currentYear = Number(yearSelect.value);
+            const options = Array.from(yearSelect.options)
+                .map(function (option, index) {
+                    return {
+                        index: index,
+                        value: Number(option.value),
+                    };
+                })
+                .filter(function (option) {
+                    return Number.isFinite(option.value);
+                });
+            const candidates = options.filter(function (option) {
+                return direction < 0 ? option.value < currentYear : option.value > currentYear;
+            });
+            if (!candidates.length) {
+                return -1;
+            }
+
+            return candidates.reduce(function (best, option) {
+                if (!best) {
+                    return option;
+                }
+
+                if (direction < 0) {
+                    return option.value > best.value ? option : best;
+                }
+                return option.value < best.value ? option : best;
+            }, null).index;
+        }
+
+        function stepYear(direction) {
+            const nextIndex = getAdjacentYearOptionIndex(direction);
+            if (nextIndex < 0 || !yearSelect) {
+                return;
+            }
+
+            yearSelect.selectedIndex = nextIndex;
+            syncCustomSelectFromNative(yearSelect);
+            dependencies.requestCalendarResults();
+        }
+
         function stepSelect(selectElement, direction) {
             if (!selectElement) {
                 return;
@@ -195,8 +241,8 @@
                 return;
             }
 
-            const nextYearIndex = yearSelect.selectedIndex + direction;
-            if (nextYearIndex < 0 || nextYearIndex >= yearSelect.options.length) {
+            const nextYearIndex = getAdjacentYearOptionIndex(direction);
+            if (nextYearIndex < 0) {
                 return;
             }
 
@@ -283,7 +329,7 @@
                     closeCustomSelects();
 
                     if (button.dataset.stepControl === "year") {
-                        stepSelect(yearSelect, direction);
+                        stepYear(direction);
                         return;
                     }
 

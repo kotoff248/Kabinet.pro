@@ -392,6 +392,15 @@ function initApplicationsPage() {
         fetchApplications();
     }
 
+    function hasDefaultApplicationsFilters() {
+        return (
+            currentStatus === defaultStatus
+            && getDepartmentValue() === defaultDepartment
+            && currentSearch === ""
+            && !getCurrentSearchInputValue()
+        );
+    }
+
     setActiveButton(currentStatus);
     syncSearchControls();
     rememberListHref();
@@ -467,8 +476,12 @@ function initApplicationsPage() {
         window.clearTimeout(searchTimer);
     }, { once: true });
 
-    document.addEventListener("app:section-sidebar-repeat", function (event) {
+    document.addEventListener("app:section-filters-reset", function (event) {
         if (!event.detail || event.detail.sectionKey !== "applications") {
+            return;
+        }
+
+        if (hasDefaultApplicationsFilters()) {
             return;
         }
 

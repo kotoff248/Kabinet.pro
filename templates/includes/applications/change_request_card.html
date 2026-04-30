@@ -1,24 +1,28 @@
 <article class="application-card application-card--transfer" data-change-request-id="{{ change_request.id }}">
+    <a class="application-card__profile-icon application-card__profile-icon--{{ change_request.employee_role_variant }}" href="{% url 'employee_profile' change_request.employee.id %}" data-app-link title="Открыть профиль сотрудника {{ change_request.employee.full_name }}" aria-label="Открыть профиль сотрудника {{ change_request.employee.full_name }}">
+        {% if change_request.employee_role_icon_type == 'symbol' %}
+        <span class="application-card__profile-symbol" aria-hidden="true">{{ change_request.employee_role_icon }}</span>
+        {% else %}
+        <span class="material-icons-sharp" aria-hidden="true">{{ change_request.employee_role_icon }}</span>
+        {% endif %}
+    </a>
+
     <div class="application-card__primary">
-        <span class="application-card__label">Сотрудник</span>
+        <span class="application-card__label">ФИО</span>
         <strong class="application-card__value application-card__value--name">{{ change_request.employee.full_name }}</strong>
-        <span class="application-card__muted">{{ change_request.employee.department.name|default:'Не указан' }}</span>
-        <a class="application-card__profile-link" href="{% url 'employee_profile' change_request.employee.id %}" data-app-link aria-label="Открыть профиль сотрудника {{ change_request.employee.full_name }}">
-            <span class="material-icons-sharp" aria-hidden="true">person</span>
-            <span>Профиль</span>
-        </a>
+        <span class="application-card__muted">{{ change_request.employee_secondary_label }}</span>
     </div>
 
     <div class="application-card__meta application-card__meta--transfer">
-        <div class="application-card__cell">
+        <div class="application-card__cell application-card__cell--old-period">
             <span class="application-card__label">Старый период</span>
             <span class="application-card__value application-card__value--period">{{ change_request.old_period_label }}</span>
         </div>
-        <div class="application-card__cell">
+        <div class="application-card__cell application-card__cell--new-period">
             <span class="application-card__label">Новый период</span>
             <span class="application-card__value application-card__value--period">{{ change_request.new_period_label }}</span>
         </div>
-        <div class="application-card__cell">
+        <div class="application-card__cell application-card__cell--risk">
             <span class="application-card__label">Риск</span>
             <span class="application-card__value">{{ change_request.risk_label }} · {{ change_request.risk_score }}%</span>
         </div>

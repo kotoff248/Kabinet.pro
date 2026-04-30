@@ -6,13 +6,21 @@
 {% endblock %}
 
 {% block content %}
-<section class="profile-page profile-page--sectioned" data-profile-sections>
+<section class="profile-page profile-page--sectioned profile-page--has-schedule" data-profile-sections>
     <div class="profile-page__mask" data-profile-mask>
         <div class="profile-page__viewport" data-profile-viewport>
             <section class="profile-page__section profile-page__section--overview is-active" data-profile-section="overview">
                 <div class="profile-page__section-body">
                     <div class="profile-page__section-stack">
                         {% block overview_content %}{% endblock %}
+                    </div>
+                </div>
+            </section>
+
+            <section class="profile-page__section profile-page__section--schedule" data-profile-section="schedule">
+                <div class="profile-page__section-body">
+                    <div class="profile-page__section-stack">
+                        {% block schedule_content %}{% endblock %}
                     </div>
                 </div>
             </section>
@@ -33,5 +41,6 @@
 
 {% block extra_scripts %}
 {% block profile_extra_scripts %}{% endblock %}
-<script src="{% static 'js/profile-sections.js' %}?v=20260428-repeat-scroll-dom" defer></script>
+<script src="{% static 'js/profile-sections.js' %}?v=20260430-repeat-filter-memory" defer></script>
+<script src="{% static 'js/profile-schedule-filters.js' %}?v=20260430-filter-memory" defer></script>
 {% endblock %}

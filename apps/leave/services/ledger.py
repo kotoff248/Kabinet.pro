@@ -216,6 +216,39 @@ def _period_requestable_days(period, as_of_date):
         return _period_accrued_days(period, as_of_date)
     return quantize_leave_days(period.entitled_days)
 
+def _schedule_item_reservation_created_at(item):
+    if item.created_from_vacation_request_id and item.created_from_vacation_request is not None:
+        return item.created_from_vacation_request.created_at
+    if item.previous_item_id and item.previous_item is not None:
+        return item.previous_item.created_at
+    return item.created_at
+
+def _source_allocation_sort_key(source, as_of_date):
+    is_preview_source = source.get("marker") == "preview-request"
+    if not is_preview_source and source["start_date"] <= as_of_date:
+        return (
+            0,
+            source["start_date"],
+            source["end_date"],
+            source["kind"],
+            source["id"],
+        )
+
+    reservation_created_at = source.get("reservation_created_at")
+    return (
+        1,
+        reservation_created_at is None,
+        reservation_created_at.isoformat() if reservation_created_at is not None else "",
+        source["start_date"],
+        source["end_date"],
+        source["kind"],
+        source["id"],
+    )
+
+def _sort_paid_ledger_sources_for_allocation(sources, as_of_date):
+    as_of_date = normalize_date_value(as_of_date)
+    return sorted(sources, key=lambda source: _source_allocation_sort_key(source, as_of_date))
+
 def _collect_paid_ledger_sources(employee):
     sources = []
     requests = VacationRequest.objects.filter(
@@ -243,10 +276,14 @@ def _collect_paid_ledger_sources(employee):
                 ),
                 "request": request_obj,
                 "schedule_item": None,
+                "reservation_created_at": request_obj.created_at,
             }
         )
 
-    schedule_items = VacationScheduleItem.objects.filter(
+    schedule_items = VacationScheduleItem.objects.select_related(
+        "created_from_vacation_request",
+        "previous_item",
+    ).filter(
         employee=employee,
         vacation_type__in=BALANCE_AFFECTING_TYPES,
         status__in=SCHEDULE_BALANCE_STATUSES,
@@ -269,10 +306,10 @@ def _collect_paid_ledger_sources(employee):
                 ),
                 "request": None,
                 "schedule_item": item,
+                "reservation_created_at": _schedule_item_reservation_created_at(item),
             }
         )
 
-    sources.sort(key=lambda source: (source["start_date"], source["end_date"], source["kind"], source["id"]))
     return sources
 
 def _collect_paid_ledger_sources_for_employees(employees):
@@ -307,10 +344,14 @@ def _collect_paid_ledger_sources_for_employees(employees):
                 ),
                 "request": request_obj,
                 "schedule_item": None,
+                "reservation_created_at": request_obj.created_at,
             }
         )
 
-    for item in VacationScheduleItem.objects.filter(
+    for item in VacationScheduleItem.objects.select_related(
+        "created_from_vacation_request",
+        "previous_item",
+    ).filter(
         employee_id__in=employee_ids,
         vacation_type__in=BALANCE_AFFECTING_TYPES,
         status__in=SCHEDULE_BALANCE_STATUSES,
@@ -332,11 +373,10 @@ def _collect_paid_ledger_sources_for_employees(employees):
                 ),
                 "request": None,
                 "schedule_item": item,
+                "reservation_created_at": _schedule_item_reservation_created_at(item),
             }
         )
 
-    for sources in sources_by_employee.values():
-        sources.sort(key=lambda source: (source["start_date"], source["end_date"], source["kind"], source["id"]))
     return sources_by_employee
 
 def _filter_paid_ledger_sources(sources, exclude_request_id=None, exclude_schedule_item_id=None):
@@ -477,9 +517,10 @@ def get_employee_entitlement_source_preview(
             "request": None,
             "schedule_item": None,
             "marker": preview_marker,
+            "reservation_created_at": None,
         },
     ]
-    preview_sources.sort(key=lambda source: (source["start_date"], source["end_date"], source["kind"], source["id"]))
+    preview_sources = _sort_paid_ledger_sources_for_allocation(preview_sources, start_date)
 
     try:
         preview_allocations = _build_allocation_rows(employee, periods, preview_sources, strict=True, for_save=False)
@@ -526,6 +567,7 @@ def rebuild_employee_leave_ledger(employee, as_of_date=None, strict=True):
     sources = _collect_paid_ledger_sources(employee)
     source_horizon = _source_horizon(as_of_date, sources)
     periods = sync_employee_entitlement_periods(employee, source_horizon)
+    sources = _sort_paid_ledger_sources_for_allocation(sources, as_of_date)
     allocations = _build_allocation_rows(employee, periods, sources, strict=strict, for_save=True)
 
     VacationEntitlementAllocation.objects.filter(employee=employee).delete()
@@ -541,6 +583,7 @@ def _ensure_employee_leave_ledger(employee, as_of_date=None):
     return get_employee_entitlement_periods_for_read(employee, source_horizon)
 
 def _calculate_ledger_totals(employee, as_of_date, sources, periods):
+    sources = _sort_paid_ledger_sources_for_allocation(sources, as_of_date)
     allocations = _build_allocation_rows(employee, periods, sources, strict=True, for_save=False)
 
     allocations_by_period = {
@@ -680,6 +723,7 @@ def get_employee_entitlement_rows(employee, as_of_date=None, limit=6):
     as_of_date = normalize_date_value(as_of_date or timezone.localdate())
     sources = _collect_paid_ledger_sources(employee)
     periods = get_employee_entitlement_periods_for_read(employee, _source_horizon(as_of_date, sources))
+    sources = _sort_paid_ledger_sources_for_allocation(sources, as_of_date)
     allocations = _build_allocation_rows(employee, periods, sources, strict=True, for_save=False)
 
     totals_by_period = {
@@ -722,8 +766,21 @@ def get_employee_entitlement_rows(employee, as_of_date=None, limit=6):
             }
         )
 
-    problem_rows = [row for row in rows if row["status_key"] in {"overdue", "attention"} and row["remaining_days"] > 0]
-    recent_rows = rows[-limit:]
+    visible_rows = [
+        row
+        for row in rows
+        if not (
+            row["status_key"] == "future"
+            and row["used_days"] <= 0
+            and row["reserved_days"] <= 0
+        )
+    ]
+    problem_rows = [
+        row
+        for row in visible_rows
+        if row["status_key"] in {"overdue", "attention"} and row["remaining_days"] > 0
+    ]
+    recent_rows = visible_rows[-limit:]
     selected = {row["working_year_number"]: row for row in [*problem_rows, *recent_rows]}
     return sorted(selected.values(), key=lambda row: row["period_start"], reverse=True)
 

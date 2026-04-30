@@ -4,8 +4,8 @@
 {% block title %}Кабинет.pro - Профиль сотрудника{% endblock %}
 
 {% block profile_extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260430-system-readable-copy">
-<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260430-header-readable-copy">
+<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260430-contained-list-scroll">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260430-dropdown-hidden-scrollbar">
 <link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260430-modal-readable-copy">
 {% endblock %}
 
@@ -15,15 +15,19 @@
 
 {% block overview_content %}
 {% if can_edit_employee or can_delete_employee %}
-{% include 'includes/page_header.html' with eyebrow='Профиль сотрудника' title=employee.full_name subtitle='Карточка сотрудника с личными данными, отпускным балансом по стажу и полной историей заявок.' header_actions_template='includes/page_headers/employee_profile_controls.html' %}
+{% include 'includes/page_header.html' with eyebrow='Профиль сотрудника' title=employee.full_name subtitle='Сводка по сотруднику, ближайший отпуск, график и история заявок.' header_actions_template='includes/page_headers/employee_profile_controls.html' %}
 {% else %}
-{% include 'includes/page_header.html' with eyebrow='Профиль сотрудника' title=employee.full_name subtitle='Карточка сотрудника с личными данными, отпускным балансом по стажу и полной историей заявок.' %}
+{% include 'includes/page_header.html' with eyebrow='Профиль сотрудника' title=employee.full_name subtitle='Сводка по сотруднику, ближайший отпуск, график и история заявок.' %}
 {% endif %}
 {% include 'includes/employee_personal_info.html' with employee=employee leave_summary=leave_summary show_login=True %}
 {% endblock %}
 
+{% block schedule_content %}
+{% include 'includes/employee_schedule_section.html' with planned_vacations=planned_vacations schedule_change_requests=schedule_change_requests %}
+{% endblock %}
+
 {% block requests_content %}
-{% include 'includes/employee_requests_section.html' with heading='Заявки' description='История отпусков и текущих запросов сотрудника.' requests=all_requests empty_message='У сотрудника пока нет заявок на отпуск.' %}
+{% include 'includes/employee_requests_section.html' with heading='История заявок' description='Все отправленные заявки: ожидание, одобрение и отклонение.' requests=all_requests empty_message='У сотрудника пока нет заявок на отпуск.' %}
 {% endblock %}
 
 {% block profile_modals %}

@@ -48,7 +48,7 @@ def _get_calendar_available_years(current_year, selected_year=None):
     years.update(VacationRequest.objects.values_list("end_date__year", flat=True))
     years.update(VacationScheduleItem.objects.values_list("start_date__year", flat=True))
     years.update(VacationScheduleItem.objects.values_list("end_date__year", flat=True))
-    available_years = sorted(year for year in years if year)
+    available_years = sorted((year for year in years if year), reverse=True)
     return available_years or [current_year]
 
 

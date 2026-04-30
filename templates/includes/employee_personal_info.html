@@ -1,156 +1,128 @@
 <section class="personal-info">
     <div class="panel-heading panel-heading--solo personal-info__heading">
         <div class="panel-heading__copy personal-info__heading-copy">
-            <h2>Личные данные</h2>
-            <p>Краткая карточка сотрудника, текущий отпускной баланс и распределение дней по рабочим годам.</p>
-            <span class="visually-hidden">Можно запланировать сейчас</span>
+            <h2>Сводка сотрудника</h2>
+            <p>Роль, отдел, текущий статус и ключевые отпускные показатели.</p>
         </div>
     </div>
 
     <div class="personal-info__body">
-        <dl class="profile-facts profile-facts--flat">
-            <div class="profile-facts__item profile-facts__item--name">
-                <dt>
-                    <span class="material-icons-sharp">badge</span>
-                    ФИО
-                </dt>
-                <dd title="{{ employee.full_name }}">{{ employee.full_name }}</dd>
+        <div class="employee-summary">
+            <div class="employee-summary__identity">
+                <span class="employee-summary__role employee-summary__role--{{ profile_summary.role_variant }}" title="{{ profile_summary.role_label }}" aria-label="{{ profile_summary.role_label }}">
+                    {% if profile_summary.role_icon_type == 'symbol' %}
+                    <span class="employee-summary__role-symbol" aria-hidden="true">{{ profile_summary.role_icon }}</span>
+                    {% else %}
+                    <span class="material-icons-sharp" aria-hidden="true">{{ profile_summary.role_icon }}</span>
+                    {% endif %}
+                </span>
+                <div class="employee-summary__main">
+                    <span class="personal-info__section-eyebrow">ФИО</span>
+                    <h3 title="{{ employee.full_name }}">{{ employee.full_name }}</h3>
+                    <div class="employee-summary__meta">
+                        <span title="{{ employee.position }}">{{ employee.position|default:"Не указана" }}</span>
+                        <span title="{% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}">
+                            {% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}
+                        </span>
+                        {% if show_login %}
+                        <span title="{{ employee.login }}">Логин: {{ employee.login }}</span>
+                        {% endif %}
+                    </div>
+                    <span class="employee-summary__joined">Дата начала работы: {{ employee.date_joined|date:"j E Y" }}</span>
+                </div>
             </div>
 
-            <div class="profile-facts__item profile-facts__item--status">
-                <dt>
-                    <span class="material-icons-sharp">verified_user</span>
-                    Статус
-                </dt>
-                <dd>
-                    <span class="employee-status-badge {% if employee_is_working %}employee-status-badge--working{% else %}employee-status-badge--vacation{% endif %} employee-status-badge--profile">
-                        {{ employee_status_label }}
-                    </span>
-                </dd>
+            <div class="employee-summary__status">
+                <span class="personal-info__section-eyebrow">Статус</span>
+                <span class="employee-status-badge {% if employee_is_working %}employee-status-badge--working{% else %}employee-status-badge--vacation{% endif %} employee-status-badge--profile">
+                    {{ employee_status_label }}
+                </span>
             </div>
+        </div>
 
+        <dl class="profile-facts profile-facts--summary employee-summary-metrics">
             <div class="profile-facts__item profile-facts__item--accent">
                 <dt>
-                    <span class="material-icons-sharp">beach_access</span>
-                    Можно запросить
+                    <span class="material-icons-sharp" aria-hidden="true">beach_access</span>
+                    Доступный отпуск
                 </dt>
                 <dd>{{ leave_summary.available|floatformat:"-2" }} д.</dd>
             </div>
 
-            {% if show_login %}
             <div class="profile-facts__item">
                 <dt>
-                    <span class="material-icons-sharp">alternate_email</span>
-                    Логин
+                    <span class="material-icons-sharp" aria-hidden="true">event_available</span>
+                    Ближайший отпуск
                 </dt>
-                <dd title="{{ employee.login }}">{{ employee.login }}</dd>
-            </div>
-            {% endif %}
-
-            <div class="profile-facts__item">
-                <dt>
-                    <span class="material-icons-sharp">apartment</span>
-                    Отдел
-                </dt>
-                <dd title="{% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}">
-                    {% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}
-                </dd>
+                <dd title="{{ profile_summary.upcoming_vacation_label }}">{{ profile_summary.upcoming_vacation_label }}</dd>
             </div>
 
             <div class="profile-facts__item">
                 <dt>
-                    <span class="material-icons-sharp">work_outline</span>
-                    Должность
+                    <span class="material-icons-sharp" aria-hidden="true">calendar_month</span>
+                    Запланировано
                 </dt>
-                <dd title="{{ employee.position }}">{{ employee.position }}</dd>
+                <dd>{{ profile_summary.planned_vacation_days|floatformat:"-2" }} д. / {{ profile_summary.planned_vacation_count_label }}</dd>
             </div>
 
             <div class="profile-facts__item">
                 <dt>
-                    <span class="material-icons-sharp">calendar_month</span>
-                    Дата начала
+                    <span class="material-icons-sharp" aria-hidden="true">pending_actions</span>
+                    Заявки в ожидании
                 </dt>
-                <dd>{{ employee.date_joined|date:"j E Y" }}</dd>
+                <dd>{{ profile_summary.pending_requests_count }}</dd>
             </div>
         </dl>
 
-        <dl class="balance-strip" aria-label="Краткая отпускная сводка">
-            <div class="balance-strip__item">
-                <dt>Годовая норма</dt>
-                <dd>{{ leave_summary.annual_entitlement|floatformat:"-2" }} д.</dd>
-            </div>
-
-            <div class="balance-strip__item">
-                <dt>Начислено по стажу</dt>
-                <dd>{{ leave_summary.accrued|floatformat:"-2" }} д.</dd>
-            </div>
-
-            <div class="balance-strip__item">
-                <dt>Можно запросить</dt>
-                <dd>{{ leave_summary.requestable|floatformat:"-2" }} д.</dd>
-            </div>
-
-            <div class="balance-strip__item">
-                <dt>Использовано</dt>
-                <dd>{{ leave_summary.used|floatformat:"-2" }} д.</dd>
-            </div>
-
-            <div class="balance-strip__item">
-                <dt>В резерве</dt>
-                <dd>{{ leave_summary.reserved|floatformat:"-2" }} д.</dd>
-            </div>
-
-            <div class="balance-strip__item">
-                <dt>Факт. баланс</dt>
-                <dd>{{ leave_summary.accrued_balance|floatformat:"-2" }} д.</dd>
-            </div>
-
-            <div class="balance-strip__item balance-strip__item--advance">
-                <dt>Авансом</dt>
-                <dd>{{ leave_summary.advance_available|floatformat:"-2" }} д.</dd>
-            </div>
-        </dl>
-
-        {% include 'includes/employee_planned_vacations.html' with planned_vacations=planned_vacations %}
-
-        {% if entitlement_rows %}
-        <section class="entitlement-ledger" aria-labelledby="entitlement-ledger-title">
-            <div class="entitlement-ledger__header">
+        <section class="employee-balance-preview" aria-labelledby="employee-balance-preview-title">
+            <div class="employee-balance-preview__header">
                 <div>
                     <span class="personal-info__section-eyebrow">Рабочие годы</span>
-                    <h3 id="entitlement-ledger-title">Баланс по рабочим годам</h3>
+                    <h3 id="employee-balance-preview-title">Баланс по рабочим годам</h3>
                 </div>
-                <p>Сначала используются старые доступные дни.</p>
+                <span class="employee-balance-preview__norm">Норма: {{ leave_summary.annual_entitlement|floatformat:"-2" }} д. в год</span>
             </div>
-            <div class="entitlement-ledger__table-shell" data-entitlement-scroll tabindex="0">
-                <div class="entitlement-ledger__table" role="table" aria-label="Баланс по рабочим годам">
-                    <div class="entitlement-ledger__row entitlement-ledger__row--head" role="row">
-                        <span role="columnheader">Рабочий год</span>
-                        <span role="columnheader">Право</span>
-                        <span role="columnheader">Использовано</span>
-                        <span role="columnheader">В резерве</span>
-                        <span role="columnheader">Остаток</span>
-                        <span role="columnheader">Использовать до</span>
-                        <span role="columnheader">Статус</span>
+
+            {% if entitlement_rows %}
+            <div class="employee-balance-preview__list" data-entitlement-scroll tabindex="0" aria-label="Расшифровка баланса по рабочим годам">
+                {% for row in entitlement_rows %}
+                <article class="employee-balance-card">
+                    <div class="employee-balance-card__period">
+                        <span class="employee-balance-card__label">Рабочий год</span>
+                        <strong title="{{ row.period_label }}">{{ row.period_label }}</strong>
                     </div>
-                    {% for row in entitlement_rows %}
-                    <div class="entitlement-ledger__row" role="row">
-                        <span role="cell">{{ row.period_label }}</span>
-                        <span role="cell">{{ row.entitled_days|floatformat:"-2" }} д.</span>
-                        <span role="cell">{{ row.used_days|floatformat:"-2" }} д.</span>
-                        <span role="cell">{{ row.reserved_days|floatformat:"-2" }} д.</span>
-                        <span role="cell">{{ row.remaining_days|floatformat:"-2" }} д.</span>
-                        <span role="cell">{{ row.must_use_by|date:"j E Y" }}</span>
-                        <span role="cell">
-                            <span class="entitlement-ledger__status entitlement-ledger__status--{{ row.status_key }}">
-                                {{ row.status_label }}
-                            </span>
+                    <div class="employee-balance-card__metric">
+                        <span class="employee-balance-card__label">Право</span>
+                        <strong>{{ row.entitled_days|floatformat:"-2" }} д.</strong>
+                    </div>
+                    <div class="employee-balance-card__metric">
+                        <span class="employee-balance-card__label">Использовано</span>
+                        <strong>{{ row.used_days|floatformat:"-2" }} д.</strong>
+                    </div>
+                    <div class="employee-balance-card__metric">
+                        <span class="employee-balance-card__label">В резерве</span>
+                        <strong>{{ row.reserved_days|floatformat:"-2" }} д.</strong>
+                    </div>
+                    <div class="employee-balance-card__metric">
+                        <span class="employee-balance-card__label">Остаток</span>
+                        <strong>{{ row.remaining_days|floatformat:"-2" }} д.</strong>
+                    </div>
+                    <div class="employee-balance-card__metric">
+                        <span class="employee-balance-card__label">Использовать до</span>
+                        <strong>{{ row.must_use_by|date:"j E Y" }}</strong>
+                    </div>
+                    <div class="employee-balance-card__status">
+                        <span class="employee-balance-card__label">Статус</span>
+                        <span class="entitlement-ledger__status entitlement-ledger__status--{{ row.status_key }}">
+                            {{ row.status_label }}
                         </span>
                     </div>
-                    {% endfor %}
-                </div>
+                </article>
+                {% endfor %}
             </div>
+            {% else %}
+            <p class="table-empty employee-balance-preview__empty">Расшифровка баланса пока недоступна.</p>
+            {% endif %}
         </section>
-        {% endif %}
     </div>
 </section>

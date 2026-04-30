@@ -1,24 +1,28 @@
 <article class="application-card application-card--request is-clickable" data-href="{% url 'vacation_detail' vacation.id %}" data-vacation-id="{{ vacation.id }}" tabindex="0" role="link">
+    <a class="application-card__profile-icon application-card__profile-icon--{{ vacation.employee_role_variant }}" href="{% url 'employee_profile' vacation.employee.id %}" data-app-link title="Открыть профиль сотрудника {{ vacation.employee.full_name }}" aria-label="Открыть профиль сотрудника {{ vacation.employee.full_name }}">
+        {% if vacation.employee_role_icon_type == 'symbol' %}
+        <span class="application-card__profile-symbol" aria-hidden="true">{{ vacation.employee_role_icon }}</span>
+        {% else %}
+        <span class="material-icons-sharp" aria-hidden="true">{{ vacation.employee_role_icon }}</span>
+        {% endif %}
+    </a>
+
     <div class="application-card__primary">
-        <span class="application-card__label">Сотрудник</span>
+        <span class="application-card__label">ФИО</span>
         <strong class="application-card__value application-card__value--name">{{ vacation.employee.full_name }}</strong>
-        <span class="application-card__muted">{{ vacation.employee.department.name|default:'Не указан' }}</span>
-        <a class="application-card__profile-link" href="{% url 'employee_profile' vacation.employee.id %}" data-app-link aria-label="Открыть профиль сотрудника {{ vacation.employee.full_name }}">
-            <span class="material-icons-sharp" aria-hidden="true">person</span>
-            <span>Профиль</span>
-        </a>
+        <span class="application-card__muted">{{ vacation.employee_secondary_label }}</span>
     </div>
 
     <div class="application-card__meta">
-        <div class="application-card__cell">
+        <div class="application-card__cell application-card__cell--period">
             <span class="application-card__label">Период</span>
-            <span class="application-card__value application-card__value--period">{{ vacation.start_date_formatted }} - {{ vacation.end_date_formatted }}</span>
+            <span class="application-card__value application-card__value--period">{{ vacation.period_label }}</span>
         </div>
-        <div class="application-card__cell">
+        <div class="application-card__cell application-card__cell--type">
             <span class="application-card__label">Тип</span>
             <span class="application-card__value">{{ vacation.vacation_type_display_label }}</span>
         </div>
-        <div class="application-card__cell">
+        <div class="application-card__cell application-card__cell--risk">
             <span class="application-card__label">Риск</span>
             <span class="application-card__value">{{ vacation.risk_label }} · {{ vacation.risk_score }}%</span>
         </div>
