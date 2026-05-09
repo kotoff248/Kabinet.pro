@@ -6,10 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Кабинет.pro{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/reset.css' %}">
-    <link rel="stylesheet" href="{% static 'css/base/foundation.css' %}?v=20260429-card-ignite-bleed-box">
+    <link rel="stylesheet" href="{% static 'css/base/foundation.css' %}?v=20260507-scroll-performance">
     <link rel="stylesheet" href="{% static 'css/layout/app-shell.css' %}?v=20260430-header-readable-copy">
     <link rel="stylesheet" href="{% static 'css/components/page-hero.css' %}?v=20260502-toolbar-search-card-radius">
-    <link rel="stylesheet" href="{% static 'css/components/modals.css' %}?v=20260430-modal-readable-copy">
+    <link rel="stylesheet" href="{% static 'css/components/modals.css' %}?v=20260509-modal-layering">
     <link rel="stylesheet" href="{% static 'css/components/schedule-transfer-modal.css' %}?v=20260505-transfer-preview">
     <link rel="stylesheet" href="{% static 'css/components/panels.css' %}?v=20260430-readable-copy">
     <link rel="stylesheet" href="{% static 'css/components/messages.css' %}">
@@ -19,7 +19,7 @@
     <link rel="stylesheet" href="{% static 'css/layout/sidebar-nav.css' %}?v=20260428-sidebar-height">
     <link rel="stylesheet" href="{% static 'css/pages/profile.css' %}?v=20260507-profile-card-edge">
     <link rel="stylesheet" href="{% static 'css/components/vacation-request-card.css' %}?v=20260507-profile-request-edge">
-    <link rel="stylesheet" href="{% static 'css/pages/vacation-detail.css' %}?v=20260505-recommendation-layout">
+    <link rel="stylesheet" href="{% static 'css/pages/vacation-detail.css' %}?v=20260509-urgent-closure">
     <link rel="stylesheet" href="{% static 'css/components/buttons.css' %}">
     <link rel="stylesheet" href="{% static 'css/components/radii.css' %}?v=20260428-radius-system">
     <link rel="stylesheet" href="{% static 'css/layout/responsive.css' %}?v=20260428-fixed-hero">
@@ -117,6 +117,14 @@
                     </span>
                 </a>
                 {% endif %}
+                {% if can_access_schedule_planning %}
+                <a href="{{ schedule_planning_sidebar_url }}" class="sidebar__link {% if current_url == 'schedule_planning' or current_url == 'schedule_planning_current' or sidebar_section == 'schedule_planning' %}active{% endif %}" data-sidebar-link data-sidebar-key="schedule-planning" aria-label="Планирование графика" title="Планирование графика" {% if current_url == 'schedule_planning' or current_url == 'schedule_planning_current' or sidebar_section == 'schedule_planning' %}aria-current="page"{% endif %}>
+                    <span class="sidebar__link-main">
+                        <span class="material-icons-sharp">event_note</span>
+                        <h3>Планирование</h3>
+                    </span>
+                </a>
+                {% endif %}
                 {% if can_access_employees %}
                 <a href="{% url 'employees' %}" class="sidebar__link {% if current_url == 'employees' or sidebar_section == 'employees' %}active{% endif %}" data-sidebar-link data-sidebar-key="employees" aria-label="Сотрудники" title="Сотрудники" {% if current_url == 'employees' or sidebar_section == 'employees' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
@@ -164,7 +172,7 @@
         </main>
     </div>
 
-    <script src="{% static 'js/base.js' %}?v=20260507-calendar-preferences-memory" defer></script>
+    <script src="{% static 'js/base.js' %}?v=20260509-planning-scroll-memory" defer></script>
     <script src="{% static 'js/schedule-status-tooltip.js' %}?v=20260503-schedule-tooltip" defer></script>
     <script src="{% static 'js/schedule-transfer-modal.js' %}?v=20260505-transfer-preview" defer></script>
     {% block extra_scripts %}{% endblock %}

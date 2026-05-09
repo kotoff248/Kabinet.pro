@@ -5,7 +5,7 @@
 
 {% block extra_styles %}
 <link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260501-filter-hidden-options">
-<link rel="stylesheet" href="{% static 'css/pages/staffing.css' %}?v=20260506-demo-reset">
+<link rel="stylesheet" href="{% static 'css/pages/staffing.css' %}?v=20260508-rule-rows">
 {% endblock %}
 
 {% block content %}
@@ -254,36 +254,38 @@
                                                 <strong>{{ rule.production_group.name }}</strong>
                                                 <span>{{ rule.staffing_employee_count_label }} · резерв: {{ rule.staffing_reserve_label }}</span>
                                             </div>
-                                            <div class="staffing-row__facts">
+                                            <div class="staffing-row__chips">
+                                                <div class="staffing-row__facts">
+                                                    <span
+                                                        data-schedule-status-tooltip
+                                                        data-schedule-status-variant="info"
+                                                        data-tooltip-title="Остаться"
+                                                        data-tooltip-text="Сколько сотрудников этой группы должно оставаться в работе."
+                                                    >Остаться: {{ rule.min_staff_required }}</span>
+                                                    <span
+                                                        data-schedule-status-tooltip
+                                                        data-schedule-status-variant="info"
+                                                        data-tooltip-title="Отсутствовать"
+                                                        data-tooltip-text="Сколько сотрудников этой группы можно отпустить одновременно."
+                                                    >Отсутствовать: {{ rule.max_absent }}</span>
+                                                    <span
+                                                        data-schedule-status-tooltip
+                                                        data-schedule-status-variant="{{ rule.staffing_quality_level }}"
+                                                        data-tooltip-title="Критичность"
+                                                        data-tooltip-text="Вес правила в оценке риска: 1 мягкое правило, 5 критичное ограничение."
+                                                    >Критичность: {{ rule.criticality_level }}/5</span>
+                                                </div>
                                                 <span
-                                                    data-schedule-status-tooltip
-                                                    data-schedule-status-variant="info"
-                                                    data-tooltip-title="Остаться"
-                                                    data-tooltip-text="Сколько сотрудников этой группы должно оставаться в работе."
-                                                >Остаться: {{ rule.min_staff_required }}</span>
-                                                <span
-                                                    data-schedule-status-tooltip
-                                                    data-schedule-status-variant="info"
-                                                    data-tooltip-title="Отсутствовать"
-                                                    data-tooltip-text="Сколько сотрудников этой группы можно отпустить одновременно."
-                                                >Отсутствовать: {{ rule.max_absent }}</span>
-                                                <span
+                                                    class="staffing-diagnostic-chip staffing-diagnostic-chip--{{ rule.staffing_quality_level }}"
                                                     data-schedule-status-tooltip
                                                     data-schedule-status-variant="{{ rule.staffing_quality_level }}"
-                                                    data-tooltip-title="Критичность"
-                                                    data-tooltip-text="Вес правила в оценке риска: 1 мягкое правило, 5 критичное ограничение."
-                                                >Критичность: {{ rule.criticality_level }}/5</span>
+                                                    data-tooltip-title="{{ rule.staffing_quality_label }}"
+                                                    data-tooltip-text="{{ rule.staffing_quality_hint }}"
+                                                >
+                                                    <span class="material-icons-sharp" aria-hidden="true">{{ rule.staffing_quality_icon }}</span>
+                                                    <span>{{ rule.staffing_quality_label }}</span>
+                                                </span>
                                             </div>
-                                            <span
-                                                class="staffing-diagnostic-chip staffing-diagnostic-chip--{{ rule.staffing_quality_level }}"
-                                                data-schedule-status-tooltip
-                                                data-schedule-status-variant="{{ rule.staffing_quality_level }}"
-                                                data-tooltip-title="{{ rule.staffing_quality_label }}"
-                                                data-tooltip-text="{{ rule.staffing_quality_hint }}"
-                                            >
-                                                <span class="material-icons-sharp" aria-hidden="true">{{ rule.staffing_quality_icon }}</span>
-                                                <span>{{ rule.staffing_quality_label }}</span>
-                                            </span>
                                             {% if can_edit_staffing %}
                                             <div class="staffing-row__actions">
                                                 <button type="button" class="staffing-icon-action" data-modal-open="staffing-edit-coverage-{{ rule.id }}-modal" aria-label="Редактировать покрытие {{ rule.production_group.name }}" title="Редактировать покрытие">
@@ -326,23 +328,34 @@
                                                 <strong>{{ rule.substitute_group.name }} → {{ rule.source_group.name }}</strong>
                                                 <span>Резерв замещающей: {{ rule.staffing_substitute_reserve_label }} · реально до {{ rule.staffing_real_capacity_label }}</span>
                                             </div>
-                                            <span
-                                                class="staffing-mini-fact"
-                                                data-schedule-status-tooltip
-                                                data-schedule-status-variant="info"
-                                                data-tooltip-title="Ёмкость замещения"
-                                                data-tooltip-text="Сколько отсутствующих из исходной группы может закрыть замещающая группа по этому правилу."
-                                            >Закрывает до {{ rule.max_covered_absences }} чел.</span>
-                                            <span
-                                                class="staffing-diagnostic-chip staffing-diagnostic-chip--{{ rule.staffing_quality_level }}"
-                                                data-schedule-status-tooltip
-                                                data-schedule-status-variant="{{ rule.staffing_quality_level }}"
-                                                data-tooltip-title="{{ rule.staffing_quality_label }}"
-                                                data-tooltip-text="{{ rule.staffing_quality_hint }}"
-                                            >
-                                                <span class="material-icons-sharp" aria-hidden="true">{{ rule.staffing_quality_icon }}</span>
-                                                <span>{{ rule.staffing_quality_label }}</span>
-                                            </span>
+                                            <div class="staffing-row__chips">
+                                                <span
+                                                    class="staffing-mini-fact"
+                                                    data-schedule-status-tooltip
+                                                    data-schedule-status-variant="info"
+                                                    data-tooltip-title="Ёмкость замещения"
+                                                    data-tooltip-text="Сколько отсутствующих из исходной группы может закрыть замещающая группа по этому правилу."
+                                                >Закрывает до {{ rule.max_covered_absences }} чел.</span>
+                                                <span
+                                                    class="staffing-diagnostic-chip staffing-diagnostic-chip--{{ rule.staffing_quality_level }}"
+                                                    data-schedule-status-tooltip
+                                                    data-schedule-status-variant="{{ rule.staffing_quality_level }}"
+                                                    data-tooltip-title="{{ rule.staffing_quality_label }}"
+                                                    data-tooltip-text="{{ rule.staffing_quality_hint }}"
+                                                >
+                                                    <span class="material-icons-sharp" aria-hidden="true">{{ rule.staffing_quality_icon }}</span>
+                                                    <span>{{ rule.staffing_quality_label }}</span>
+                                                </span>
+                                                {% if not can_edit_staffing %}
+                                                <span
+                                                    class="staffing-mini-fact"
+                                                    data-schedule-status-tooltip
+                                                    data-schedule-status-variant="info"
+                                                    data-tooltip-title="Резерв замещающей группы"
+                                                    data-tooltip-text="Сколько людей у замещающей группы остаётся сверх собственного минимума."
+                                                >Резерв: {{ rule.staffing_substitute_reserve_label }}</span>
+                                                {% endif %}
+                                            </div>
                                             {% if can_edit_staffing %}
                                             <div class="staffing-row__actions">
                                                 <button type="button" class="staffing-icon-action" data-modal-open="staffing-edit-substitution-{{ rule.id }}-modal" aria-label="Редактировать замещение {{ rule.substitute_group.name }} → {{ rule.source_group.name }}" title="Редактировать замещение">
@@ -352,14 +365,6 @@
                                                     <span class="material-icons-sharp" aria-hidden="true">delete</span>
                                                 </button>
                                             </div>
-                                            {% else %}
-                                            <span
-                                                class="staffing-mini-fact"
-                                                data-schedule-status-tooltip
-                                                data-schedule-status-variant="info"
-                                                data-tooltip-title="Резерв замещающей группы"
-                                                data-tooltip-text="Сколько людей у замещающей группы остаётся сверх собственного минимума."
-                                            >Резерв: {{ rule.staffing_substitute_reserve_label }}</span>
                                             {% endif %}
                                         </div>
                                         {% empty %}
@@ -593,6 +598,6 @@
 
 {% block extra_scripts %}
 <script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
-<script src="{% static 'js/profile-sections.js' %}?v=20260505-wheel-gesture-lock-2" defer></script>
+<script src="{% static 'js/profile-sections.js' %}?v=20260507-scroll-performance" defer></script>
 <script src="{% static 'js/staffing-page.js' %}?v=20260503-workload-year-auto" defer></script>
 {% endblock %}

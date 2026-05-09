@@ -5,6 +5,8 @@ from . import views
 
 urlpatterns = [
     path("calendar/", views.graphics, name="calendar"),
+    path("calendar/planning/", views.schedule_planning_current, name="schedule_planning_current"),
+    path("calendar/planning/<int:year>/", views.schedule_planning, name="schedule_planning"),
     path("calendar/vacation-request-preview/", views.vacation_request_preview, name="vacation_request_preview"),
     path(
         "calendar/preferences/start/",
@@ -15,6 +17,46 @@ urlpatterns = [
         "calendar/preferences/<int:year>/finish/",
         views.finish_vacation_preferences_collection,
         name="preferences_collection_finish",
+    ),
+    path(
+        "preferences/<int:year>/readiness/",
+        views.preference_collection_readiness,
+        name="preference_collection_readiness",
+    ),
+    path(
+        "calendar/drafts/<int:year>/create/",
+        views.create_schedule_draft,
+        name="schedule_draft_create",
+    ),
+    path(
+        "calendar/drafts/<int:year>/auto-place/",
+        views.auto_place_schedule_draft_remaining,
+        name="schedule_draft_auto_place",
+    ),
+    path(
+        "calendar/drafts/<int:year>/manual-place/<int:employee_id>/preview/",
+        views.manual_schedule_draft_preview,
+        name="schedule_draft_manual_preview",
+    ),
+    path(
+        "calendar/drafts/<int:year>/manual-place/<int:employee_id>/",
+        views.manual_place_schedule_draft_item,
+        name="schedule_draft_manual_place",
+    ),
+    path(
+        "calendar/drafts/<int:year>/urgent-closures/<int:employee_id>/create/",
+        views.create_urgent_closure,
+        name="urgent_closure_create",
+    ),
+    path(
+        "calendar/drafts/<int:year>/urgent-closures/<int:employee_id>/preview/",
+        views.urgent_closure_preview,
+        name="urgent_closure_preview",
+    ),
+    path(
+        "calendar/drafts/<int:year>/",
+        views.schedule_draft_detail,
+        name="schedule_draft_detail",
     ),
     path("preferences/<int:year>/", views.vacation_preferences, name="vacation_preferences"),
     path("applications/", views.applications, name="applications"),
@@ -46,6 +88,36 @@ urlpatterns = [
         "applications/transfers/<int:pk>/reject/",
         views.reject_schedule_change,
         name="schedule_change_reject",
+    ),
+    path(
+        "applications/urgent-closures/<int:pk>/",
+        views.urgent_closure_detail,
+        name="urgent_closure_detail",
+    ),
+    path(
+        "applications/urgent-closures/<int:pk>/manager-approve/",
+        views.approve_urgent_closure_manager,
+        name="urgent_closure_manager_approve",
+    ),
+    path(
+        "applications/urgent-closures/<int:pk>/employee-accept/",
+        views.accept_urgent_closure_employee,
+        name="urgent_closure_employee_accept",
+    ),
+    path(
+        "applications/urgent-closures/<int:pk>/employee-propose/",
+        views.propose_urgent_closure_employee,
+        name="urgent_closure_employee_propose",
+    ),
+    path(
+        "applications/urgent-closures/<int:pk>/finalize/",
+        views.finalize_urgent_closure_hr,
+        name="urgent_closure_finalize",
+    ),
+    path(
+        "applications/urgent-closures/<int:pk>/reject/",
+        views.reject_urgent_closure_request,
+        name="urgent_closure_reject",
     ),
     path("analytics/", views.analytics, name="analytics"),
 ]

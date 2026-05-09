@@ -976,6 +976,7 @@
 }
 
 .staffing-block{
+    container: staffing-block / inline-size;
     display: grid;
     grid-template-rows: auto auto;
     align-content: start;
@@ -1076,11 +1077,11 @@
 }
 
 .staffing-rule-row--diagnostic{
-    grid-template-columns: minmax(8rem, 1fr) minmax(12rem, auto) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, min(23rem, 54%));
 }
 
 .staffing-rule-row--diagnostic.staffing-row--with-actions{
-    grid-template-columns: minmax(8rem, 1fr) minmax(12rem, auto) auto auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, min(23rem, 54%)) auto;
 }
 
 .staffing-row__main{
@@ -1106,10 +1107,21 @@
     flex-wrap: wrap;
     gap: 0.28rem;
     min-width: 0;
+    max-width: 100%;
 }
 
 .staffing-row--diagnostic.staffing-row--with-actions .staffing-row__chips{
     max-width: min(23rem, 100%);
+}
+
+.staffing-rule-row--diagnostic .staffing-row__chips,
+.staffing-substitution-row--diagnostic .staffing-row__chips{
+    justify-self: end;
+    max-width: min(23rem, 100%);
+}
+
+.staffing-rule-row--diagnostic .staffing-row__facts{
+    flex: 1 1 100%;
 }
 
 .staffing-row__facts span,
@@ -1126,12 +1138,16 @@
     font-size: 0.68rem;
     font-weight: 780;
     line-height: 1.15;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .staffing-diagnostic-chip{
     --staffing-quality-rgb: 56, 200, 255;
     gap: 0.22rem;
+    min-width: 0;
     max-width: 100%;
     padding: 0.27rem 0.42rem;
     color: rgba(244, 250, 255, 0.95);
@@ -1145,8 +1161,11 @@
 
 .staffing-diagnostic-chip span:last-child,
 .staffing-workload-month__quality span:last-child{
+    min-width: 0;
+    overflow: hidden;
     color: rgba(244, 250, 255, 0.95);
     font-weight: 820;
+    text-overflow: ellipsis;
 }
 
 .staffing-substitution-row{
@@ -1156,7 +1175,11 @@
 }
 
 .staffing-substitution-row--diagnostic{
-    grid-template-columns: minmax(10rem, 1fr) auto auto auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, min(22rem, 50%));
+}
+
+.staffing-substitution-row--diagnostic.staffing-row--with-actions{
+    grid-template-columns: minmax(0, 1fr) minmax(0, min(22rem, 50%)) auto;
 }
 
 .staffing-substitution-row--readonly{
@@ -1220,6 +1243,47 @@
         linear-gradient(135deg, rgba(255, 47, 117, 0.24), rgba(255, 112, 146, 0.09)),
         rgba(255, 255, 255, 0.05);
     box-shadow: 0 0.75rem 1.45rem rgba(255, 47, 117, 0.16);
+}
+
+@container staffing-block (max-width: 38rem){
+    .staffing-rule-row--diagnostic,
+    .staffing-substitution-row--diagnostic{
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
+    }
+
+    .staffing-rule-row--diagnostic.staffing-row--with-actions,
+    .staffing-substitution-row--diagnostic.staffing-row--with-actions{
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .staffing-rule-row--diagnostic.staffing-row--with-actions > .staffing-row__main,
+    .staffing-substitution-row--diagnostic.staffing-row--with-actions > .staffing-row__main{
+        grid-column: 1;
+        grid-row: 1;
+        align-self: center;
+    }
+
+    .staffing-rule-row--diagnostic.staffing-row--with-actions > .staffing-row__chips,
+    .staffing-substitution-row--diagnostic.staffing-row--with-actions > .staffing-row__chips{
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+
+    .staffing-rule-row--diagnostic.staffing-row--with-actions > .staffing-row__actions,
+    .staffing-substitution-row--diagnostic.staffing-row--with-actions > .staffing-row__actions{
+        grid-column: 2;
+        grid-row: 1;
+        align-self: center;
+    }
+
+    .staffing-rule-row--diagnostic .staffing-row__chips,
+    .staffing-substitution-row--diagnostic .staffing-row__chips,
+    .staffing-rule-row--diagnostic .staffing-row__facts{
+        justify-self: stretch;
+        justify-content: flex-start;
+        max-width: none;
+    }
 }
 
 .staffing-substitution-row input{

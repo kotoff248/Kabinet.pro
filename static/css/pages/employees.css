@@ -189,6 +189,7 @@
 }
 
 .department-cards-list {
+    container-type: inline-size;
     display: grid;
     gap: 0.9rem;
     align-content: start;
@@ -202,7 +203,7 @@
     --department-card-min-height: 9.35rem;
     display: grid;
     position: relative;
-    grid-template-columns: minmax(12.5rem, 1.05fr) minmax(18rem, 1.45fr) minmax(15.5rem, 0.9fr) minmax(6.6rem, 0.4fr);
+    grid-template-columns: minmax(12.5rem, 0.95fr) minmax(18rem, 1.35fr) minmax(15.5rem, 1fr);
     grid-template-rows: repeat(2, minmax(var(--department-card-row-min), auto));
     gap: 0.58rem 0.85rem;
     width: 100%;
@@ -282,11 +283,13 @@
 }
 
 .department-card__title {
+    min-width: 0;
     margin: 0;
     color: var(--color-white);
     font-size: 1.16rem;
     font-weight: 700;
     line-height: 1.25;
+    overflow-wrap: anywhere;
 }
 
 .department-card__title-row {
@@ -319,6 +322,13 @@
     line-height: 1;
 }
 
+.department-card__risk-badge span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .department-card__meta {
     display: contents;
 }
@@ -335,16 +345,6 @@
     align-self: start;
 }
 
-.department-card__cell--date {
-    grid-column: 4;
-    grid-row: 1 / span 2;
-    justify-items: end;
-    align-self: center;
-    align-content: center;
-    text-align: right;
-    opacity: 0.9;
-}
-
 .department-card__value {
     color: var(--color-white);
     font-size: 0.98rem;
@@ -358,6 +358,41 @@
     font-size: 0.82rem;
     font-weight: 600;
     line-height: 1.35;
+}
+
+.department-card__since {
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    gap: 0.34rem;
+    width: fit-content;
+    max-width: 100%;
+    min-width: 0;
+    margin-top: 0.04rem;
+    padding: 0.25rem 0.48rem;
+    border-radius: var(--ui-radius-status);
+    color: rgba(235, 244, 255, 0.9);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.department-card__since-label {
+    color: rgba(205, 218, 236, 0.72);
+    font-size: 0.64rem;
+    font-weight: 780;
+    line-height: 1.2;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.department-card__since strong {
+    min-width: 0;
+    color: var(--color-white);
+    font-size: 0.78rem;
+    font-weight: 760;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
 .department-card__metrics {
@@ -598,6 +633,7 @@
 }
 
 .department-detail-shell {
+    container-type: inline-size;
     display: grid;
     gap: 0.95rem;
     overflow-y: auto;
@@ -612,13 +648,435 @@
     align-content: start;
 }
 
-.department-card--current:hover {
-    transform: none;
+.department-current-card {
+    --department-risk-rgb: 121, 216, 90;
+    display: grid;
+    position: relative;
+    gap: 0.72rem;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 0.92rem 1rem 0.95rem 1.18rem;
+    box-sizing: border-box;
+    border-radius: var(--ui-radius-panel-inner);
+    color: rgba(235, 244, 255, 0.94);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)),
         rgba(18, 20, 28, 0.42);
-    border-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.06);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+    transition: var(--card-ignite-transition);
+}
+
+.department-current-card::before {
+    content: "";
+    position: absolute;
+    inset: 0.58rem auto 0.58rem 0.58rem;
+    width: 0.24rem;
+    border-radius: 999px;
+    background: rgb(var(--department-risk-rgb));
+    box-shadow: 0 0 1.1rem rgba(var(--department-risk-rgb), 0.28);
+    pointer-events: none;
+}
+
+.department-current-card[data-href] {
+    cursor: pointer;
+}
+
+.department-current-card:hover,
+.department-current-card:focus-visible {
+    transform: translateY(var(--card-ignite-y));
+    background: var(--card-ignite-bg);
+    border-color: var(--card-ignite-border);
+    box-shadow: var(--card-ignite-shadow);
+}
+
+.department-current-card--risk-conflict {
+    --department-risk-rgb: 255, 70, 104;
+}
+
+.department-current-card--risk-high {
+    --department-risk-rgb: 255, 176, 64;
+}
+
+.department-current-card--risk-medium {
+    --department-risk-rgb: 238, 214, 91;
+}
+
+.department-current-card--risk-info {
+    --department-risk-rgb: 66, 185, 255;
+}
+
+.department-current-card__main {
+    display: grid;
+    grid-template-columns: minmax(14rem, 0.92fr) minmax(22rem, 1.08fr);
+    gap: 0.82rem;
+    align-items: stretch;
+    min-width: 0;
+}
+
+.department-current-card__identity {
+    display: grid;
+    align-content: start;
+    gap: 0.44rem;
+    min-width: 0;
+}
+
+.department-current-card__eyebrow,
+.department-current-card__label,
+.department-current-card__metric-copy > span,
+.department-current-card__risk-copy > span,
+.department-current-card__risk-facts > span > span {
+    color: rgba(205, 218, 236, 0.74);
+    font-size: 0.67rem;
+    font-weight: 780;
+    line-height: 1.2;
+    text-transform: uppercase;
+    letter-spacing: 0.045em;
+}
+
+.department-current-card__title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.department-current-card__title {
+    min-width: 0;
+    margin: 0;
+    color: var(--color-white);
+    font-size: 1.16rem;
+    font-weight: 800;
+    line-height: 1.22;
+    overflow-wrap: anywhere;
+}
+
+.department-current-card__risk-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    max-width: 100%;
+    padding: 0.24rem 0.48rem;
+    border-radius: var(--ui-radius-status);
+    color: rgb(var(--department-risk-rgb));
+    background: rgba(var(--department-risk-rgb), 0.11);
+    border: 1px solid rgba(var(--department-risk-rgb), 0.22);
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1.15;
+    text-transform: uppercase;
+    letter-spacing: 0.035em;
+}
+
+.department-current-card__risk-badge .material-icons-sharp {
+    font-size: 0.92rem;
+    line-height: 1;
+}
+
+.department-current-card__risk-badge span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.department-current-card__since {
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    gap: 0.34rem;
+    max-width: 100%;
+    min-width: 0;
+    padding: 0.25rem 0.48rem;
+    border-radius: var(--ui-radius-status);
+    color: rgba(235, 244, 255, 0.9);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.department-current-card__since span {
+    color: rgba(205, 218, 236, 0.72);
+    font-size: 0.64rem;
+    font-weight: 780;
+    line-height: 1.2;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.department-current-card__since strong {
+    min-width: 0;
+    color: var(--color-white);
+    font-size: 0.78rem;
+    font-weight: 760;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.department-current-card__leader {
+    display: grid;
+    gap: 0.18rem;
+    min-width: 0;
+    margin-top: 0.1rem;
+}
+
+.department-current-card__leader strong {
+    min-width: 0;
+    color: var(--color-white);
+    font-size: 0.98rem;
+    font-weight: 700;
+    line-height: 1.28;
+    overflow-wrap: anywhere;
+}
+
+.department-current-card__leader span:last-child:not(.department-current-card__label) {
+    color: rgba(205, 218, 236, 0.7);
+    font-size: 0.82rem;
+    font-weight: 650;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.department-current-card__metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(9.5rem, 1fr));
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.department-current-card__metric {
+    --department-metric-rgb: 0, 175, 245;
+    display: inline-flex;
+    position: relative;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    min-width: 0;
+    min-height: 2.62rem;
+    padding: 0.4rem 0.62rem;
+    border-radius: var(--ui-radius-status);
+    color: #e8f8ff;
+    background:
+        linear-gradient(135deg, rgba(var(--department-metric-rgb), 0.16), rgba(var(--department-metric-rgb), 0.055)),
+        rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(var(--department-metric-rgb), 0.24);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0.45rem 0.9rem rgba(var(--department-metric-rgb), 0.06);
+    text-align: center;
+}
+
+.department-current-card__metric .material-icons-sharp {
+    position: absolute;
+    left: 0.62rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: rgb(var(--department-metric-rgb));
+    font-size: 1.05rem;
+    line-height: 1;
+}
+
+.department-current-card__metric-copy {
+    display: grid;
+    gap: 0.05rem;
+    justify-items: center;
+    min-width: 0;
+    width: 100%;
+    padding-inline: 1.48rem;
+}
+
+.department-current-card__metric-copy strong {
+    color: var(--color-white);
+    font-size: 0.9rem;
+    font-weight: 760;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.department-current-card__metric--workload {
+    --department-metric-rgb: 121, 216, 90;
+}
+
+.department-current-card__metric--level-4 {
+    --department-metric-rgb: 255, 191, 71;
+}
+
+.department-current-card__metric--level-5 {
+    --department-metric-rgb: 255, 47, 117;
+}
+
+.department-current-card__metric--level-none {
+    --department-metric-rgb: 196, 209, 226;
+}
+
+.department-current-card__risk {
+    display: grid;
+    grid-template-columns: minmax(12rem, 0.75fr) minmax(0, 1fr) minmax(15rem, 0.85fr);
+    gap: 0.62rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.66rem 0.72rem;
+    border-radius: var(--ui-radius-panel-inner);
+    color: #edf7ff;
+    background:
+        linear-gradient(135deg, rgba(var(--department-risk-rgb), 0.15), rgba(var(--department-risk-rgb), 0.035)),
+        rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(var(--department-risk-rgb), 0.24);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        0 0.45rem 0.9rem rgba(var(--department-risk-rgb), 0.055);
+}
+
+.department-current-card__risk-head {
+    display: flex;
+    align-items: center;
+    gap: 0.58rem;
+    min-width: 0;
+}
+
+.department-current-card__risk-icon {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 2.05rem;
+    width: 2.05rem;
+    height: 2.05rem;
+    border-radius: var(--ui-radius-status);
+    color: rgb(var(--department-risk-rgb));
+    background: rgba(var(--department-risk-rgb), 0.12);
+    border: 1px solid rgba(var(--department-risk-rgb), 0.24);
+    font-size: 1.12rem;
+    line-height: 1;
+}
+
+.department-current-card__risk-copy {
+    display: grid;
+    gap: 0.08rem;
+    min-width: 0;
+}
+
+.department-current-card__risk-copy strong {
+    min-width: 0;
+    color: var(--color-white);
+    font-size: 0.94rem;
+    font-weight: 800;
+    line-height: 1.18;
+    overflow-wrap: anywhere;
+}
+
+.department-current-card__risk p {
+    min-width: 0;
+    margin: 0;
+    color: rgba(235, 244, 255, 0.94);
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.28;
+    overflow-wrap: anywhere;
+}
+
+.department-current-card__risk-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.42rem;
+    min-width: 0;
+}
+
+.department-current-card__risk-facts > span {
+    display: grid;
+    gap: 0.08rem;
+    min-width: 0;
+    padding: 0.34rem 0.42rem;
+    border-radius: var(--ui-radius-status);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.department-current-card__risk-facts strong {
+    min-width: 0;
+    color: var(--color-white);
+    font-size: 0.8rem;
+    font-weight: 760;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
+@container (max-width: 76rem) {
+    .department-current-card__main,
+    .department-current-card__risk {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .department-current-card__metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@container (max-width: 48rem) {
+    .department-current-card__metrics,
+    .department-current-card__risk-facts {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@container (max-width: 76rem) {
+    .department-card {
+        grid-template-columns: minmax(0, 0.95fr) minmax(18rem, 1.05fr);
+        grid-template-rows: auto auto auto;
+        min-height: 0;
+        align-items: start;
+    }
+
+    .department-card__hero {
+        grid-column: 1;
+        grid-row: 1;
+    }
+
+    .department-card__meta > .department-card__cell:first-child {
+        grid-column: 1;
+        grid-row: 2;
+    }
+
+    .department-card__metrics {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+        align-self: stretch;
+    }
+
+    .department-card__risk-panel {
+        grid-column: 1 / -1;
+        grid-row: 3;
+    }
+}
+
+@container (max-width: 48rem) {
+    .department-card {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .department-card__hero,
+    .department-card__meta > .department-card__cell:first-child,
+    .department-card__metrics,
+    .department-card__risk-panel {
+        grid-column: 1;
+    }
+
+    .department-card__hero {
+        grid-row: 1;
+    }
+
+    .department-card__meta > .department-card__cell:first-child {
+        grid-row: 2;
+    }
+
+    .department-card__metrics {
+        grid-row: 3;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .department-card__risk-panel {
+        grid-row: 4;
+    }
 }
 
 .department-detail-section {
@@ -865,7 +1323,7 @@
 
 @media (max-width: 1120px) {
     .department-card {
-        grid-template-columns: minmax(0, 1fr) minmax(15rem, 1fr);
+        grid-template-columns: minmax(0, 0.95fr) minmax(18rem, 1.05fr);
         grid-template-rows: auto auto auto;
     }
 
@@ -887,12 +1345,6 @@
     .department-card__risk-panel {
         grid-column: 1 / -1;
         grid-row: 3;
-    }
-
-    .department-card__cell--date {
-        grid-column: 2;
-        grid-row: 2;
-        align-self: end;
     }
 }
 
@@ -935,8 +1387,7 @@
     .department-card__hero,
     .department-card__meta > .department-card__cell:first-child,
     .department-card__metrics,
-    .department-card__risk-panel,
-    .department-card__cell--date {
+    .department-card__risk-panel {
         grid-column: 1;
     }
 
@@ -955,12 +1406,6 @@
 
     .department-card__risk-panel {
         grid-row: 4;
-    }
-
-    .department-card__cell--date {
-        grid-row: 5;
-        justify-items: start;
-        text-align: left;
     }
 }
 

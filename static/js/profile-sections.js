@@ -43,9 +43,15 @@ function initProfileSectionsPage() {
     let wheelSwitchGestureMaxTimer = 0;
     let wheelSwitchGestureDirection = 0;
     let wheelSwitchGestureStartedAt = 0;
+    let sectionStateTimer = 0;
 
     bindModeChange();
     signal.addEventListener("abort", clearWheelSwitchGestureTimers, { once: true });
+    signal.addEventListener("abort", function () {
+        if (sectionStateTimer) {
+            window.clearTimeout(sectionStateTimer);
+        }
+    }, { once: true });
 
     if (mobileSectionsMedia.matches) {
         setupMobileSections();
@@ -55,6 +61,7 @@ function initProfileSectionsPage() {
     if (pageMain) {
         pageMain.classList.add("is-profile-sections");
     }
+    scrollDocumentToTop({ behavior: "auto" });
 
     if (viewport && activeSection !== sectionNames[0]) {
         viewport.style.transition = "none";
@@ -160,6 +167,24 @@ function initProfileSectionsPage() {
         }
     }
 
+    function flushSectionState() {
+        if (sectionStateTimer) {
+            window.clearTimeout(sectionStateTimer);
+            sectionStateTimer = 0;
+        }
+        writeSectionState();
+    }
+
+    function scheduleSectionStateWrite() {
+        if (sectionStateTimer) {
+            window.clearTimeout(sectionStateTimer);
+        }
+        sectionStateTimer = window.setTimeout(function () {
+            sectionStateTimer = 0;
+            writeSectionState();
+        }, 140);
+    }
+
     function getInitialActiveSection() {
         if (sectionNames.indexOf(root.dataset.activeSection) !== -1) {
             return root.dataset.activeSection;
@@ -196,7 +221,7 @@ function initProfileSectionsPage() {
                 });
             });
             hasRestoredStoredScroll = true;
-            writeSectionState();
+            flushSectionState();
         });
     }
 
@@ -208,7 +233,7 @@ function initProfileSectionsPage() {
             section.classList.toggle("is-active", isActive);
             section.setAttribute("aria-hidden", isActive ? "false" : "true");
         });
-        writeSectionState();
+        flushSectionState();
     }
 
     function activateSection(sectionName, options) {
@@ -267,14 +292,15 @@ function initProfileSectionsPage() {
         });
     }
 
-    function scrollDocumentToTop() {
+    function scrollDocumentToTop(options) {
+        const behavior = options && options.behavior ? options.behavior : "smooth";
         const scrollingElement = document.scrollingElement || document.documentElement;
         if (scrollingElement && typeof scrollingElement.scrollTo === "function") {
-            scrollingElement.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+            scrollingElement.scrollTo({ top: 0, left: 0, behavior: behavior });
             return;
         }
 
-        window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+        window.scrollTo({ top: 0, left: 0, behavior: behavior });
     }
 
     function requestFilterReset(sectionKey) {
@@ -532,11 +558,13 @@ function initProfileSectionsPage() {
                 }
 
                 scrollRoot.addEventListener("scroll", function () {
-                    writeSectionState();
+                    scheduleSectionStateWrite();
                 }, { passive: true, signal: signal });
             });
         });
     }
+
+    document.addEventListener("app:before-navigation", flushSectionState, { signal: signal });
 
     document.addEventListener("app:section-sidebar-repeat", function (event) {
         if (!shouldHandleSidebarRepeat(event)) {

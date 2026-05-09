@@ -4,8 +4,8 @@
 {% block title %}Кабинет.pro - График отпусков{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/calendar/layout.css' %}?v=20260506-preference-header-layer">
-<link rel="stylesheet" href="{% static 'css/pages/calendar/controls.css' %}?v=20260506-preference-collection">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/layout.css' %}?v=20260507-fixed-compact-header-actions">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/controls.css' %}?v=20260507-fixed-compact-header-actions">
 <link rel="stylesheet" href="{% static 'css/pages/calendar/summary.css' %}?v=20260502-calendar-legend-filter-size">
 <link rel="stylesheet" href="{% static 'css/pages/calendar/board.css' %}?v=20260504-stage-dim">
 <link rel="stylesheet" href="{% static 'css/pages/calendar/drawer-modal.css' %}?v=20260504-stage-strip-hue">
@@ -34,16 +34,16 @@
     {% include 'includes/calendar/preference_collection_modal.html' %}
 </section>
 
-{{ calendar_details|json_script:"calendar-details-data" }}
-{{ calendar_month_details|json_script:"calendar-month-details-data" }}
+{{ calendar_details_payload|json_script:"calendar-details-data" }}
+{{ calendar_month_details_payload|json_script:"calendar-month-details-data" }}
 {% endblock %}
 
 {% block extra_scripts %}
 <script src="{% static 'js/calendar/state.js' %}?v=20260501-calendar-stable-rows" defer></script>
 <script src="{% static 'js/calendar/controls.js' %}?v=20260501-calendar-search-focus" defer></script>
-<script src="{% static 'js/calendar/drawer.js' %}?v=20260504-entry-focus-url" defer></script>
-<script src="{% static 'js/calendar/month-summary.js' %}?v=20260503-summary-action-return" defer></script>
-<script src="{% static 'js/calendar/board.js' %}?v=20260504-entry-focus-url" defer></script>
+<script src="{% static 'js/calendar/drawer.js' %}?v=20260507-lazy-details" defer></script>
+<script src="{% static 'js/calendar/month-summary.js' %}?v=20260507-lazy-details" defer></script>
+<script src="{% static 'js/calendar/board.js' %}?v=20260507-scroll-performance" defer></script>
 <script src="{% static 'js/calendar/forms.js' %}?v=20260503-modal-api-guard" defer></script>
 <script src="{% static 'js/calendar.js' %}?v=20260504-entry-focus-url" defer></script>
 {% endblock %}

@@ -238,68 +238,92 @@ def get_active_absence_employee_ids(
     return request_employee_ids | schedule_employee_ids
 
 
-def build_department_staffing_context(department, as_of_date):
-    if department is None:
-        return None
+def build_department_staffing_context_map(departments, as_of_date):
+    departments = [department for department in departments if department is not None]
+    department_ids = [department.id for department in departments]
+    if not department_ids:
+        return {}
 
-    staff_members = list(
-        Employees.objects.select_related(
-            "employee_position",
-            "employee_position__production_group",
-        )
-        .filter(
-            department=department,
-            is_active_employee=True,
-            date_joined__lte=as_of_date,
-        )
-        .exclude(role__in=Employees.SERVICE_ROLES)
-    )
-    staff_ids = {staff_member.id for staff_member in staff_members}
-    staff_ids_by_group = defaultdict(set)
+    staff_ids_by_department = defaultdict(set)
+    staff_ids_by_department_group = defaultdict(lambda: defaultdict(set))
+    staff_members = Employees.objects.select_related(
+        "employee_position",
+        "employee_position__production_group",
+    ).filter(
+        department_id__in=department_ids,
+        is_active_employee=True,
+        date_joined__lte=as_of_date,
+    ).exclude(role__in=Employees.SERVICE_ROLES)
     for staff_member in staff_members:
+        staff_ids_by_department[staff_member.department_id].add(staff_member.id)
         group_id = (
             staff_member.employee_position.production_group_id
             if staff_member.employee_position_id and staff_member.employee_position
             else None
         )
         if group_id is not None:
-            staff_ids_by_group[group_id].add(staff_member.id)
+            staff_ids_by_department_group[staff_member.department_id][group_id].add(staff_member.id)
 
-    coverage_rules = list(
-        DepartmentCoverageRule.objects.select_related("production_group")
-        .filter(department=department)
-        .order_by("-criticality_level", "production_group__name")
-    )
-    coverage_rule_by_group = {rule.production_group_id: rule for rule in coverage_rules}
-    substitution_rules_by_source = defaultdict(list)
-    for rule in ProductionGroupSubstitutionRule.objects.select_related("substitute_group").filter(department=department):
-        substitution_rules_by_source[rule.source_group_id].append(rule)
+    coverage_rules_by_department = defaultdict(list)
+    coverage_rule_by_department_group = defaultdict(dict)
+    coverage_rules = DepartmentCoverageRule.objects.select_related("production_group").filter(
+        department_id__in=department_ids,
+    ).order_by("-criticality_level", "production_group__name")
+    for rule in coverage_rules:
+        coverage_rules_by_department[rule.department_id].append(rule)
+        coverage_rule_by_department_group[rule.department_id][rule.production_group_id] = rule
 
-    leadership = Departments.objects.filter(pk=department.pk).values("head_id", "deputy_id").first() or {}
-    if not leadership.get("head_id"):
-        leadership["head_id"] = (
-            Employees.objects.filter(
-                department=department,
-                role=Employees.ROLE_DEPARTMENT_HEAD,
-                is_active_employee=True,
-                date_joined__lte=as_of_date,
-            )
-            .exclude(role__in=Employees.SERVICE_ROLES)
-            .values_list("id", flat=True)
-            .first()
+    substitution_rules_by_department_source = defaultdict(lambda: defaultdict(list))
+    substitution_rules = ProductionGroupSubstitutionRule.objects.select_related(
+        "source_group",
+        "substitute_group",
+    ).filter(department_id__in=department_ids)
+    for rule in substitution_rules:
+        substitution_rules_by_department_source[rule.department_id][rule.source_group_id].append(rule)
+
+    head_id_by_department = {department.id: getattr(department, "head_id", None) for department in departments}
+    deputy_id_by_department = {department.id: getattr(department, "deputy_id", None) for department in departments}
+    missing_head_department_ids = [
+        department_id
+        for department_id in department_ids
+        if not head_id_by_department.get(department_id)
+    ]
+    if missing_head_department_ids:
+        fallback_heads = Employees.objects.filter(
+            department_id__in=missing_head_department_ids,
+            role=Employees.ROLE_DEPARTMENT_HEAD,
+            is_active_employee=True,
+            date_joined__lte=as_of_date,
+        ).exclude(role__in=Employees.SERVICE_ROLES).order_by("department_id", "id").values_list(
+            "department_id",
+            "id",
         )
+        for department_id, employee_id in fallback_heads:
+            head_id_by_department.setdefault(department_id, employee_id)
+            if head_id_by_department[department_id] is None:
+                head_id_by_department[department_id] = employee_id
 
-    return {
-        "department": department,
-        "staff_ids": staff_ids,
-        "staff_count": len(staff_ids),
-        "staff_ids_by_group": staff_ids_by_group,
-        "coverage_rules": coverage_rules,
-        "coverage_rule_by_group": coverage_rule_by_group,
-        "substitution_rules_by_source": substitution_rules_by_source,
-        "head_id": leadership.get("head_id"),
-        "deputy_id": leadership.get("deputy_id"),
-    }
+    contexts = {}
+    for department in departments:
+        staff_ids = staff_ids_by_department[department.id]
+        contexts[department.id] = {
+            "department": department,
+            "staff_ids": staff_ids,
+            "staff_count": len(staff_ids),
+            "staff_ids_by_group": staff_ids_by_department_group[department.id],
+            "coverage_rules": coverage_rules_by_department[department.id],
+            "coverage_rule_by_group": coverage_rule_by_department_group[department.id],
+            "substitution_rules_by_source": substitution_rules_by_department_source[department.id],
+            "head_id": head_id_by_department.get(department.id),
+            "deputy_id": deputy_id_by_department.get(department.id),
+        }
+    return contexts
+
+
+def build_department_staffing_context(department, as_of_date):
+    if department is None:
+        return None
+    return build_department_staffing_context_map([department], as_of_date).get(department.id)
 
 
 def evaluate_department_staffing_state(
@@ -1043,6 +1067,7 @@ def build_department_group_staffing_forecast_map(
     start_date=None,
     end_date=None,
     window_days=STAFFING_FORECAST_WINDOW_DAYS,
+    staffing_context=None,
 ):
     if department is None:
         return {}
@@ -1060,7 +1085,8 @@ def build_department_group_staffing_forecast_map(
     if not group_ids:
         return {}
 
-    staffing_context = build_department_staffing_context(department, end_date)
+    if staffing_context is None:
+        staffing_context = build_department_staffing_context(department, end_date)
     employee_ids = set(staffing_context["staff_ids"])
     absent_by_day = defaultdict(set)
 
@@ -1163,6 +1189,7 @@ def build_department_staffing_forecast_map(
     start_date=None,
     end_date=None,
     window_days=STAFFING_FORECAST_WINDOW_DAYS,
+    staffing_contexts=None,
 ):
     departments = list(departments)
     department_ids = [department.id for department in departments]
@@ -1173,10 +1200,8 @@ def build_department_staffing_forecast_map(
     if end_date is None:
         end_date = start_date + timedelta(days=max(int(window_days or 1), 1) - 1)
 
-    staffing_contexts = {
-        department.id: build_department_staffing_context(department, end_date)
-        for department in departments
-    }
+    if staffing_contexts is None:
+        staffing_contexts = build_department_staffing_context_map(departments, end_date)
     employee_department_ids = {}
     for department_id, staffing_context in staffing_contexts.items():
         for employee_id in staffing_context["staff_ids"]:
@@ -1320,9 +1345,20 @@ def get_enterprise_leadership_employee_ids(as_of_date):
     return enterprise_head_ids, enterprise_deputy_ids
 
 
-def evaluate_enterprise_leadership_state(absent_employee_ids, as_of_date, *, target_employee=None):
+def evaluate_enterprise_leadership_state(
+    absent_employee_ids,
+    as_of_date,
+    *,
+    target_employee=None,
+    enterprise_head_ids=None,
+    enterprise_deputy_ids=None,
+):
     absent_employee_ids = set(absent_employee_ids or [])
-    enterprise_head_ids, enterprise_deputy_ids = get_enterprise_leadership_employee_ids(as_of_date)
+    if enterprise_head_ids is None or enterprise_deputy_ids is None:
+        enterprise_head_ids, enterprise_deputy_ids = get_enterprise_leadership_employee_ids(as_of_date)
+    else:
+        enterprise_head_ids = set(enterprise_head_ids)
+        enterprise_deputy_ids = set(enterprise_deputy_ids)
     absent_heads = enterprise_head_ids & absent_employee_ids
     absent_deputies = enterprise_deputy_ids & absent_employee_ids
     target_id = getattr(target_employee, "id", None)

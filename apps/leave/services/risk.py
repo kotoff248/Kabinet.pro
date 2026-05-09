@@ -179,6 +179,7 @@ def _calculate_vacation_request_risk(
     exclude_schedule_item_id=None,
     *,
     include_explanation=False,
+    extra_absent_employee_ids=None,
 ):
     requested_cost = Decimal(get_vacation_day_cost(vacation_type, start_date, end_date))
     requestable_days = get_employee_requestable_leave(employee, start_date)
@@ -254,13 +255,15 @@ def _calculate_vacation_request_risk(
 
     department_staffing = build_department_staffing_context(department, end_date)
     department_employee_ids = department_staffing["staff_ids"]
+    extra_absent_employee_ids = set(extra_absent_employee_ids or set()) - {employee.id}
     overlapping_employee_ids = get_active_absence_employee_ids(
         employee_ids=department_employee_ids,
         start_date=start_date,
         end_date=end_date,
         exclude_request_id=exclude_request_id,
         exclude_schedule_item_id=exclude_schedule_item_id,
-    ) - {employee.id}
+    ) | (extra_absent_employee_ids & department_employee_ids)
+    overlapping_employee_ids -= {employee.id}
     overlapping_absences_count = len(overlapping_employee_ids)
 
     employee_group = (
@@ -295,11 +298,13 @@ def _calculate_vacation_request_risk(
             end_date=end_date,
             exclude_request_id=exclude_request_id,
             exclude_schedule_item_id=exclude_schedule_item_id,
-        )
+        ) | (extra_absent_employee_ids & (enterprise_head_ids | enterprise_deputy_ids))
         enterprise_evaluation = evaluate_enterprise_leadership_state(
             enterprise_absence_ids | {employee.id},
             end_date,
             target_employee=employee,
+            enterprise_head_ids=enterprise_head_ids,
+            enterprise_deputy_ids=enterprise_deputy_ids,
         )
         if enterprise_evaluation["hard_conflict"]:
             hard_conflict = True
@@ -391,6 +396,7 @@ def calculate_vacation_request_risk(
     vacation_type,
     exclude_request_id=None,
     exclude_schedule_item_id=None,
+    extra_absent_employee_ids=None,
 ):
     return _calculate_vacation_request_risk(
         employee,
@@ -399,6 +405,28 @@ def calculate_vacation_request_risk(
         vacation_type,
         exclude_request_id=exclude_request_id,
         exclude_schedule_item_id=exclude_schedule_item_id,
+        extra_absent_employee_ids=extra_absent_employee_ids,
+    )
+
+
+def calculate_vacation_request_risk_with_explanation(
+    employee,
+    start_date,
+    end_date,
+    vacation_type,
+    exclude_request_id=None,
+    exclude_schedule_item_id=None,
+    extra_absent_employee_ids=None,
+):
+    return _calculate_vacation_request_risk(
+        employee,
+        start_date,
+        end_date,
+        vacation_type,
+        exclude_request_id=exclude_request_id,
+        exclude_schedule_item_id=exclude_schedule_item_id,
+        include_explanation=True,
+        extra_absent_employee_ids=extra_absent_employee_ids,
     )
 
 
@@ -409,6 +437,7 @@ def build_vacation_request_risk_explanation(
     vacation_type,
     exclude_request_id=None,
     exclude_schedule_item_id=None,
+    extra_absent_employee_ids=None,
 ):
     return _calculate_vacation_request_risk(
         employee,
@@ -418,6 +447,7 @@ def build_vacation_request_risk_explanation(
         exclude_request_id=exclude_request_id,
         exclude_schedule_item_id=exclude_schedule_item_id,
         include_explanation=True,
+        extra_absent_employee_ids=extra_absent_employee_ids,
     )["risk_explanation"]
 
 

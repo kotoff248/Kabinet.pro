@@ -9,6 +9,7 @@
         let focusHighlightTimeout = null;
         let currentUpcomingAnchor = null;
         let currentDetailEmployeeId = null;
+        const detailRequests = new Map();
 
         function stripModalParams(url) {
             url.searchParams.delete("calendar_modal");
@@ -19,6 +20,8 @@
             url.searchParams.delete("calendar_focus_employee");
             url.searchParams.delete("calendar_focus_start");
             url.searchParams.delete("calendar_focus_end");
+            url.searchParams.delete("calendar_detail_employee");
+            url.searchParams.delete("calendar_detail_month");
         }
 
         function getDetailDialog() {
@@ -57,6 +60,64 @@
 
         function buildProfileHref(profileUrl, scrollTop) {
             return buildDetailLinkedHref(profileUrl, scrollTop);
+        }
+
+        function syncDetailsDataNode() {
+            if (context.detailsDataNode) {
+                context.detailsDataNode.textContent = JSON.stringify(context.detailsData || {});
+            }
+        }
+
+        function buildEmployeeDetailUrl(employeeId) {
+            const url = new URL(window.location.href);
+            stripModalParams(url);
+            url.searchParams.set("calendar_detail_employee", employeeId);
+            return url.pathname + url.search + url.hash;
+        }
+
+        function fetchEmployeeDetail(employeeId) {
+            const key = String(employeeId || "");
+            if (!key) {
+                return Promise.resolve(null);
+            }
+            if (context.detailsData && context.detailsData[key]) {
+                return Promise.resolve(context.detailsData[key]);
+            }
+            if (detailRequests.has(key)) {
+                return detailRequests.get(key);
+            }
+
+            const request = fetch(buildEmployeeDetailUrl(key), {
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                signal: signal,
+            })
+                .then(function (response) {
+                    if (!response.ok) {
+                        throw new Error("Failed to load calendar employee detail.");
+                    }
+                    return response.json();
+                })
+                .then(function (payload) {
+                    const detail = payload ? payload.calendar_detail : null;
+                    if (!detail) {
+                        return null;
+                    }
+                    context.detailsData = context.detailsData || {};
+                    context.detailsData[key] = detail;
+                    syncDetailsDataNode();
+                    return detail;
+                })
+                .catch(function () {
+                    return null;
+                })
+                .finally(function () {
+                    detailRequests.delete(key);
+                });
+
+            detailRequests.set(key, request);
+            return request;
         }
 
         function syncCurrentDetailHistoryState(scrollTop) {
@@ -593,6 +654,11 @@
         function updateDetailCard(employeeId) {
             const detail = context.detailsData[String(employeeId)];
             if (!detail) {
+                fetchEmployeeDetail(employeeId).then(function (fetchedDetail) {
+                    if (fetchedDetail) {
+                        updateDetailCard(employeeId);
+                    }
+                });
                 return;
             }
             currentDetailEmployeeId = String(employeeId);
@@ -677,9 +743,22 @@
             }
 
             const employeeId = url.searchParams.get("calendar_employee");
-            if (!employeeId || !context.detailsData[String(employeeId)]) {
+            if (!employeeId) {
                 clearModalReturnParams();
                 return false;
+            }
+
+            if (!context.detailsData[String(employeeId)]) {
+                fetchEmployeeDetail(employeeId).then(function (detail) {
+                    if (!detail) {
+                        clearModalReturnParams();
+                        return;
+                    }
+                    updateDetailCard(employeeId);
+                    restoreDetailDrawerScroll(url.searchParams.get("calendar_modal_scroll"));
+                    clearModalReturnParams();
+                });
+                return true;
             }
 
             updateDetailCard(employeeId);
@@ -763,9 +842,7 @@
 
         function updateDetailsData(nextDetailsData) {
             context.detailsData = nextDetailsData || {};
-            if (context.detailsDataNode) {
-                context.detailsDataNode.textContent = JSON.stringify(context.detailsData);
-            }
+            syncDetailsDataNode();
         }
 
         return {

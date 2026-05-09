@@ -31,6 +31,9 @@
             <span class="material-icons-sharp" aria-hidden="true">{% if item.is_manager_initiated %}supervisor_account{% else %}person{% endif %}</span>
             <span>{{ item.origin_label }}</span>
         </span>
+        {% if item.initiator_name %}
+        <span class="application-card__initiator">Инициатор: {{ item.initiator_name }}</span>
+        {% endif %}
     </span>
     {% endif %}
 </div>

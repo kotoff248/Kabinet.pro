@@ -32,10 +32,17 @@ class Notification(models.Model):
     TYPE_SCHEDULE_REVIEW_REQUESTED = "schedule_review_requested"
     TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER = "schedule_item_changed_by_manager"
     TYPE_UPCOMING_VACATION_REMINDER = "upcoming_vacation_reminder"
+    TYPE_URGENT_CLOSURE_DEPARTMENT_REVIEW = "urgent_closure_department_review"
+    TYPE_URGENT_CLOSURE_EMPLOYEE_REVIEW = "urgent_closure_employee_review"
+    TYPE_URGENT_CLOSURE_HR_FINALIZATION = "urgent_closure_hr_finalization"
+    TYPE_URGENT_CLOSURE_STATUS = "urgent_closure_status"
 
     MANAGED_ACTION_EVENT_TYPES = {
         TYPE_VACATION_REQUEST_CREATED,
         TYPE_SCHEDULE_CHANGE_CREATED,
+        TYPE_URGENT_CLOSURE_DEPARTMENT_REVIEW,
+        TYPE_URGENT_CLOSURE_EMPLOYEE_REVIEW,
+        TYPE_URGENT_CLOSURE_HR_FINALIZATION,
     }
 
     EVENT_TYPE_CHOICES = [
@@ -49,6 +56,10 @@ class Notification(models.Model):
         (TYPE_SCHEDULE_REVIEW_REQUESTED, "Запрошено согласование графика"),
         (TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER, "График отпуска изменён руководителем"),
         (TYPE_UPCOMING_VACATION_REMINDER, "Скоро отпуск"),
+        (TYPE_URGENT_CLOSURE_DEPARTMENT_REVIEW, "Закрытие остатка у руководителя"),
+        (TYPE_URGENT_CLOSURE_EMPLOYEE_REVIEW, "Закрытие остатка у сотрудника"),
+        (TYPE_URGENT_CLOSURE_HR_FINALIZATION, "Закрытие остатка у HR"),
+        (TYPE_URGENT_CLOSURE_STATUS, "Статус закрытия остатка"),
     ]
 
     recipient = models.ForeignKey(
@@ -124,6 +135,8 @@ class Notification(models.Model):
             return "schedule"
         if self.event_type == self.TYPE_UPCOMING_VACATION_REMINDER:
             return "reminder"
+        if self.event_type.startswith("urgent_closure_"):
+            return "urgent_closure"
         if self.event_type in {self.TYPE_PREFERENCES_COLLECTION_STARTED, self.TYPE_SCHEDULE_REVIEW_REQUESTED}:
             return "planning"
         return "system"
@@ -139,5 +152,6 @@ class Notification(models.Model):
             "transfer": "sync_alt",
             "schedule": "edit_calendar",
             "reminder": "notification_important",
+            "urgent_closure": "event_busy",
             "planning": "event_note",
         }.get(self.visual_kind, "notifications")

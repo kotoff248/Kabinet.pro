@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from apps.employees.models import Employees
-from apps.leave.models import DepartmentWorkload, VacationRequest, VacationScheduleItem
+from apps.leave.models import DepartmentWorkload, VacationRequest, VacationScheduleChangeRequest, VacationScheduleItem
 
 from .constants import (
     CALENDAR_VISIBLE_STATUSES,
@@ -38,12 +38,13 @@ from .querysets import exclude_converted_paid_requests, get_vacation_requests_qu
 from .schedule_changes import build_schedule_change_transfer_action
 from .schedule_items import get_schedule_item_detail_reference
 from .staffing import (
-    build_department_staffing_context,
+    build_department_staffing_context_map,
     evaluate_department_staffing_state,
     evaluate_enterprise_leadership_state,
     format_staff_absence,
     format_staff_count,
     get_department_staffing_rule,
+    get_enterprise_leadership_employee_ids,
     get_staffing_limits_for_date,
 )
 
@@ -292,10 +293,7 @@ def _get_staffing_issue_meta(employees, employee_entries, period_start, period_e
         (workload.department_id, workload.year, workload.month): workload
         for workload in workloads
     }
-    staffing_contexts = {
-        department_id: build_department_staffing_context(department, period_end)
-        for department_id, department in department_by_id.items()
-    }
+    staffing_contexts = build_department_staffing_context_map(department_by_id.values(), period_end)
 
     absent_by_department_day = defaultdict(set)
     absent_by_day = defaultdict(set)
@@ -354,8 +352,14 @@ def _get_staffing_issue_meta(employees, employee_entries, period_start, period_e
             elif issue.get("severity") == "conflict":
                 add_conflict(affected_employee_ids, current_date, reason, event)
 
+    enterprise_head_ids, enterprise_deputy_ids = get_enterprise_leadership_employee_ids(period_end)
     for current_date, absent_employee_ids in absent_by_day.items():
-        enterprise_evaluation = evaluate_enterprise_leadership_state(absent_employee_ids, period_end)
+        enterprise_evaluation = evaluate_enterprise_leadership_state(
+            absent_employee_ids,
+            period_end,
+            enterprise_head_ids=enterprise_head_ids,
+            enterprise_deputy_ids=enterprise_deputy_ids,
+        )
         for issue in enterprise_evaluation["issues"]:
             affected_employee_ids = issue.get("affected_employee_ids") or absent_employee_ids
             add_conflict(
@@ -1027,6 +1031,18 @@ def build_calendar_base_data(year, employee_ids=None):
         display_status = SCHEDULE_STATUS_TO_DISPLAY_STATUS[item.status]
         display_meta = DISPLAY_STATUS_UI[display_status]
         detail_reference = get_schedule_item_detail_reference(item)
+        prefetched_change_requests = getattr(item, "_prefetched_objects_cache", {}).get("change_requests")
+        has_pending_change_request = (
+            any(
+                change_request.status == VacationScheduleChangeRequest.STATUS_PENDING
+                for change_request in prefetched_change_requests
+            )
+            if prefetched_change_requests is not None
+            else VacationScheduleChangeRequest.objects.filter(
+                schedule_item_id=item.id,
+                status=VacationScheduleChangeRequest.STATUS_PENDING,
+            ).exists()
+        )
         entry = {
             "employee_id": employee.id,
             "department_id": employee.department_id,
@@ -1058,6 +1074,7 @@ def build_calendar_base_data(year, employee_ids=None):
             "days": get_requested_days(clipped_start, clipped_end),
             "period_label": format_period_label(clipped_start, clipped_end),
             "sort_key": clipped_start.toordinal(),
+            "has_pending_change_request": has_pending_change_request,
         }
         employee_entries[employee.id].append(entry)
 
@@ -1102,6 +1119,42 @@ def _serialize_employee_schedule_status(employee_id, year, status_key):
         "tooltip_text": tooltip_text_by_status[status_key],
         "calendar_url": _build_employee_schedule_status_url(employee_id, year, status_key),
     }
+
+
+def _get_schedule_status_issue_scope_employee_ids(target_employee_ids, year_end):
+    target_employee_ids = {int(employee_id) for employee_id in target_employee_ids or [] if employee_id}
+    if not target_employee_ids:
+        return set()
+
+    target_employees = list(
+        Employees.objects.filter(
+            id__in=target_employee_ids,
+            is_active_employee=True,
+            date_joined__lte=year_end,
+        ).only("id", "department_id", "role", "is_enterprise_deputy", "is_active_employee", "date_joined")
+    )
+    department_ids = {employee.department_id for employee in target_employees if employee.department_id}
+    scope_employee_ids = set(target_employee_ids)
+    if department_ids:
+        scope_employee_ids.update(
+            Employees.objects.filter(
+                department_id__in=department_ids,
+                is_active_employee=True,
+                date_joined__lte=year_end,
+            )
+            .exclude(role__in=Employees.SERVICE_ROLES)
+            .values_list("id", flat=True)
+        )
+
+    if any(
+        employee.role == Employees.ROLE_ENTERPRISE_HEAD or employee.is_enterprise_deputy
+        for employee in target_employees
+    ):
+        enterprise_head_ids, enterprise_deputy_ids = get_enterprise_leadership_employee_ids(year_end)
+        scope_employee_ids.update(enterprise_head_ids | enterprise_deputy_ids)
+
+    return scope_employee_ids
+
 
 def build_employee_schedule_status_map(employee_ids, year=None):
     target_employee_ids = [int(employee_id) for employee_id in dict.fromkeys(employee_ids or []) if employee_id]
@@ -1149,7 +1202,11 @@ def build_employee_schedule_status_map(employee_ids, year=None):
 
     issue_meta = {}
     if active_absence_employee_ids:
-        employees, _, employee_entries = build_calendar_base_data(year)
+        issue_scope_employee_ids = _get_schedule_status_issue_scope_employee_ids(
+            active_absence_employee_ids,
+            year_end,
+        )
+        employees, _, employee_entries = build_calendar_base_data(year, employee_ids=issue_scope_employee_ids)
         issue_meta = _build_calendar_issue_meta(
             employees,
             employee_entries,
@@ -1268,6 +1325,7 @@ def _serialize_calendar_entry(
             vacation_type_label=entry["vacation_type_label"],
             schedule_status=entry.get("schedule_status"),
             today=today,
+            pending_change_exists=entry.get("has_pending_change_request"),
         )
     stage_meta = _calendar_entry_stage_meta(entry["start_date"], entry["end_date"], today=today)
     payload = {

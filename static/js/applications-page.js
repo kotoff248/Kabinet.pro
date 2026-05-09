@@ -58,6 +58,7 @@ function initApplicationsPage() {
     }) ? "mine" : defaultTaskScope;
     let currentSearch = normalizeSearch(initialSearchControl ? initialSearchControl.input.value : new URLSearchParams(window.location.search).get("search"));
     let searchTimer = null;
+    let scrollStateTimer = 0;
     let requestSequence = 0;
 
     function getSelectValue(selects, defaultValue) {
@@ -136,13 +137,47 @@ function initApplicationsPage() {
             return;
         }
 
+        const placeCaret = function () {
+            try {
+                const caretPosition = control.input.value.length;
+                control.input.setSelectionRange(caretPosition, caretPosition);
+            } catch (error) {
+            }
+        };
+
         control.input.focus({ preventScroll: true });
+        placeCaret();
         window.requestAnimationFrame(function () {
             control.input.focus({ preventScroll: true });
+            placeCaret();
             window.requestAnimationFrame(function () {
                 control.input.focus({ preventScroll: true });
+                placeCaret();
             });
         });
+    }
+
+    function collapseSearchInput(control) {
+        if (!control || !control.form) {
+            return;
+        }
+
+        const activeElement = document.activeElement;
+        if (activeElement && control.form.contains(activeElement) && typeof activeElement.blur === "function") {
+            activeElement.blur();
+        }
+        if (control.input && typeof control.input.blur === "function") {
+            control.input.blur();
+        }
+        const bodyTabIndex = document.body.getAttribute("tabindex");
+        document.body.setAttribute("tabindex", "-1");
+        document.body.focus({ preventScroll: true });
+        if (bodyTabIndex === null) {
+            document.body.removeAttribute("tabindex");
+        } else {
+            document.body.setAttribute("tabindex", bodyTabIndex);
+        }
+        setSearchOpen(control, false);
     }
 
     function syncSearchControls(sourceInput) {
@@ -172,6 +207,15 @@ function initApplicationsPage() {
         const selectedOption = selectNode.options[selectNode.selectedIndex];
         if (valueNode && selectedOption) {
             valueNode.textContent = selectedOption.textContent;
+        }
+
+        const triggerNode = selectWrapper.querySelector("[data-employee-select-trigger]");
+        if (triggerNode && triggerNode.dataset.employeeSelectLabel) {
+            const selectedText = selectedOption ? selectedOption.textContent.trim() : "";
+            const labelText = selectedText || (valueNode ? valueNode.textContent.trim() : "");
+            const triggerLabel = triggerNode.dataset.employeeSelectLabel + ": " + labelText;
+            triggerNode.setAttribute("aria-label", triggerLabel);
+            triggerNode.title = triggerLabel;
         }
 
         const menuNode = selectWrapper.__floatingMenu || selectWrapper.querySelector("[data-employee-select-menu]");
@@ -283,7 +327,29 @@ function initApplicationsPage() {
         }
     }
 
+    function flushScrollState(selectedVacationId) {
+        if (scrollStateTimer) {
+            window.clearTimeout(scrollStateTimer);
+            scrollStateTimer = 0;
+        }
+        writeScrollState(selectedVacationId);
+    }
+
+    function scheduleScrollStateWrite() {
+        if (scrollStateTimer) {
+            window.clearTimeout(scrollStateTimer);
+        }
+        scrollStateTimer = window.setTimeout(function () {
+            scrollStateTimer = 0;
+            writeScrollState();
+        }, 140);
+    }
+
     function clearScrollState() {
+        if (scrollStateTimer) {
+            window.clearTimeout(scrollStateTimer);
+            scrollStateTimer = 0;
+        }
         try {
             sessionStorage.removeItem(scrollStorageKey);
         } catch (error) {
@@ -641,6 +707,12 @@ function initApplicationsPage() {
         }, { signal: signal });
 
         if (control.toggle) {
+            control.toggle.addEventListener("pointerdown", function (event) {
+                event.preventDefault();
+                setSearchOpen(control, true);
+                focusSearchInput(control);
+            }, { signal: signal });
+
             control.toggle.addEventListener("click", function () {
                 setSearchOpen(control, true);
                 focusSearchInput(control);
@@ -662,14 +734,27 @@ function initApplicationsPage() {
                 syncSearchControls();
                 clearScrollState();
                 fetchApplications();
-                focusSearchInput(control);
+                collapseSearchInput(control);
+                window.requestAnimationFrame(function () {
+                    collapseSearchInput(control);
+                });
+                window.setTimeout(function () {
+                    collapseSearchInput(control);
+                }, 40);
             }, { signal: signal });
         }
     });
 
     signal.addEventListener("abort", function () {
         window.clearTimeout(searchTimer);
+        if (scrollStateTimer) {
+            window.clearTimeout(scrollStateTimer);
+        }
     }, { once: true });
+
+    document.addEventListener("app:before-navigation", function () {
+        flushScrollState();
+    }, { signal: signal });
 
     document.addEventListener("app:section-filters-reset", function (event) {
         if (!event.detail || event.detail.sectionKey !== "applications") {
@@ -688,15 +773,20 @@ function initApplicationsPage() {
         if (!scrollShell) {
             return;
         }
-        scrollShell.addEventListener("scroll", function () {
-            writeScrollState();
-        }, { passive: true, signal: signal });
+        scrollShell.addEventListener("scroll", scheduleScrollStateWrite, { passive: true, signal: signal });
     });
 
     requestList.addEventListener("click", function (event) {
         const card = event.target.closest("[data-vacation-id]");
         if (card && requestList.contains(card)) {
-            writeScrollState(card.dataset.vacationId);
+            flushScrollState(card.dataset.vacationId);
+        }
+    }, { capture: true, signal: signal });
+
+    transferList.addEventListener("click", function (event) {
+        const card = event.target.closest("[data-change-request-id]");
+        if (card && transferList.contains(card)) {
+            flushScrollState();
         }
     }, { capture: true, signal: signal });
 
@@ -707,7 +797,18 @@ function initApplicationsPage() {
 
         const card = event.target.closest("[data-vacation-id]");
         if (card && requestList.contains(card)) {
-            writeScrollState(card.dataset.vacationId);
+            flushScrollState(card.dataset.vacationId);
+        }
+    }, { capture: true, signal: signal });
+
+    transferList.addEventListener("keydown", function (event) {
+        if (event.key !== "Enter" && event.key !== " ") {
+            return;
+        }
+
+        const card = event.target.closest("[data-change-request-id]");
+        if (card && transferList.contains(card)) {
+            flushScrollState();
         }
     }, { capture: true, signal: signal });
 

@@ -37,6 +37,7 @@ function initEmployeesPage() {
     }) || buttons[0]).value;
     let currentSearch = normalizeSearch(searchInput ? searchInput.value : new URLSearchParams(window.location.search).get("search"));
     let searchTimer = null;
+    let scrollStateTimer = 0;
     let requestSequence = 0;
 
     function getDepartmentValue() {
@@ -279,7 +280,29 @@ function initEmployeesPage() {
         }
     }
 
+    function flushScrollState(selectedEmployeeId) {
+        if (scrollStateTimer) {
+            window.clearTimeout(scrollStateTimer);
+            scrollStateTimer = 0;
+        }
+        writeScrollState(selectedEmployeeId);
+    }
+
+    function scheduleScrollStateWrite() {
+        if (scrollStateTimer) {
+            window.clearTimeout(scrollStateTimer);
+        }
+        scrollStateTimer = window.setTimeout(function () {
+            scrollStateTimer = 0;
+            writeScrollState();
+        }, 140);
+    }
+
     function clearScrollState() {
+        if (scrollStateTimer) {
+            window.clearTimeout(scrollStateTimer);
+            scrollStateTimer = 0;
+        }
         try {
             sessionStorage.removeItem(scrollStorageKey);
         } catch (error) {
@@ -763,7 +786,14 @@ function initEmployeesPage() {
 
     signal.addEventListener("abort", function () {
         window.clearTimeout(searchTimer);
+        if (scrollStateTimer) {
+            window.clearTimeout(scrollStateTimer);
+        }
     }, { once: true });
+
+    document.addEventListener("app:before-navigation", function () {
+        flushScrollState();
+    }, { signal: signal });
 
     document.addEventListener("app:section-sidebar-repeat", function (event) {
         if (!event.detail || event.detail.sectionKey !== "employees") {
@@ -775,15 +805,13 @@ function initEmployeesPage() {
     }, { signal: signal });
 
     if (employeesScrollShell) {
-        employeesScrollShell.addEventListener("scroll", function () {
-            writeScrollState();
-        }, { passive: true, signal: signal });
+        employeesScrollShell.addEventListener("scroll", scheduleScrollStateWrite, { passive: true, signal: signal });
     }
 
     employeesList.addEventListener("click", function (event) {
         const card = event.target.closest("[data-employee-id]");
         if (card && employeesList.contains(card)) {
-            writeScrollState(card.dataset.employeeId);
+            flushScrollState(card.dataset.employeeId);
         }
     }, { capture: true, signal: signal });
 
@@ -794,7 +822,7 @@ function initEmployeesPage() {
 
         const card = event.target.closest("[data-employee-id]");
         if (card && employeesList.contains(card)) {
-            writeScrollState(card.dataset.employeeId);
+            flushScrollState(card.dataset.employeeId);
         }
     }, { capture: true, signal: signal });
 

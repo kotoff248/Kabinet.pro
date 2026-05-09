@@ -41,6 +41,42 @@ document.addEventListener("DOMContentLoaded", function () {
     const PAGE_TRANSITION_CLASS = "is-page-transitioning";
     const CALENDAR_ROOT_SELECTOR = "#calendar-filters-form";
     const CALENDAR_ACTIVE_PREFERENCES_URL_KEY = "calendar:active-preferences-url";
+    const NAVIGATION_PREFETCH_TTL_MS = 120000;
+    const NAVIGATION_PREFETCH_MAX_ENTRIES = 10;
+    const NAVIGATION_IDLE_PREFETCH_DELAY_MS = 700;
+    const NAVIGATION_IDLE_PREFETCH_STEP_MS = 900;
+    const NAVIGATION_IDLE_PREFETCH_KEYS = ["calendar", "schedule-planning", "staffing"];
+    const NAVIGATION_STYLE_LOAD_TIMEOUT_MS = 1800;
+    const SCROLL_PERFORMANCE_SELECTOR = [
+        ".applications-cards-shell",
+        ".employee-cards-shell",
+        ".department-cards-shell",
+        ".department-detail-shell",
+        ".notifications-list",
+        ".preference-readiness-panel__scroll",
+        ".schedule-planning-panel__scroll",
+        ".schedule-draft-panel__scroll",
+        ".staffing-board",
+        ".calendar-board-scroll",
+    ].join(",");
+    const PLANNING_SCROLL_MEMORY_CONFIGS = [
+        {
+            pageSelector: ".preference-readiness-page",
+            scrollSelector: ".preference-readiness-panel__scroll",
+            storageKey: "planning-scroll:preference-readiness",
+        },
+        {
+            pageSelector: ".schedule-planning-page",
+            scrollSelector: ".schedule-planning-panel__scroll",
+            storageKey: "planning-scroll:schedule-planning",
+        },
+        {
+            pageSelector: ".schedule-draft-page",
+            scrollSelector: ".schedule-draft-panel__scroll",
+            storageKey: "planning-scroll:schedule-draft",
+        },
+    ];
+    const PLANNING_SCROLL_MEMORY_TTL_MS = 10 * 60 * 1000;
     const SECTION_MEMORY = {
         profile: {
             listPath: "/main/",
@@ -52,7 +88,7 @@ document.addEventListener("DOMContentLoaded", function () {
             storageKey: "applications:last-detail-href",
             listStorageKey: "applications:last-list-href",
             listPath: "/applications/",
-            detailPattern: /^\/applications\/\d+\/$/,
+            detailPattern: /^\/applications\/(?:\d+|transfers\/\d+)\/$/,
         },
         employees: {
             storageKey: "employees:last-detail-href",
@@ -94,6 +130,17 @@ document.addEventListener("DOMContentLoaded", function () {
     };
     let sidebarIndicatorFrame = 0;
     let sidebarIndicatorSettledTimer = 0;
+    const navigationPrefetchCache = new Map();
+    const navigationPrefetchInFlight = new Set();
+    const navigationPrefetchedAssets = new Set();
+    let navigationPrefetchGeneration = 0;
+    let navigationIdlePrefetchTimer = 0;
+
+    function getNowMs() {
+        return window.performance && typeof window.performance.now === "function"
+            ? window.performance.now()
+            : Date.now();
+    }
 
     function assetMatches(url, matchers) {
         return matchers.some(function (matcher) {
@@ -163,7 +210,10 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function isVacationPreferencesUrl(url) {
-        return Boolean(url && /^\/preferences\/\d+\/$/.test(url.pathname));
+        return Boolean(url && (
+            /^\/preferences\/\d+\/(?:readiness\/)?$/.test(url.pathname)
+            || /^\/calendar\/drafts\/\d+\/$/.test(url.pathname)
+        ));
     }
 
     function getRememberedCalendarHref(fallbackHref) {
@@ -248,7 +298,8 @@ document.addEventListener("DOMContentLoaded", function () {
             return "";
         }
 
-        return /^\/employee\/\d+\/$/.test(url.pathname) || /^\/applications\/\d+\/$/.test(url.pathname);
+        return /^\/employee\/\d+\/$/.test(url.pathname)
+            || /^\/applications\/(?:\d+|transfers\/\d+)\/$/.test(url.pathname);
     }
 
     function getContextualSectionKey(url) {
@@ -412,6 +463,10 @@ document.addEventListener("DOMContentLoaded", function () {
             return "К заявке";
         }
 
+        if (/^\/applications\/transfers\/\d+\/$/.test(currentUrl.pathname)) {
+            return "К переносу";
+        }
+
         if (/^\/departments\/\d+\/$/.test(currentUrl.pathname)) {
             return "К группам";
         }
@@ -430,6 +485,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (currentUrl.pathname === "/calendar/") {
             return "К графику";
+        }
+
+        if (/^\/preferences\/\d+\/(?:readiness\/)?$/.test(currentUrl.pathname)) {
+            return "К сбору";
+        }
+
+        if (/^\/calendar\/drafts\/\d+\/$/.test(currentUrl.pathname)) {
+            return "К черновику";
         }
 
         if (currentUrl.pathname === "/main/") {
@@ -493,6 +556,75 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!preserveLeft) {
             element.scrollLeft = 0;
         }
+    }
+
+    function getNormalizedPlanningScrollPath() {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("open_modal");
+        url.searchParams.delete("modal_error");
+        const query = url.searchParams.toString();
+        return url.pathname + (query ? "?" + query : "");
+    }
+
+    function getActivePlanningScrollConfig() {
+        return PLANNING_SCROLL_MEMORY_CONFIGS.find(function (config) {
+            return Boolean(document.querySelector(config.pageSelector));
+        }) || null;
+    }
+
+    function getPlanningScrollRoot(config) {
+        return config ? document.querySelector(config.scrollSelector) : null;
+    }
+
+    function savePlanningScrollState() {
+        const config = getActivePlanningScrollConfig();
+        const scrollRoot = getPlanningScrollRoot(config);
+        if (!config || !scrollRoot) {
+            return;
+        }
+
+        try {
+            sessionStorage.setItem(config.storageKey, JSON.stringify({
+                path: getNormalizedPlanningScrollPath(),
+                top: scrollRoot.scrollTop || 0,
+                left: scrollRoot.scrollLeft || 0,
+                timestamp: Date.now(),
+            }));
+        } catch (error) {
+        }
+    }
+
+    function restorePlanningScrollState() {
+        const config = getActivePlanningScrollConfig();
+        const scrollRoot = getPlanningScrollRoot(config);
+        if (!config || !scrollRoot) {
+            return;
+        }
+
+        let state = null;
+        try {
+            state = JSON.parse(sessionStorage.getItem(config.storageKey) || "null");
+        } catch (error) {
+            state = null;
+        }
+
+        if (!state || state.path !== getNormalizedPlanningScrollPath() || Date.now() - Number(state.timestamp || 0) > PLANNING_SCROLL_MEMORY_TTL_MS) {
+            try {
+                sessionStorage.removeItem(config.storageKey);
+            } catch (error) {
+            }
+            return;
+        }
+
+        try {
+            sessionStorage.removeItem(config.storageKey);
+        } catch (error) {
+        }
+
+        window.requestAnimationFrame(function () {
+            scrollRoot.scrollTop = Number(state.top) || 0;
+            scrollRoot.scrollLeft = Number(state.left) || 0;
+        });
     }
 
     function resetSectionedPageToOverview(root) {
@@ -645,8 +777,72 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    function syncDocumentStyles(nextDocument) {
-        const nextStyleHrefs = getStylesheetHrefs(nextDocument);
+    function isStylesheetReady(styleNode) {
+        return Boolean(styleNode && styleNode.sheet);
+    }
+
+    function waitForStylesheetReady(styleNode) {
+        if (!styleNode || isStylesheetReady(styleNode)) {
+            return Promise.resolve();
+        }
+
+        return new Promise(function (resolve) {
+            let settled = false;
+            const finish = function () {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                window.clearTimeout(timer);
+                styleNode.removeEventListener("load", finish);
+                styleNode.removeEventListener("error", finish);
+                resolve();
+            };
+            const timer = window.setTimeout(finish, NAVIGATION_STYLE_LOAD_TIMEOUT_MS);
+
+            styleNode.addEventListener("load", finish);
+            styleNode.addEventListener("error", finish);
+        });
+    }
+
+    function createPreparedStylesheet(nextDocument, href) {
+        const nextStyle = Array.from(nextDocument.querySelectorAll("link[rel='stylesheet'][href]")).find(function (styleNode) {
+            return styleNode.href === href;
+        });
+
+        if (!nextStyle) {
+            return null;
+        }
+
+        const style = nextStyle.cloneNode(true);
+        const originalMedia = style.getAttribute("media") || "";
+        style.href = href;
+        style.dataset.kabinetNavigationPendingStyle = "true";
+        style.dataset.kabinetNavigationOriginalMedia = originalMedia;
+        style.media = "print";
+        document.head.appendChild(style);
+        return style;
+    }
+
+    function activatePreparedStylesheets(nextStyleHrefs) {
+        nextStyleHrefs.forEach(function (href) {
+            const styleNode = findCurrentStylesheet(href);
+            if (!styleNode || styleNode.dataset.kabinetNavigationPendingStyle !== "true") {
+                return;
+            }
+
+            const originalMedia = styleNode.dataset.kabinetNavigationOriginalMedia || "";
+            if (originalMedia) {
+                styleNode.media = originalMedia;
+            } else {
+                styleNode.removeAttribute("media");
+            }
+            delete styleNode.dataset.kabinetNavigationPendingStyle;
+            delete styleNode.dataset.kabinetNavigationOriginalMedia;
+        });
+    }
+
+    function removeStaleDocumentStyles(nextStyleHrefs) {
         const nextStyleSet = new Set(nextStyleHrefs);
 
         Array.from(document.querySelectorAll("link[rel='stylesheet'][href]")).forEach(function (styleNode) {
@@ -658,19 +854,25 @@ document.addEventListener("DOMContentLoaded", function () {
                 styleNode.remove();
             }
         });
+    }
+
+    async function syncDocumentStyles(nextDocument) {
+        const nextStyleHrefs = getStylesheetHrefs(nextDocument);
+        const pendingStyles = [];
 
         nextStyleHrefs.forEach(function (href) {
-            if (findCurrentStylesheet(href)) {
-                return;
+            let styleNode = findCurrentStylesheet(href);
+            if (!styleNode) {
+                styleNode = createPreparedStylesheet(nextDocument, href);
             }
-
-            const nextStyle = Array.from(nextDocument.querySelectorAll("link[rel='stylesheet'][href]")).find(function (styleNode) {
-                return styleNode.href === href;
-            });
-            if (nextStyle) {
-                document.head.appendChild(nextStyle.cloneNode(true));
+            if (styleNode) {
+                pendingStyles.push(waitForStylesheetReady(styleNode));
             }
         });
+
+        await Promise.all(pendingStyles);
+        activatePreparedStylesheets(nextStyleHrefs);
+        removeStaleDocumentStyles(nextStyleHrefs);
     }
 
     async function syncDocumentScripts(nextDocument) {
@@ -838,6 +1040,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         const currentUrl = toSameOriginUrl(window.location.href);
+        if (currentUrl && currentUrl.pathname === SECTION_MEMORY.calendar.listPath) {
+            clearActiveCalendarPreferenceHref();
+        }
         if (!isVacationPreferencesUrl(currentUrl)) {
             const activePreferencesHref = getActiveCalendarPreferenceHref();
             if (activePreferencesHref) {
@@ -901,6 +1106,7 @@ document.addEventListener("DOMContentLoaded", function () {
         syncKnownPageClasses(nextDocument);
         syncMessages(nextDocument);
         syncSidebarNavigation(nextDocument);
+        initScrollPerformanceHints(nextMain);
         return true;
     }
 
@@ -961,6 +1167,173 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    function clearNavigationPrefetchCache() {
+        navigationPrefetchGeneration += 1;
+        navigationPrefetchCache.clear();
+        navigationPrefetchInFlight.clear();
+    }
+
+    function pruneNavigationPrefetchCache() {
+        const now = getNowMs();
+        Array.from(navigationPrefetchCache.keys()).forEach(function (key) {
+            const entry = navigationPrefetchCache.get(key);
+            if (!entry || now - entry.timestamp > NAVIGATION_PREFETCH_TTL_MS) {
+                navigationPrefetchCache.delete(key);
+            }
+        });
+
+        while (navigationPrefetchCache.size > NAVIGATION_PREFETCH_MAX_ENTRIES) {
+            const firstKey = navigationPrefetchCache.keys().next().value;
+            navigationPrefetchCache.delete(firstKey);
+        }
+    }
+
+    function storeNavigationPrefetch(key, entry) {
+        if (!key || !entry || !entry.html) {
+            return;
+        }
+        navigationPrefetchCache.set(key, {
+            finalHref: entry.finalHref || key,
+            html: entry.html,
+            timestamp: entry.timestamp || getNowMs(),
+        });
+        pruneNavigationPrefetchCache();
+    }
+
+    function prefetchNavigationAsset(href, assetType) {
+        const url = toSameOriginUrl(href);
+        if (!url || navigationPrefetchedAssets.has(url.href)) {
+            return;
+        }
+
+        navigationPrefetchedAssets.add(url.href);
+        const link = document.createElement("link");
+        link.rel = "prefetch";
+        link.href = url.href;
+        if (assetType) {
+            link.as = assetType;
+        }
+        document.head.appendChild(link);
+    }
+
+    function warmNavigationAssets(html) {
+        if (!html) {
+            return;
+        }
+
+        let parsedDocument = null;
+        try {
+            parsedDocument = new DOMParser().parseFromString(html, "text/html");
+        } catch (error) {
+            return;
+        }
+
+        getStylesheetHrefs(parsedDocument).forEach(function (href) {
+            if (!findCurrentStylesheet(href)) {
+                prefetchNavigationAsset(href, "style");
+            }
+        });
+
+        Array.from(parsedDocument.querySelectorAll("script[src]")).forEach(function (scriptNode) {
+            const src = scriptNode.src;
+            if (!src || assetMatches(src, CORE_SCRIPT_MATCHERS)) {
+                return;
+            }
+            if (Array.from(document.querySelectorAll("script[src]")).some(function (currentScript) {
+                return currentScript.src === src;
+            })) {
+                return;
+            }
+            prefetchNavigationAsset(src, "script");
+        });
+    }
+
+    function prefetchNavigationHref(href) {
+        const url = toSameOriginUrl(href);
+        if (!url || !canNavigateWithFetch(url.href)) {
+            return;
+        }
+
+        const key = url.href;
+        if (navigationPrefetchInFlight.has(key)) {
+            return;
+        }
+        const existing = navigationPrefetchCache.get(key);
+        if (existing && getNowMs() - existing.timestamp <= NAVIGATION_PREFETCH_TTL_MS) {
+            return;
+        }
+
+        const generation = navigationPrefetchGeneration;
+        navigationPrefetchInFlight.add(key);
+        fetch(key, {
+            headers: {
+                "X-Kabinet-Prefetch": "1",
+            },
+        })
+            .then(function (response) {
+                if (!response.ok) {
+                    return null;
+                }
+                return response.text().then(function (html) {
+                    warmNavigationAssets(html);
+                    return {
+                        finalHref: (toSameOriginUrl(response.url) || url).href,
+                        html: html,
+                        timestamp: getNowMs(),
+                    };
+                });
+            })
+            .then(function (entry) {
+                if (!entry || generation !== navigationPrefetchGeneration) {
+                    return;
+                }
+                storeNavigationPrefetch(key, entry);
+            })
+            .catch(function () {
+            })
+            .finally(function () {
+                navigationPrefetchInFlight.delete(key);
+            });
+    }
+
+    function takeNavigationPrefetch(targetHref) {
+        pruneNavigationPrefetchCache();
+        const entry = navigationPrefetchCache.get(targetHref);
+        if (!entry) {
+            return null;
+        }
+
+        navigationPrefetchCache.delete(targetHref);
+        if (getNowMs() - entry.timestamp > NAVIGATION_PREFETCH_TTL_MS) {
+            return null;
+        }
+        return entry;
+    }
+
+    function rememberCurrentNavigationDocument() {
+        const currentUrl = toSameOriginUrl(window.location.href);
+        if (!currentUrl || !canNavigateWithFetch(currentUrl.href)) {
+            return;
+        }
+
+        try {
+            storeNavigationPrefetch(currentUrl.href, {
+                finalHref: currentUrl.href,
+                html: "<!doctype html>\n" + document.documentElement.outerHTML,
+                timestamp: getNowMs(),
+            });
+        } catch (error) {
+        }
+    }
+
+    function dispatchBeforeNavigation(targetHref) {
+        document.dispatchEvent(new CustomEvent("app:before-navigation", {
+            detail: {
+                href: targetHref,
+            },
+        }));
+    }
+
     function shouldHandleLinkNavigation(event, link) {
         return isPlainLeftClick(event, link) && canNavigateWithFetch(link.href);
     }
@@ -999,6 +1372,97 @@ document.addEventListener("DOMContentLoaded", function () {
         }, 420);
     }
 
+    function initScrollPerformanceHints(root) {
+        const scope = root || document;
+        scope.querySelectorAll(SCROLL_PERFORMANCE_SELECTOR).forEach(function (scrollRoot) {
+            if (scrollRoot.dataset.scrollPerformanceBound === "true") {
+                return;
+            }
+
+            scrollRoot.dataset.scrollPerformanceBound = "true";
+            let scrollTimer = 0;
+            scrollRoot.addEventListener("scroll", function () {
+                scrollRoot.classList.add("is-scrolling");
+                if (scrollTimer) {
+                    window.clearTimeout(scrollTimer);
+                }
+                scrollTimer = window.setTimeout(function () {
+                    scrollTimer = 0;
+                    scrollRoot.classList.remove("is-scrolling");
+                }, 140);
+            }, { passive: true });
+        });
+    }
+
+    function initNavigationPrefetch() {
+        document.addEventListener("pointerover", function (event) {
+            const link = event.target instanceof Element
+                ? event.target.closest("a[data-app-link], [data-sidebar-link], [data-section-back-link], [data-calendar-return-link]")
+                : null;
+            if (link && link.href) {
+                prefetchNavigationHref(link.href);
+            }
+        }, { passive: true });
+
+        document.addEventListener("focusin", function (event) {
+            const link = event.target instanceof Element
+                ? event.target.closest("a[data-app-link], [data-sidebar-link], [data-section-back-link], [data-calendar-return-link]")
+                : null;
+            if (link && link.href) {
+                prefetchNavigationHref(link.href);
+            }
+        });
+
+        document.addEventListener("submit", clearNavigationPrefetchCache, { capture: true });
+    }
+
+    function getIdlePrefetchLinks() {
+        const nav = document.querySelector("[data-sidebar-nav]");
+        if (!nav) {
+            return [];
+        }
+
+        return NAVIGATION_IDLE_PREFETCH_KEYS
+            .map(function (key) {
+                return nav.querySelector('[data-sidebar-link][data-sidebar-key="' + key + '"]');
+            })
+            .filter(function (link) {
+                if (!link || !link.href || isCurrentPageUrl(link.href)) {
+                    return false;
+                }
+                const url = toSameOriginUrl(link.href);
+                return Boolean(url && canNavigateWithFetch(url.href));
+            });
+    }
+
+    function scheduleIdleNavigationPrefetch() {
+        if (navigationIdlePrefetchTimer) {
+            window.clearTimeout(navigationIdlePrefetchTimer);
+        }
+
+        navigationIdlePrefetchTimer = window.setTimeout(function () {
+            navigationIdlePrefetchTimer = 0;
+            if (navigationState.isNavigating) {
+                scheduleIdleNavigationPrefetch();
+                return;
+            }
+
+            const links = getIdlePrefetchLinks();
+            let index = 0;
+            const prefetchNext = function () {
+                if (index >= links.length || navigationState.isNavigating) {
+                    return;
+                }
+                prefetchNavigationHref(links[index].href);
+                index += 1;
+                if (index < links.length) {
+                    window.setTimeout(prefetchNext, NAVIGATION_IDLE_PREFETCH_STEP_MS);
+                }
+            };
+            prefetchNext();
+        }, NAVIGATION_IDLE_PREFETCH_DELAY_MS);
+    }
+
     async function navigateWithFetch(targetUrl, pushState) {
         const target = new URL(targetUrl, window.location.href);
         const targetHref = target.href;
@@ -1007,28 +1471,42 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
+        dispatchBeforeNavigation(targetHref);
         rememberSectionDetailHref(targetHref);
+        rememberCurrentNavigationDocument();
         setNavigationBusy(true, targetHref);
 
         try {
-            const response = await fetch(targetHref);
-            if (!response.ok) {
-                const staleSectionKey = response.status === 404 ? getSectionKeyFromDetailUrl(target) : "";
-                if (staleSectionKey) {
-                    clearSectionMemory(staleSectionKey);
-                    setNavigationBusy(false, null);
-                    navigateWithFetch(getRememberedSectionListHref(staleSectionKey), true);
-                    return;
+            const prefetched = takeNavigationPrefetch(targetHref);
+            let finalUrl = prefetched ? toSameOriginUrl(prefetched.finalHref) || target : null;
+            let html = prefetched ? prefetched.html : "";
+
+            if (!prefetched) {
+                const response = await fetch(targetHref);
+                if (!response.ok) {
+                    const staleSectionKey = response.status === 404 ? getSectionKeyFromDetailUrl(target) : "";
+                    if (staleSectionKey) {
+                        clearSectionMemory(staleSectionKey);
+                        setNavigationBusy(false, null);
+                        navigateWithFetch(getRememberedSectionListHref(staleSectionKey), true);
+                        return;
+                    }
+                    throw new Error("Navigation failed");
                 }
-                throw new Error("Navigation failed");
+
+                finalUrl = toSameOriginUrl(response.url) || target;
+                html = await response.text();
             }
 
-            const finalUrl = toSameOriginUrl(response.url) || target;
             const finalHref = finalUrl.href;
-            const html = await response.text();
+            storeNavigationPrefetch(finalHref, {
+                finalHref: finalHref,
+                html: html,
+                timestamp: getNowMs(),
+            });
             const nextDocument = new DOMParser().parseFromString(html, "text/html");
 
-            syncDocumentStyles(nextDocument);
+            await syncDocumentStyles(nextDocument);
             if (!replacePageMain(nextDocument)) {
                 throw new Error("Navigation shell mismatch");
             }
@@ -1063,6 +1541,10 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         rememberSectionDetailHref(window.location.href);
+        const currentUrl = toSameOriginUrl(window.location.href);
+        if (isVacationPreferencesUrl(currentUrl)) {
+            rememberActiveCalendarPreferenceHref(currentUrl.href);
+        }
         syncSidebarRememberedHrefs(nav);
         syncSectionBackLinks();
 
@@ -1356,10 +1838,16 @@ document.addEventListener("DOMContentLoaded", function () {
         },
     };
 
+    initNavigationPrefetch();
+    initScrollPerformanceHints(document);
+    restorePlanningScrollState();
     initSidebarNavigation();
     initDateFields();
+    scheduleIdleNavigationPrefetch();
 
     document.addEventListener("app:navigation", initDateFields);
+    document.addEventListener("app:navigation", scheduleIdleNavigationPrefetch);
+    document.addEventListener("app:navigation", restorePlanningScrollState);
 
     document.addEventListener("submit", function (event) {
         const form = event.target instanceof HTMLFormElement ? event.target : null;
@@ -1368,6 +1856,15 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         clearSectionMemory(form.dataset.clearSectionMemory);
+    });
+
+    document.addEventListener("submit", function (event) {
+        const form = event.target instanceof HTMLFormElement ? event.target : null;
+        if (!form || (form.method || "").toLowerCase() !== "post") {
+            return;
+        }
+
+        savePlanningScrollState();
     });
 
     document.addEventListener("click", function (event) {

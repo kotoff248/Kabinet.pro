@@ -719,10 +719,7 @@ def _entitlement_status_for_row(period, remaining_days, as_of_date):
         return "attention", "Скоро срок"
     return "remaining", "Остаток"
 
-def get_employee_entitlement_rows(employee, as_of_date=None, limit=6):
-    as_of_date = normalize_date_value(as_of_date or timezone.localdate())
-    sources = _collect_paid_ledger_sources(employee)
-    periods = get_employee_entitlement_periods_for_read(employee, _source_horizon(as_of_date, sources))
+def _build_employee_entitlement_rows(employee, periods, sources, as_of_date, limit=6):
     sources = _sort_paid_ledger_sources_for_allocation(sources, as_of_date)
     allocations = _build_allocation_rows(employee, periods, sources, strict=True, for_save=False)
 
@@ -783,6 +780,37 @@ def get_employee_entitlement_rows(employee, as_of_date=None, limit=6):
     recent_rows = visible_rows[-limit:]
     selected = {row["working_year_number"]: row for row in [*problem_rows, *recent_rows]}
     return sorted(selected.values(), key=lambda row: row["period_start"], reverse=True)
+
+
+def get_employee_entitlement_rows(employee, as_of_date=None, limit=6):
+    as_of_date = normalize_date_value(as_of_date or timezone.localdate())
+    sources = _collect_paid_ledger_sources(employee)
+    periods = get_employee_entitlement_periods_for_read(employee, _source_horizon(as_of_date, sources))
+    return _build_employee_entitlement_rows(employee, periods, sources, as_of_date, limit=limit)
+
+
+def get_employee_entitlement_rows_bulk(employees, as_of_date=None, limit=6):
+    as_of_date = normalize_date_value(as_of_date or timezone.localdate())
+    employees = list(employees)
+    if not employees:
+        return {}
+
+    sources_by_employee = _collect_paid_ledger_sources_for_employees(employees)
+    horizons = {
+        employee.id: _source_horizon(as_of_date, sources_by_employee[employee.id])
+        for employee in employees
+    }
+    periods_by_employee = get_employee_entitlement_periods_for_read_bulk(employees, horizons)
+    return {
+        employee.id: _build_employee_entitlement_rows(
+            employee,
+            periods_by_employee[employee.id],
+            sources_by_employee[employee.id],
+            as_of_date,
+            limit=limit,
+        )
+        for employee in employees
+    }
 
 def get_employee_remaining_balance(employee):
     return get_employee_available_balance(employee)

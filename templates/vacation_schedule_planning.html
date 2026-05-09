@@ -1,0 +1,303 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Кабинет.pro - Планирование графика{% endblock %}
+
+{% block extra_styles %}
+<link rel="stylesheet" href="{% static 'css/pages/schedule-planning.css' %}?v=20260509-shadow-fix">
+{% endblock %}
+
+{% block content %}
+<section class="profile-page schedule-planning-page" data-page="schedule-planning">
+    {% include 'includes/page_header.html' with eyebrow='Планирование' title='Планирование графика' subtitle=planning_subtitle %}
+
+    <section class="schedule-planning-panel">
+        <div class="panel-heading panel-heading--with-controls schedule-planning-panel__heading">
+            <div class="panel-heading__copy schedule-planning-panel__copy">
+                <span class="schedule-planning-eyebrow">Годовой процесс</span>
+                <h2>График отпусков на {{ year }} год</h2>
+                <p>Сбор, черновик, проверка отделов и финальное согласование собраны в одном рабочем месте.</p>
+            </div>
+            <div class="panel-heading__actions schedule-planning-panel__actions">
+                <span class="schedule-planning-status schedule-planning-status--{{ overall_status.tone }}">
+                    <span class="material-icons-sharp" aria-hidden="true">{{ overall_status.icon }}</span>
+                    {{ overall_status.label }}
+                </span>
+            </div>
+        </div>
+
+        <nav class="schedule-planning-roadmap" aria-label="Этапы планирования графика">
+            {% for stage in stages %}
+            <a href="{{ stage.url }}"
+               class="schedule-planning-step schedule-planning-step--{{ stage.status.tone }}{% if stage.active %} is-active{% endif %}"
+               data-app-link
+               {% if stage.active %}aria-current="page"{% endif %}>
+                <span class="material-icons-sharp" aria-hidden="true">{{ stage.status.icon }}</span>
+                <strong>{{ stage.label }}</strong>
+                <small>{{ stage.status.label }}</small>
+            </a>
+            {% endfor %}
+        </nav>
+
+        <div class="schedule-planning-panel__scroll">
+            {% if selected_stage == 'calendar' %}
+            <section class="schedule-planning-stage">
+                <div class="schedule-planning-stage__head">
+                    <div>
+                        <span class="schedule-planning-eyebrow">Календарь</span>
+                        <h3>График</h3>
+                    </div>
+                    <a href="{{ calendar_url }}" class="app-modal__button app-modal__button--secondary" data-app-link>
+                        <span class="material-icons-sharp" aria-hidden="true">open_in_new</span>
+                        Открыть полный график
+                    </a>
+                </div>
+                <div class="schedule-planning-metrics">
+                    <article class="schedule-planning-card schedule-planning-card--primary">
+                        <span>Статус</span>
+                        <strong>{{ calendar_summary.status.label }}</strong>
+                        <small>{% if schedule %}{{ schedule.get_status_display }}{% else %}График за год ещё не создан{% endif %}</small>
+                    </article>
+                    <article class="schedule-planning-card">
+                        <span>Всего пунктов</span>
+                        <strong>{{ calendar_summary.total_items }}</strong>
+                        <small>Черновик, план и утверждённые отпуска</small>
+                    </article>
+                    <article class="schedule-planning-card">
+                        <span>Черновик</span>
+                        <strong>{{ calendar_summary.draft_items }}</strong>
+                        <small>Пока не отправлены дальше</small>
+                    </article>
+                    <article class="schedule-planning-card">
+                        <span>Утверждено</span>
+                        <strong>{{ calendar_summary.approved_items }}</strong>
+                        <small>Уже действует в графике</small>
+                    </article>
+                </div>
+            </section>
+            {% elif selected_stage == 'collection' %}
+            <section class="schedule-planning-stage">
+                <div class="schedule-planning-stage__head">
+                    <div>
+                        <span class="schedule-planning-eyebrow">Сбор пожеланий</span>
+                        <h3>Сбор</h3>
+                    </div>
+                    <div class="schedule-planning-stage__actions">
+                        <a href="{{ readiness_url }}" class="app-modal__button app-modal__button--secondary" data-app-link>
+                            <span class="material-icons-sharp" aria-hidden="true">fact_check</span>
+                            Открыть сбор
+                        </a>
+                        {% if can_manage_collection and collection.status == 'open' %}
+                        <form method="post" action="{{ finish_url }}" class="schedule-planning-inline-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ finish_next_url }}">
+                            <button type="submit" class="app-modal__button app-modal__button--primary">
+                                <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
+                                Завершить сбор
+                            </button>
+                        </form>
+                        {% endif %}
+                        {% if can_create_draft %}
+                        <form method="post" action="{{ draft_create_url }}" class="schedule-planning-inline-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ draft_create_next_url }}">
+                            <button type="submit" class="app-modal__button app-modal__button--primary">
+                                <span class="material-icons-sharp" aria-hidden="true">auto_awesome_motion</span>
+                                Создать черновик
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="schedule-planning-metrics">
+                    <article class="schedule-planning-card schedule-planning-card--{{ collection_status.tone }}">
+                        <span>Статус</span>
+                        <strong>{{ collection_status.label }}</strong>
+                        <small>{% if collection.deadline %}Срок: {{ collection.deadline|date:"d.m.Y" }}{% else %}Сбор ещё не запускался{% endif %}</small>
+                    </article>
+                    <article class="schedule-planning-card schedule-planning-card--primary">
+                        <span>Ответили</span>
+                        <strong>{{ collection_summary.answered }} / {{ collection_summary.total }}</strong>
+                        <small>{{ collection_summary.ready_percentage }}% готовности</small>
+                    </article>
+                    <article class="schedule-planning-card">
+                        <span>Не ответили</span>
+                        <strong>{{ collection_summary.not_answered }}</strong>
+                        <small>Пойдут в ручное размещение</small>
+                    </article>
+                    <article class="schedule-planning-card">
+                        <span>Без пожеланий</span>
+                        <strong>{{ collection_summary.no_preferences }}</strong>
+                        <small>Можно ставить по необходимости</small>
+                    </article>
+                </div>
+            </section>
+            {% elif selected_stage == 'draft' %}
+            <section class="schedule-planning-stage">
+                <div class="schedule-planning-stage__head">
+                    <div>
+                        <span class="schedule-planning-eyebrow">Рабочая версия</span>
+                        <h3>Черновик</h3>
+                    </div>
+                    {% if draft_status.exists %}
+                    <div class="schedule-planning-stage__actions">
+                        <a href="{{ draft_url }}" class="app-modal__button app-modal__button--secondary" data-app-link>
+                            <span class="material-icons-sharp" aria-hidden="true">edit_calendar</span>
+                            Открыть черновик
+                        </a>
+                        {% if can_manage_draft and draft_summary.manual %}
+                        <form method="post" action="{{ draft_auto_place_url }}" class="schedule-planning-inline-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ draft_auto_place_next_url }}">
+                            <button type="submit" class="app-modal__button app-modal__button--primary">
+                                <span class="material-icons-sharp" aria-hidden="true">auto_fix_high</span>
+                                Автоматически распределить
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    {% elif can_create_draft %}
+                    <form method="post" action="{{ draft_create_url }}" class="schedule-planning-inline-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{{ draft_create_next_url }}">
+                        <button type="submit" class="app-modal__button app-modal__button--primary">
+                            <span class="material-icons-sharp" aria-hidden="true">auto_awesome_motion</span>
+                            Создать черновик
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                <div class="schedule-planning-metrics">
+                    <article class="schedule-planning-card schedule-planning-card--primary">
+                        <span>Размещено</span>
+                        <strong>{{ draft_summary.placed }}</strong>
+                        <small>Попали в черновик</small>
+                    </article>
+                    <article class="schedule-planning-card">
+                        <span>Вручную</span>
+                        <strong>{{ draft_summary.manual }}</strong>
+                        <small>Требуют решения</small>
+                    </article>
+                    <article class="schedule-planning-card schedule-planning-card--blocker">
+                        <span>Блокирует</span>
+                        <strong>{{ draft_summary.blocking }}</strong>
+                        <small>{{ draft_summary.blocking_days_label }} срочного остатка</small>
+                    </article>
+                    <article class="schedule-planning-card schedule-planning-card--danger">
+                        <span>Конфликты</span>
+                        <strong>{{ draft_summary.conflicts }}</strong>
+                        <small>Нужно разобрать до отправки</small>
+                    </article>
+                    <article class="schedule-planning-card schedule-planning-card--warning">
+                        <span>Высокий риск</span>
+                        <strong>{{ draft_summary.high_risk }}</strong>
+                        <small>Можно оставить после проверки</small>
+                    </article>
+                    <article class="schedule-planning-card">
+                        <span>Годовой план</span>
+                        <strong>{{ draft_summary.remaining_plan_days_label }}</strong>
+                        <small>Можно распределять в {{ year }} году</small>
+                    </article>
+                </div>
+                {% if approval_blocked %}
+                <div class="schedule-planning-note schedule-planning-note--blocker">
+                    <span class="material-icons-sharp" aria-hidden="true">priority_high</span>
+                    <div>
+                        <strong>Отправку на проверку пока блокируют срочные остатки.</strong>
+                        <p>Сначала запустите согласование обязательных дней прошлого года. Обычный годовой план можно добирать отдельно.</p>
+                    </div>
+                </div>
+                {% else %}
+                <div class="schedule-planning-note">
+                    <span class="material-icons-sharp" aria-hidden="true">groups</span>
+                    <div>
+                        <strong>Следующий этап — проверка руководителями отделов.</strong>
+                        <p>После запуска проверки каждый руководитель увидит свой отдел и сможет согласовать или вернуть график.</p>
+                    </div>
+                </div>
+                {% endif %}
+            </section>
+            {% elif selected_stage == 'review' %}
+            <section class="schedule-planning-stage">
+                <div class="schedule-planning-stage__head">
+                    <div>
+                        <span class="schedule-planning-eyebrow">Проверка отделов</span>
+                        <h3>Проверка</h3>
+                    </div>
+                    <span class="schedule-planning-status schedule-planning-status--{{ review_summary.status.tone }}">
+                        <span class="material-icons-sharp" aria-hidden="true">{{ review_summary.status.icon }}</span>
+                        {{ review_summary.status.label }}
+                    </span>
+                </div>
+                <div class="schedule-planning-metrics">
+                    <article class="schedule-planning-card schedule-planning-card--primary">
+                        <span>Согласовали</span>
+                        <strong>{{ review_summary.approved }} / {{ review_summary.total }}</strong>
+                        <small>Отделов</small>
+                    </article>
+                    <article class="schedule-planning-card">
+                        <span>Ожидают</span>
+                        <strong>{{ review_summary.pending }}</strong>
+                        <small>Задачи у руководителей</small>
+                    </article>
+                    <article class="schedule-planning-card schedule-planning-card--danger">
+                        <span>Возвраты</span>
+                        <strong>{{ review_summary.rejected }}</strong>
+                        <small>Нужно доработать</small>
+                    </article>
+                </div>
+                {% if review_summary.rows %}
+                <div class="schedule-planning-review-list">
+                    {% for row in review_summary.rows %}
+                    <article class="schedule-planning-review-row schedule-planning-review-row--{{ row.status }}">
+                        <div>
+                            <strong>{{ row.department.name }}</strong>
+                            <span>{{ row.head_name }}</span>
+                        </div>
+                        <em>{{ row.status_label }}</em>
+                    </article>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="schedule-planning-empty">
+                    <span class="material-icons-sharp" aria-hidden="true">outgoing_mail</span>
+                    <h3>Проверка ещё не запущена</h3>
+                    <p>После отправки черновика здесь появятся отделы и статусы руководителей.</p>
+                </div>
+                {% endif %}
+            </section>
+            {% else %}
+            <section class="schedule-planning-stage">
+                <div class="schedule-planning-stage__head">
+                    <div>
+                        <span class="schedule-planning-eyebrow">Итоговое утверждение</span>
+                        <h3>Финал</h3>
+                    </div>
+                    <span class="schedule-planning-status schedule-planning-status--{{ final_summary.status.tone }}">
+                        <span class="material-icons-sharp" aria-hidden="true">{{ final_summary.status.icon }}</span>
+                        {{ final_summary.status.label }}
+                    </span>
+                </div>
+                <div class="schedule-planning-final-grid">
+                    <article class="schedule-planning-card schedule-planning-card--primary">
+                        <span>Руководитель предприятия</span>
+                        <strong>{{ final_summary.enterprise.status_label }}</strong>
+                        <small>{% if final_summary.enterprise.reviewer_name %}{{ final_summary.enterprise.reviewer_name }}{% else %}Финальная задача ещё не открыта{% endif %}</small>
+                    </article>
+                    <article class="schedule-planning-card">
+                        <span>Уполномоченное лицо</span>
+                        <strong>{{ final_summary.authorized.status_label }}</strong>
+                        <small>{% if final_summary.authorized.reviewer_name %}{{ final_summary.authorized.reviewer_name }}{% else %}Подключается на последнем шаге{% endif %}</small>
+                    </article>
+                    <article class="schedule-planning-card schedule-planning-card--{{ final_summary.status.tone }}">
+                        <span>Итог</span>
+                        <strong>{{ final_summary.status.label }}</strong>
+                        <small>{% if schedule.approved_at %}Утверждён {{ schedule.approved_at|date:"d.m.Y" }}{% else %}Ожидает предыдущие этапы{% endif %}</small>
+                    </article>
+                </div>
+            </section>
+            {% endif %}
+        </div>
+    </section>
+</section>
+{% endblock %}

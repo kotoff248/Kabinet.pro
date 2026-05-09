@@ -1,0 +1,117 @@
+<form method="post"
+      action="{{ row.urgent_closure.create_url }}"
+      class="schedule-draft-placement-form schedule-draft-urgent-closure-form"
+      data-urgent-preview-url="{{ row.urgent_closure.preview_url }}"
+      data-urgent-can-submit="false">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ current_path }}">
+    <input type="hidden" name="modal_id" value="{{ row.urgent_closure.modal_id }}">
+    <input type="hidden" name="required_days" value="{{ row.urgent_closure.required_days }}">
+    <input type="hidden" name="deadline" value="{{ row.urgent_closure.deadline|date:'Y-m-d' }}">
+
+    <article class="schedule-draft-placement-form__employee">
+        <div>
+            <span>Сотрудник</span>
+            <strong>{{ row.employee_name }}</strong>
+            <small>{{ row.department_name }} · {{ row.group_name }}</small>
+        </div>
+        <div>
+            <span>Нужно закрыть</span>
+            <strong>{{ row.urgent_closure.required_days_label }}</strong>
+            <small>до {{ row.urgent_closure.deadline_label }}</small>
+        </div>
+    </article>
+
+    <p class="schedule-draft-placement-form__reason">{{ row.urgent_closure.explanation }}</p>
+
+    {% if row.urgent_closure.options %}
+    <section class="schedule-draft-urgent-options" aria-label="Предложенные периоды">
+        {% for option in row.urgent_closure.options %}
+        <label class="schedule-draft-urgent-option{% if not option.can_submit %} is-disabled{% endif %}">
+            <input type="radio"
+                   name="selected_option"
+                   value="{{ option.start_date|date:'Y-m-d' }}|{{ option.end_date|date:'Y-m-d' }}"
+                   data-urgent-system-option
+                   data-risk-label="{{ option.risk_label }}"
+                   data-risk-score="{{ option.risk_score }}"
+                   data-risk-conflict="{% if option.risk_is_conflict %}true{% else %}false{% endif %}"
+                   data-risk-high="{% if option.risk_level == 'high' %}true{% else %}false{% endif %}"
+                   data-option-message="{{ option.message }}"
+                   {% if not option.can_submit %}disabled{% endif %}>
+            <span class="schedule-draft-urgent-option__main">
+                <strong>{{ option.period_label }}</strong>
+                <small>{{ option.chargeable_days_label }} · {{ option.calendar_days }} календ. д.</small>
+            </span>
+            <span class="schedule-draft-urgent-option__risk{% if option.risk_is_conflict %} is-conflict{% elif option.risk_level == 'high' %} is-high{% endif %}">
+                {{ option.risk_label }} · {{ option.risk_score }}%
+            </span>
+            <em>{{ option.message }}</em>
+        </label>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    <section class="schedule-draft-urgent-manual" aria-label="Ручной период">
+        <div class="schedule-draft-urgent-manual__head">
+            <span>Другой период</span>
+            <small>Если HR хочет отправить не предложенный системой вариант.</small>
+        </div>
+        <div class="schedule-draft-placement-form__dates">
+            <label class="schedule-transfer-field" data-date-field>
+                <span>Дата начала</span>
+                <input type="date" name="manual_start_date">
+            </label>
+            <label class="schedule-transfer-field" data-date-field>
+                <span>Дата окончания</span>
+                <input type="date" name="manual_end_date">
+            </label>
+        </div>
+    </section>
+
+    <section class="schedule-transfer-preview schedule-draft-urgent-preview is-idle"
+             data-urgent-preview
+             aria-live="polite"
+             hidden>
+        <div class="schedule-transfer-preview__grid schedule-draft-urgent-preview__grid">
+            <article class="schedule-transfer-preview__card">
+                <span>Выбранный период</span>
+                <strong data-urgent-period>Выберите даты</strong>
+                <small><span data-urgent-calendar-days>—</span> календ. д.</small>
+            </article>
+            <article class="schedule-transfer-preview__card schedule-transfer-preview__card--accent">
+                <span>Списывается</span>
+                <strong><span data-urgent-chargeable-days>—</span> д.</strong>
+                <small>должно совпасть с остатком</small>
+            </article>
+        </div>
+        <article class="schedule-transfer-preview__risk" data-urgent-risk hidden>
+            <div class="schedule-transfer-preview__risk-head">
+                <span>Риск состава</span>
+                <strong data-urgent-risk-label>Низкий</strong>
+            </div>
+            <p data-urgent-risk-reason></p>
+            <p data-urgent-risk-action></p>
+        </article>
+    </section>
+
+    <label class="urgent-closure-comment-field">
+        <span>Причина</span>
+        <textarea name="reason" rows="3" placeholder="Например: часть остатка нельзя поставить в график {{ year }} года из-за срока использования."></textarea>
+    </label>
+
+    <p class="schedule-transfer-form__hint schedule-draft-urgent-hint" data-urgent-hint>
+        Выберите предложенный период или укажите даты вручную.
+    </p>
+
+    <div class="schedule-draft-urgent-route">
+        <span class="material-icons-sharp" aria-hidden="true">route</span>
+        <p>После отправки период проверит руководитель отдела, затем сотрудник примет его или предложит другой, а HR финализирует пункт графика.</p>
+    </div>
+
+    <div class="app-modal__actions schedule-transfer-form__actions">
+        <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>
+        <button type="submit" class="app-modal__button app-modal__button--primary" data-urgent-submit disabled>
+            Отправить руководителю
+        </button>
+    </div>
+</form>

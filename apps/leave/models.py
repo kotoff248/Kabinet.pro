@@ -617,6 +617,156 @@ class VacationScheduleChangeRequest(models.Model):
         ]
 
 
+class VacationUrgentClosureRequest(models.Model):
+    STATUS_DEPARTMENT_REVIEW = "department_review"
+    STATUS_EMPLOYEE_REVIEW = "employee_review"
+    STATUS_HR_FINALIZATION = "hr_finalization"
+    STATUS_COMPLETED = "completed"
+    STATUS_REJECTED = "rejected"
+
+    ACTIVE_STATUSES = (
+        STATUS_DEPARTMENT_REVIEW,
+        STATUS_EMPLOYEE_REVIEW,
+        STATUS_HR_FINALIZATION,
+    )
+    TERMINAL_STATUSES = (
+        STATUS_COMPLETED,
+        STATUS_REJECTED,
+    )
+    STATUS_CHOICES = [
+        (STATUS_DEPARTMENT_REVIEW, "У руководителя отдела"),
+        (STATUS_EMPLOYEE_REVIEW, "У сотрудника"),
+        (STATUS_HR_FINALIZATION, "Финализация HR"),
+        (STATUS_COMPLETED, "Завершено"),
+        (STATUS_REJECTED, "Отклонено"),
+    ]
+
+    employee = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.CASCADE,
+        related_name="urgent_closure_requests",
+        verbose_name="Сотрудник",
+    )
+    planning_year = models.PositiveIntegerField(verbose_name="Год черновика")
+    closure_year = models.PositiveIntegerField(verbose_name="Год закрытия остатка")
+    required_days = models.DecimalField(max_digits=7, decimal_places=2, verbose_name="Нужно закрыть дней")
+    deadline = models.DateField(verbose_name="Использовать до")
+    proposed_start_date = models.DateField(verbose_name="Предложенная дата начала")
+    proposed_end_date = models.DateField(verbose_name="Предложенная дата окончания")
+    reason = models.TextField(blank=True, default="", verbose_name="Комментарий HR")
+    status = models.CharField(
+        max_length=32,
+        choices=STATUS_CHOICES,
+        default=STATUS_DEPARTMENT_REVIEW,
+        verbose_name="Статус",
+    )
+    created_by = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_urgent_closure_requests",
+        verbose_name="Создал",
+    )
+    department_reviewer = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="department_reviewed_urgent_closures",
+        verbose_name="Рассмотрел руководитель отдела",
+    )
+    department_reviewed_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата решения руководителя")
+    department_comment = models.TextField(blank=True, default="", verbose_name="Комментарий руководителя")
+    employee_responded_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата ответа сотрудника")
+    employee_comment = models.TextField(blank=True, default="", verbose_name="Комментарий сотрудника")
+    finalized_by = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="finalized_urgent_closure_requests",
+        verbose_name="Финализировал HR",
+    )
+    finalized_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата финализации")
+    final_comment = models.TextField(blank=True, default="", verbose_name="Комментарий финализации")
+    rejected_by = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rejected_urgent_closure_requests",
+        verbose_name="Отклонил",
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата отклонения")
+    rejection_comment = models.TextField(blank=True, default="", verbose_name="Причина отклонения")
+    created_schedule_item = models.OneToOneField(
+        VacationScheduleItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="urgent_closure_request",
+        verbose_name="Созданный пункт графика",
+    )
+    risk_score = models.PositiveSmallIntegerField(default=0, verbose_name="Оценка риска")
+    risk_level = models.CharField(
+        max_length=16,
+        choices=VacationScheduleItem.RISK_CHOICES,
+        default=VacationScheduleItem.RISK_LOW,
+        verbose_name="Уровень риска",
+    )
+    department_load_level = models.PositiveSmallIntegerField(default=1, verbose_name="Нагрузка отдела")
+    overlapping_absences_count = models.PositiveSmallIntegerField(default=0, verbose_name="Пересечения отсутствий")
+    remaining_staff_count = models.PositiveSmallIntegerField(default=0, verbose_name="Останется сотрудников")
+    min_staff_required = models.PositiveSmallIntegerField(default=0, verbose_name="Минимум сотрудников")
+    balance_after_closure = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        default=0,
+        verbose_name="Баланс после закрытия",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        db_table = "leave_vacationurgentclosurerequest"
+        verbose_name = "Закрытие срочного остатка"
+        verbose_name_plural = "Закрытия срочных остатков"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["employee", "planning_year", "status"], name="urgent_close_emp_plan_idx"),
+            models.Index(fields=["status", "-created_at"], name="urgent_close_status_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(proposed_start_date__lte=models.F("proposed_end_date")),
+                name="urgent_closure_start_before_end",
+            ),
+            models.CheckConstraint(
+                check=models.Q(required_days__gt=0),
+                name="urgent_closure_required_days_positive",
+            ),
+            models.CheckConstraint(
+                check=models.Q(department_load_level__gte=1, department_load_level__lte=5),
+                name="urgent_closure_department_load_1_5",
+            ),
+            models.UniqueConstraint(
+                fields=["employee", "planning_year", "deadline"],
+                condition=models.Q(
+                    status__in=(
+                        "department_review",
+                        "employee_review",
+                        "hr_finalization",
+                    )
+                ),
+                name="unique_active_urgent_closure",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.employee}: закрытие {self.required_days} д. до {self.deadline}"
+
+
 class VacationPreferenceCollection(models.Model):
     STATUS_OPEN = "open"
     STATUS_FINISHED = "finished"
@@ -670,6 +820,10 @@ class VacationPreference(models.Model):
     PRIORITY_PRIMARY = "primary"
     PRIORITY_BACKUP = "backup"
 
+    REMAINDER_AUTO = "auto"
+    REMAINDER_APPROVAL = "approval"
+    REMAINDER_DEFER = "defer"
+
     STATUS_CHOICES = [
         (STATUS_PENDING, "В ожидании"),
         (STATUS_FILLED, "Заполнено"),
@@ -679,6 +833,11 @@ class VacationPreference(models.Model):
         (PRIORITY_PRIMARY, "Основное"),
         (PRIORITY_BACKUP, "Запасное"),
     ]
+    REMAINDER_POLICY_CHOICES = [
+        (REMAINDER_AUTO, "Можно распределить автоматически"),
+        (REMAINDER_APPROVAL, "Сначала согласовать со мной"),
+        (REMAINDER_DEFER, "Не планировать сверх указанного периода"),
+    ]
 
     employee = models.ForeignKey(to="employees.Employees", on_delete=models.CASCADE, related_name="vacation_preferences")
     year = models.PositiveIntegerField()
@@ -686,6 +845,12 @@ class VacationPreference(models.Model):
     end_date = models.DateField(null=True, blank=True)
     priority = models.CharField(max_length=16, choices=PRIORITY_CHOICES, default=PRIORITY_PRIMARY)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    remainder_policy = models.CharField(
+        max_length=24,
+        choices=REMAINDER_POLICY_CHOICES,
+        default=REMAINDER_AUTO,
+        verbose_name="Решение по остатку",
+    )
     comment = models.TextField(blank=True, default="")
     created_automatically = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

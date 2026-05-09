@@ -1,7 +1,7 @@
 {% if show_department_filter %}
 <div class="applications-board-filter applications-board-filter--department">
     <label class="visually-hidden" for="applications-{{ filter_scope }}-department">Отдел</label>
-    <div class="employee-select employee-select--toolbar employee-select--floating employee-select--department" data-employee-select>
+    <div class="employee-select employee-select--toolbar employee-select--floating employee-select--department" data-employee-select data-employee-select-menu-min-width="260">
         <select id="applications-{{ filter_scope }}-department" name="department" class="employee-select__native" data-applications-department-filter>
             <option value="all" {% if selected_department == 'all' or not selected_department %}selected{% endif %}>Все отделы</option>
             {% for department in departments %}
@@ -10,7 +10,8 @@
             </option>
             {% endfor %}
         </select>
-        <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+        <button type="button" class="employee-select__trigger" data-employee-select-trigger data-employee-select-label="Отдел" aria-haspopup="listbox" aria-expanded="false">
+            <span class="employee-select__compact-icon material-icons-sharp" aria-hidden="true">apartment</span>
             <span class="employee-select__value" data-employee-select-value>
                 {% if selected_department == 'all' or not selected_department %}
                 Все отделы
@@ -22,7 +23,7 @@
                     {% endfor %}
                 {% endif %}
             </span>
-            <span class="material-icons-sharp" aria-hidden="true">expand_more</span>
+            <span class="employee-select__chevron material-icons-sharp" aria-hidden="true">expand_more</span>
         </button>
         <div class="employee-select__menu" data-employee-select-menu role="listbox">
             <button type="button" class="employee-select__option {% if selected_department == 'all' or not selected_department %}is-selected{% endif %}" data-employee-select-option data-value="all" role="option" aria-selected="{% if selected_department == 'all' or not selected_department %}true{% else %}false{% endif %}">
@@ -41,7 +42,7 @@
 {% if show_group_filter %}
 <div class="applications-board-filter applications-board-filter--group">
     <label class="visually-hidden" for="applications-{{ filter_scope }}-group">Группа</label>
-    <div class="employee-select employee-select--toolbar employee-select--floating employee-select--group" data-employee-select>
+    <div class="employee-select employee-select--toolbar employee-select--floating employee-select--group" data-employee-select data-employee-select-menu-min-width="320">
         <select id="applications-{{ filter_scope }}-group" name="group" class="employee-select__native" data-applications-group-filter>
             <option value="all" {% if selected_group == 'all' or not selected_group %}selected{% endif %}>Все группы</option>
             {% for group in group_options %}
@@ -50,7 +51,8 @@
             </option>
             {% endfor %}
         </select>
-        <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+        <button type="button" class="employee-select__trigger" data-employee-select-trigger data-employee-select-label="Группа" aria-haspopup="listbox" aria-expanded="false">
+            <span class="employee-select__compact-icon material-icons-sharp" aria-hidden="true">workspaces</span>
             <span class="employee-select__value" data-employee-select-value>
                 {% if selected_group == 'all' or not selected_group %}
                 Все группы
@@ -62,7 +64,7 @@
                     {% endfor %}
                 {% endif %}
             </span>
-            <span class="material-icons-sharp" aria-hidden="true">expand_more</span>
+            <span class="employee-select__chevron material-icons-sharp" aria-hidden="true">expand_more</span>
         </button>
         <div class="employee-select__menu" data-employee-select-menu role="listbox">
             <button type="button" class="employee-select__option {% if selected_group == 'all' or not selected_group %}is-selected{% endif %}" data-employee-select-option data-value="all" role="option" aria-selected="{% if selected_group == 'all' or not selected_group %}true{% else %}false{% endif %}">

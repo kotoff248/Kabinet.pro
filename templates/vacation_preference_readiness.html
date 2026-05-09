@@ -1,0 +1,218 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Кабинет.pro - Готовность сбора{% endblock %}
+
+{% block extra_styles %}
+<link rel="stylesheet" href="{% static 'css/pages/preference-readiness.css' %}?v=20260509-shadow-fix">
+{% endblock %}
+
+{% block content %}
+<section class="profile-page preference-readiness-page" data-page="preference-readiness">
+    {% include 'includes/page_header.html' with eyebrow='Планирование' title='Готовность сбора' subtitle=readiness_subtitle page_header_back_link=page_header_back_link %}
+
+    <section class="preference-readiness-panel">
+        <div class="panel-heading panel-heading--with-controls preference-readiness-panel__heading">
+            <div class="panel-heading__copy preference-readiness-panel__copy">
+                <span class="preference-readiness-eyebrow">Сбор пожеланий</span>
+                <h2>Готовность на {{ year }} год</h2>
+                <p>
+                    {% if collection %}
+                        Сбор {{ collection.get_status_display|lower }}. Срок заполнения: {{ collection.deadline|date:'d.m.Y' }}.
+                    {% else %}
+                        Сбор еще не начат. Сотрудники будут отображаться как не ответившие.
+                    {% endif %}
+                </p>
+            </div>
+            <div class="panel-heading__actions preference-readiness-panel__actions">
+                <div class="preference-readiness-status preference-readiness-status--{% if is_finished %}finished{% elif is_open %}open{% else %}not-started{% endif %}">
+                    <span class="material-icons-sharp" aria-hidden="true">{% if is_finished %}task_alt{% elif is_open %}pending_actions{% else %}fact_check{% endif %}</span>
+                    <span>{% if is_finished %}Готово к черновику{% elif is_open %}Сбор идет{% else %}Не начат{% endif %}</span>
+                </div>
+                {% if can_manage_collection and is_open %}
+                <form method="post" action="{{ finish_url }}" class="preference-readiness-finish">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ current_path }}">
+                    <button type="submit" class="app-modal__button app-modal__button--primary">
+                        <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
+                        Завершить сбор
+                    </button>
+                </form>
+                {% endif %}
+                {% if draft_status.exists %}
+                <a href="{{ draft_status.url }}" class="app-modal__button app-modal__button--primary preference-readiness-draft-link" data-app-link>
+                    <span class="material-icons-sharp" aria-hidden="true">edit_calendar</span>
+                    Открыть черновик
+                </a>
+                {% elif can_manage_collection and is_finished and not draft_status.blocked_by_existing_schedule %}
+                <form method="post" action="{{ draft_status.create_url }}" class="preference-readiness-finish">
+                    {% csrf_token %}
+                    <button type="submit" class="app-modal__button app-modal__button--primary">
+                        <span class="material-icons-sharp" aria-hidden="true">auto_awesome_motion</span>
+                        Создать черновик
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="preference-readiness-panel__scroll">
+            <div class="preference-readiness-summary" aria-label="Сводка готовности сбора">
+                <article class="preference-readiness-summary__card preference-readiness-summary__card--primary">
+                    <span>Готовность</span>
+                    <strong>{{ summary.ready_percentage }}%</strong>
+                    <small>{{ summary.answered }} из {{ summary.total }} ответили</small>
+                </article>
+                <article>
+                    <span>Ответили</span>
+                    <strong>{{ summary.filled }}</strong>
+                    <small>Указали основной и запасной период</small>
+                </article>
+                <article>
+                    <span>Не ответили</span>
+                    <strong>{{ summary.not_answered }}</strong>
+                    <small>Система поставит только безопасные периоды</small>
+                </article>
+                <article>
+                    <span>Без пожеланий</span>
+                    <strong>{{ summary.no_preferences }}</strong>
+                    <small>Даты можно ставить по необходимости</small>
+                </article>
+            </div>
+
+            <div class="preference-readiness-toolbar">
+                <form method="get"
+                      action="{{ readiness_url }}"
+                      id="preference-readiness-filter-form"
+                      class="segmented-control segmented-control--count-4 preference-readiness-segmented"
+                      data-preference-readiness-filter
+                      data-segmented-index="{{ selected_status_index }}"
+                      role="tablist"
+                      aria-label="Фильтр готовности">
+                    {% if query %}
+                    <input type="hidden" name="q" value="{{ query }}">
+                    {% endif %}
+                    <span class="segmented-control__indicator" aria-hidden="true"></span>
+                    {% for filter in status_filters %}
+                    <button type="button"
+                            name="status"
+                            value="{{ filter.key }}"
+                            data-filter-url="{{ filter.url }}"
+                            class="segmented-control__item{% if filter.active %} active{% endif %}">
+                        <span>
+                            <em>{{ filter.label }}</em>
+                            <strong>{{ filter.count }}</strong>
+                        </span>
+                    </button>
+                    {% endfor %}
+                </form>
+                <form method="get"
+                      action="{{ readiness_url }}"
+                      class="toolbar-search preference-readiness-search{% if query %} is-open{% endif %}"
+                      data-preference-readiness-search
+                      role="search">
+                    <input type="hidden" name="status" value="{{ selected_status }}">
+                    <label class="visually-hidden" for="preference-readiness-search">Поиск сотрудника</label>
+                    <button type="button"
+                            class="toolbar-search__toggle"
+                            data-preference-readiness-search-toggle
+                            aria-label="Поиск сотрудника"
+                            aria-expanded="{% if query %}true{% else %}false{% endif %}"
+                            aria-controls="preference-readiness-search">
+                        <span class="material-icons-sharp" aria-hidden="true">search</span>
+                    </button>
+                    <input id="preference-readiness-search"
+                           class="toolbar-search__input"
+                           data-preference-readiness-search-input
+                           type="search"
+                           name="q"
+                           value="{{ query }}"
+                           placeholder="Найти сотрудника"
+                           autocomplete="off"
+                           spellcheck="false">
+                    <button type="button"
+                            class="toolbar-search__clear"
+                            data-preference-readiness-search-clear
+                            aria-label="Очистить поиск"{% if not query %} hidden{% endif %}>
+                        <span class="material-icons-sharp" aria-hidden="true">close</span>
+                    </button>
+                </form>
+            </div>
+
+            <div class="preference-readiness-result-meta">
+                <span>Показано: {{ result_count }}</span>
+                {% if query %}<span>Поиск: {{ query }}</span>{% endif %}
+            </div>
+
+            {% if rows %}
+            <div class="preference-readiness-list">
+                {% for row in rows %}
+                <article class="preference-readiness-card preference-readiness-card--{{ row.status.key }}">
+                    <div class="preference-readiness-card__identity">
+                        <a class="preference-readiness-card__profile-icon preference-readiness-card__profile-icon--{{ row.role_variant }}"
+                           href="{% url 'employee_profile' row.employee.id %}?from=preferences&amp;back_url={{ current_path|urlencode }}&amp;back_label=%D0%9A%20%D1%81%D0%B1%D0%BE%D1%80%D1%83"
+                           data-app-link
+                           title="Открыть профиль сотрудника {{ row.employee.full_name }}"
+                           aria-label="Открыть профиль сотрудника {{ row.employee.full_name }}">
+                            {% if row.role_icon_type == 'symbol' %}
+                            <span class="preference-readiness-card__profile-symbol" aria-hidden="true">{{ row.role_icon }}</span>
+                            {% else %}
+                            <span class="material-icons-sharp" aria-hidden="true">{{ row.role_icon }}</span>
+                            {% endif %}
+                        </a>
+                        <div>
+                            <h3>{{ row.employee.full_name }}</h3>
+                            <p>{{ row.department_name }} · {{ row.group_name }} · {{ row.position }}</p>
+                        </div>
+                    </div>
+                    <div class="preference-readiness-card__status preference-readiness-card__status--{{ row.status.key }}">
+                        <span class="material-icons-sharp" aria-hidden="true">{{ row.status.icon }}</span>
+                        {{ row.status.label }}
+                    </div>
+                    <div class="preference-readiness-card__periods">
+                        <article>
+                            <span>Основной период</span>
+                            <strong>
+                                {% if row.primary.start_date and row.primary.end_date %}
+                                    {{ row.primary.start_date|date:'d.m.Y' }} - {{ row.primary.end_date|date:'d.m.Y' }}
+                                {% else %}
+                                    Не указан
+                                {% endif %}
+                            </strong>
+                        </article>
+                        <article>
+                            <span>Запасной период</span>
+                            <strong>
+                                {% if row.backup.start_date and row.backup.end_date %}
+                                    {{ row.backup.start_date|date:'d.m.Y' }} - {{ row.backup.end_date|date:'d.m.Y' }}
+                                {% else %}
+                                    Не указан
+                                {% endif %}
+                            </strong>
+                        </article>
+                    </div>
+                    <div class="preference-readiness-card__comment">
+                        <span>Остаток дней</span>
+                        <p>{{ row.remainder_policy_label }}</p>
+                        {% if row.comment %}
+                        <small>{{ row.comment }}</small>
+                        {% endif %}
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="preference-readiness-empty">
+                <span class="material-icons-sharp" aria-hidden="true">search_off</span>
+                <h3>Сотрудники не найдены</h3>
+                <p>Измените фильтр или поисковый запрос.</p>
+            </div>
+            {% endif %}
+        </div>
+    </section>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/preference-readiness.js' %}?v=20260507-scroll-performance" defer></script>
+{% endblock %}

@@ -340,6 +340,18 @@ def _serialize_profile_schedule_item(item, current_employee=None, today=None):
     })
     stage_meta = _vacation_stage_meta(item.start_date, item.end_date, today=today)
     detail_reference = get_schedule_item_detail_reference(item)
+    prefetched_change_requests = getattr(item, "_prefetched_objects_cache", {}).get("change_requests")
+    has_pending_change_request = (
+        any(
+            change_request.status == VacationScheduleChangeRequest.STATUS_PENDING
+            for change_request in prefetched_change_requests
+        )
+        if prefetched_change_requests is not None
+        else VacationScheduleChangeRequest.objects.filter(
+            schedule_item_id=item.id,
+            status=VacationScheduleChangeRequest.STATUS_PENDING,
+        ).exists()
+    )
     transfer_action = build_schedule_change_transfer_action(
         actor=current_employee,
         employee=item.employee,
@@ -349,6 +361,7 @@ def _serialize_profile_schedule_item(item, current_employee=None, today=None):
         vacation_type_label=item.get_vacation_type_display(),
         schedule_status=item.status,
         today=today,
+        pending_change_exists=has_pending_change_request,
     )
     return {
         "id": f"schedule-{item.id}",
@@ -428,7 +441,7 @@ def _build_planned_vacations_context(employee, current_employee=None, year=None)
     ).filter(
         employee=employee,
         status__in=VacationScheduleItem.ACTIVE_STATUSES,
-    )
+    ).prefetch_related("change_requests")
     request_qs = VacationRequest.objects.filter(
         employee=employee,
         status=VacationRequest.STATUS_APPROVED,
@@ -723,6 +736,12 @@ def build_employee_profile_context(
             "section": "calendar",
             "use_remembered_list": False,
         },
+        "preferences": {
+            "label": "К сбору",
+            "url": reverse("calendar"),
+            "section": "calendar",
+            "use_remembered_list": False,
+        },
         "applications": {
             "label": "К заявкам",
             "url": reverse("applications"),
@@ -791,7 +810,7 @@ def build_employee_profile_context(
             "can_edit_employee": can_edit,
             "can_delete_employee": can_delete_employee(current_employee, employee),
             "show_manager_fields": can_edit,
-            "sidebar_section": source or sidebar_section,
+            "sidebar_section": "calendar" if source == "preferences" else source or sidebar_section,
             "employee_profile_back_link": explicit_back_link or back_links.get(source),
         }
     )

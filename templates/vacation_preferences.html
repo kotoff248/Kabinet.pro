@@ -4,19 +4,19 @@
 {% block title %}Кабинет.pro - Пожелания по отпуску{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/preferences.css' %}?v=20260506-preferences-panel">
+<link rel="stylesheet" href="{% static 'css/pages/preferences.css' %}?v=20260509-preferences-review-mode">
 {% endblock %}
 
 {% block content %}
 <section class="profile-page preferences-page" data-page="preferences">
-    {% include 'includes/page_header.html' with eyebrow='Планирование' title='Пожелания по отпуску' subtitle='Укажите основной и запасной период, чтобы HR и руководитель учли ваши планы при сборке графика.' page_header_back_link=page_header_back_link %}
+    {% include 'includes/page_header.html' with eyebrow='Планирование' title='Пожелания по отпуску' subtitle='Укажите реальный желаемый период: можно выбрать длинный отпуск в пределах доступного баланса.' page_header_back_link=page_header_back_link %}
 
     <section class="preferences-panel">
         <div class="panel-heading panel-heading--with-controls preferences-panel__heading">
             <div class="panel-heading__copy preferences-panel__copy">
                 <span class="preferences-eyebrow">Сбор пожеланий</span>
                 <h2>Сбор {{ collection.year }}-го {{ collection.get_status_display|lower }}</h2>
-                <p>Основной и запасной периоды попадут в планирование годового графика.</p>
+                <p>Основной период показывает, сколько дней вы действительно хотите запланировать. Запасной период нужен как альтернатива, а не как второй обязательный отпуск.</p>
             </div>
             <div class="panel-heading__actions preferences-panel__actions">
                 <div class="preferences-status preferences-status--{{ preference_state }}">
@@ -31,6 +31,18 @@
             <article>
                 <span>Срок заполнения</span>
                 <strong>{{ collection.deadline|date:'d.m.Y' }}</strong>
+            </article>
+            <article>
+                <span>Доступно к планированию</span>
+                <strong>{{ available_balance_label }}</strong>
+            </article>
+            <article>
+                <span>Годовая норма</span>
+                <strong>{{ annual_paid_leave_days_label }}</strong>
+            </article>
+            <article>
+                <span>Обязательно закрыть</span>
+                <strong>{{ mandatory_days_label }}</strong>
             </article>
             {% if show_paid_leave_available_hint %}
             <article>
@@ -50,15 +62,82 @@
         </p>
         {% endif %}
 
+        {% if has_saved_preferences and not is_editing_preferences %}
+        <section class="preferences-saved" aria-label="Сохранённые пожелания">
+            <div class="preferences-saved__header">
+                <div>
+                    <span class="preferences-eyebrow">Ответ отправлен</span>
+                    <h3>{% if preference_state == 'skipped' %}Пожелания не указаны{% else %}Пожелания сохранены{% endif %}</h3>
+                    <p>
+                        {% if editable %}
+                        Можно изменить ответ до закрытия сбора.
+                        {% else %}
+                        Сбор закрыт, изменить ответ уже нельзя.
+                        {% endif %}
+                    </p>
+                </div>
+                <span class="material-icons-sharp preferences-saved__icon" aria-hidden="true">task_alt</span>
+            </div>
+
+            {% if preference_state == 'filled' %}
+            <div class="preferences-saved__grid">
+                <article>
+                    <span>Основной отпуск</span>
+                    <strong>{{ primary_preference.start_date|date:'d.m.Y' }} - {{ primary_preference.end_date|date:'d.m.Y' }}</strong>
+                    <small>{{ primary_preference_days_label }} к планированию</small>
+                </article>
+                <article>
+                    <span>Запасной отпуск</span>
+                    <strong>{{ backup_preference.start_date|date:'d.m.Y' }} - {{ backup_preference.end_date|date:'d.m.Y' }}</strong>
+                    <small>{{ backup_preference_days_label }} как альтернатива</small>
+                </article>
+            </div>
+            {% else %}
+            <div class="preferences-saved__empty">
+                <span class="material-icons-sharp" aria-hidden="true">event_busy</span>
+                <div>
+                    <strong>Даты не выбраны</strong>
+                    <small>HR и руководитель смогут поставить отпуск по производственной необходимости.</small>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if primary_preference.comment or backup_preference.comment %}
+            <div class="preferences-saved__comment">
+                <span>Комментарий</span>
+                <p>{{ primary_preference.comment|default:backup_preference.comment }}</p>
+            </div>
+            {% endif %}
+            {% if preference_state == 'filled' %}
+            <div class="preferences-saved__comment">
+                <span>Остаток дней</span>
+                <p>{{ remainder_policy_label }}</p>
+            </div>
+            {% endif %}
+
+            <div class="preferences-actions">
+                <a class="app-modal__button app-modal__button--secondary" href="{% url 'calendar' %}?view=year&amp;year={{ collection.year }}" data-app-link data-calendar-return-link>К графику</a>
+                {% if editable %}
+                <a class="app-modal__button app-modal__button--primary" href="{{ preferences_edit_url }}" data-app-link>Изменить</a>
+                {% endif %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if is_editing_preferences %}
         <form method="post"
               class="preferences-form"
               data-preferences-form
               data-collection-year="{{ collection.year }}"
               data-planning-year="{{ planning_year }}"
               data-paid-leave-available-from="{{ paid_leave_available_from|date:'Y-m-d' }}"
+              data-available-balance="{{ available_balance }}"
+              data-min-continuous-days="{{ min_continuous_paid_leave_days }}"
               data-preference-state="{{ preference_state }}"
+              data-remainder-policy="{{ remainder_policy }}"
               data-editable="{{ editable|yesno:'true,false' }}">
             {% csrf_token %}
+            <input type="hidden" name="editing" value="1">
 
             <label class="preferences-check">
                 {{ form.no_preferences }}
@@ -112,13 +191,38 @@
                     <small data-preference-message="backup">Выберите даты</small>
                 </article>
                 <article>
-                    <span>Итого выбрано</span>
+                    <span>К планированию</span>
                     <strong data-preference-days="total">0 д.</strong>
-                    <small data-preferences-total-hint>Основной и запасной варианты считаются отдельно.</small>
+                    <small data-preferences-total-hint>Черновик берёт основной период как ваше намерение.</small>
                 </article>
             </div>
 
             <p class="preferences-live-alert" data-preferences-alert aria-live="polite" hidden></p>
+
+            <section class="preferences-remainder" aria-label="Решение по остатку дней">
+                <div class="preferences-remainder__head">
+                    <span class="preferences-eyebrow">Остаток дней</span>
+                    <h3>Что делать с днями сверх основного периода</h3>
+                    <p>Это нужно, чтобы система не ставила короткие части отпуска без вашего согласия.</p>
+                </div>
+                <div class="preferences-remainder__options">
+                    {% for radio in form.remainder_policy %}
+                    <label class="preferences-remainder__option">
+                        {{ radio.tag }}
+                        <span>
+                            <strong>{{ radio.choice_label }}</strong>
+                            {% if radio.data.value == 'auto' %}
+                            <small>Система сможет добрать годовой план безопасными периодами не короче 14 календарных дней.</small>
+                            {% elif radio.data.value == 'approval' %}
+                            <small>Остаток не попадёт в черновик автоматически: HR или руководитель отдельно согласует период.</small>
+                            {% else %}
+                            <small>В черновик попадёт только обязательная часть и ваш основной период.</small>
+                            {% endif %}
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </section>
 
             <label class="preferences-comment">
                 <span>Комментарий</span>
@@ -134,15 +238,20 @@
             {% endif %}
 
             <div class="preferences-actions">
+                {% if has_saved_preferences %}
+                <a class="app-modal__button app-modal__button--secondary" href="{{ preferences_view_url }}" data-app-link>Отменить</a>
+                {% else %}
                 <a class="app-modal__button app-modal__button--secondary" href="{% url 'calendar' %}?view=year&amp;year={{ collection.year }}" data-app-link data-calendar-return-link>К графику</a>
-                <button type="submit" class="app-modal__button app-modal__button--primary" data-preferences-submit {% if not editable %}disabled{% endif %}>Сохранить пожелания</button>
+                {% endif %}
+                <button type="submit" class="app-modal__button app-modal__button--primary" data-preferences-submit {% if not editable %}disabled{% endif %}>{% if has_saved_preferences %}Сохранить изменения{% else %}Сохранить пожелания{% endif %}</button>
             </div>
         </form>
+        {% endif %}
         </div>
     </section>
 </section>
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/vacation-preferences.js' %}?v=20260507-calendar-preferences-memory" defer></script>
+<script src="{% static 'js/vacation-preferences.js' %}?v=20260509-edit-date-picker" defer></script>
 {% endblock %}

@@ -16,6 +16,8 @@ function initDepartmentsPage() {
     const listScrollStorageKey = "departments:list-scroll-state";
     const detailScrollStorageKey = "departments:detail-scroll-state";
     let groupFilterRequest = null;
+    let listScrollStateTimer = 0;
+    let detailScrollStateTimer = 0;
 
     function isDepartmentsListPage() {
         return Boolean(listShell && listRoot);
@@ -125,6 +127,42 @@ function initDepartmentsPage() {
         });
     }
 
+    function flushListScrollState(selectedDepartmentId) {
+        if (listScrollStateTimer) {
+            window.clearTimeout(listScrollStateTimer);
+            listScrollStateTimer = 0;
+        }
+        writeListScrollState(selectedDepartmentId);
+    }
+
+    function scheduleListScrollStateWrite() {
+        if (listScrollStateTimer) {
+            window.clearTimeout(listScrollStateTimer);
+        }
+        listScrollStateTimer = window.setTimeout(function () {
+            listScrollStateTimer = 0;
+            writeListScrollState();
+        }, 140);
+    }
+
+    function flushDetailScrollState() {
+        if (detailScrollStateTimer) {
+            window.clearTimeout(detailScrollStateTimer);
+            detailScrollStateTimer = 0;
+        }
+        writeDetailScrollState();
+    }
+
+    function scheduleDetailScrollStateWrite() {
+        if (detailScrollStateTimer) {
+            window.clearTimeout(detailScrollStateTimer);
+        }
+        detailScrollStateTimer = window.setTimeout(function () {
+            detailScrollStateTimer = 0;
+            writeDetailScrollState();
+        }, 140);
+    }
+
     function restoreDetailScrollState() {
         if (!isDepartmentDetailPage()) {
             return;
@@ -141,6 +179,14 @@ function initDepartmentsPage() {
     }
 
     function clearDepartmentScrollMemory() {
+        if (listScrollStateTimer) {
+            window.clearTimeout(listScrollStateTimer);
+            listScrollStateTimer = 0;
+        }
+        if (detailScrollStateTimer) {
+            window.clearTimeout(detailScrollStateTimer);
+            detailScrollStateTimer = 0;
+        }
         clearState(listScrollStorageKey);
         clearState(detailScrollStorageKey);
     }
@@ -242,7 +288,7 @@ function initDepartmentsPage() {
             return;
         }
 
-        writeDetailScrollState();
+        flushDetailScrollState();
         if (
             window.KabinetNavigation
             && typeof window.KabinetNavigation.navigate === "function"
@@ -258,14 +304,12 @@ function initDepartmentsPage() {
         rememberListHref();
         restoreListScrollState();
 
-        listShell.addEventListener("scroll", function () {
-            writeListScrollState();
-        }, { passive: true, signal: signal });
+        listShell.addEventListener("scroll", scheduleListScrollStateWrite, { passive: true, signal: signal });
 
         listRoot.addEventListener("click", function (event) {
             const card = event.target.closest("[data-department-id]");
             if (card && listRoot.contains(card)) {
-                writeListScrollState(card.dataset.departmentId);
+                flushListScrollState(card.dataset.departmentId);
             }
         }, { capture: true, signal: signal });
 
@@ -276,7 +320,7 @@ function initDepartmentsPage() {
 
             const card = event.target.closest("[data-department-id]");
             if (card && listRoot.contains(card)) {
-                writeListScrollState(card.dataset.departmentId);
+                flushListScrollState(card.dataset.departmentId);
             }
         }, { capture: true, signal: signal });
     }
@@ -289,22 +333,20 @@ function initDepartmentsPage() {
             departmentSwitch.addEventListener("change", openDepartmentFromSwitch, { signal: signal });
         }
 
-        detailShell.addEventListener("scroll", function () {
-            writeDetailScrollState();
-        }, { passive: true, signal: signal });
+        detailShell.addEventListener("scroll", scheduleDetailScrollStateWrite, { passive: true, signal: signal });
 
         detailShell.addEventListener("click", function (event) {
             const groupFilterUrl = resolveGroupFilterTarget(event.target);
             if (groupFilterUrl) {
                 event.preventDefault();
                 event.stopPropagation();
-                writeDetailScrollState();
+                flushDetailScrollState();
                 applyGroupFilter(groupFilterUrl);
                 return;
             }
 
             if (event.target.closest("[data-href]")) {
-                writeDetailScrollState();
+                flushDetailScrollState();
             }
         }, { capture: true, signal: signal });
 
@@ -317,13 +359,13 @@ function initDepartmentsPage() {
             if (groupFilterUrl) {
                 event.preventDefault();
                 event.stopPropagation();
-                writeDetailScrollState();
+                flushDetailScrollState();
                 applyGroupFilter(groupFilterUrl);
                 return;
             }
 
             if (event.target.closest("[data-href]")) {
-                writeDetailScrollState();
+                flushDetailScrollState();
             }
         }, { capture: true, signal: signal });
     }
@@ -339,6 +381,20 @@ function initDepartmentsPage() {
             listShell.scrollTop = 0;
         }
     }, { signal: signal });
+
+    document.addEventListener("app:before-navigation", function () {
+        flushListScrollState();
+        flushDetailScrollState();
+    }, { signal: signal });
+
+    signal.addEventListener("abort", function () {
+        if (listScrollStateTimer) {
+            window.clearTimeout(listScrollStateTimer);
+        }
+        if (detailScrollStateTimer) {
+            window.clearTimeout(detailScrollStateTimer);
+        }
+    }, { once: true });
 }
 
 if (document.readyState === "loading") {

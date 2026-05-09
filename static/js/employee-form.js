@@ -97,8 +97,16 @@ function initEmployeeFormPage() {
         }
 
         const selectedOption = parts.nativeSelect.options[parts.nativeSelect.selectedIndex];
+        const selectedText = getOptionText(selectedOption);
         if (selectedOption) {
             parts.valueNode.textContent = selectedOption.textContent;
+        }
+
+        if (parts.trigger && parts.trigger.dataset.employeeSelectLabel) {
+            const labelText = selectedText || parts.valueNode.textContent.trim();
+            const triggerLabel = parts.trigger.dataset.employeeSelectLabel + ": " + labelText;
+            parts.trigger.setAttribute("aria-label", triggerLabel);
+            parts.trigger.title = triggerLabel;
         }
 
         const forcedDisabled = parts.nativeSelect.dataset.emptyForDepartment === "true";
@@ -210,7 +218,10 @@ function initEmployeeFormPage() {
         const viewportGap = 12;
         const triggerRect = parts.trigger.getBoundingClientRect();
         const maxPreferredHeight = 240;
-        const minPreferredWidth = selectWrapper.classList.contains("employee-select--group") ? 320 : triggerRect.width;
+        const explicitMinWidth = Number.parseFloat(selectWrapper.dataset.employeeSelectMenuMinWidth || "");
+        const minPreferredWidth = Number.isFinite(explicitMinWidth) && explicitMinWidth > 0
+            ? explicitMinWidth
+            : selectWrapper.classList.contains("employee-select--group") ? 320 : triggerRect.width;
         const maxAvailableWidth = Math.max(160, window.innerWidth - viewportGap * 2);
         const menuWidth = Math.min(Math.max(triggerRect.width, minPreferredWidth), maxAvailableWidth);
         const menuLeft = Math.min(

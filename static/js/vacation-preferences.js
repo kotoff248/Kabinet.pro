@@ -143,7 +143,10 @@
         const editable = form.dataset.editable === "true";
         const preferenceState = form.dataset.preferenceState || "";
         const paidLeaveAvailableFrom = parseIsoDate(form.dataset.paidLeaveAvailableFrom);
+        const availableBalance = Number(form.dataset.availableBalance) || 0;
+        const minContinuousDays = Number(form.dataset.minContinuousDays) || 14;
         const noPreferences = form.querySelector('input[name="no_preferences"]');
+        const remainderInputs = Array.from(form.querySelectorAll('input[name="remainder_policy"]'));
         const submitButton = form.querySelector("[data-preferences-submit]");
         const alert = form.querySelector("[data-preferences-alert]");
         const totalHint = form.querySelector("[data-preferences-total-hint]");
@@ -185,6 +188,7 @@
                 primaryEnd: periods.primary.end ? periods.primary.end.value : "",
                 backupStart: periods.backup.start ? periods.backup.start.value : "",
                 backupEnd: periods.backup.end ? periods.backup.end.value : "",
+                remainderPolicy: (remainderInputs.find((input) => input.checked) || {}).value || "auto",
                 comment: comment ? comment.value : "",
             };
         }
@@ -209,6 +213,11 @@
             if (periods.backup.end) {
                 periods.backup.end.value = draft.backupEnd || "";
             }
+            if (draft.remainderPolicy) {
+                remainderInputs.forEach((input) => {
+                    input.checked = input.value === draft.remainderPolicy;
+                });
+            }
             if (comment) {
                 comment.value = draft.comment || "";
             }
@@ -229,6 +238,19 @@
         } else {
             clearDraft(draftKey);
             clearCurrentActivePreference();
+        }
+
+        function openNativeDatePicker(input) {
+            if (!input || input.disabled || input.readOnly) {
+                return;
+            }
+            if (typeof input.showPicker === "function") {
+                try {
+                    input.showPicker();
+                } catch (error) {
+                    // Some browsers only allow showPicker directly from a user gesture.
+                }
+            }
         }
 
         function setPeriodState(period, state, message, days) {
@@ -295,6 +317,16 @@
                 };
             }
             const days = inclusiveDays(start, end);
+            if (availableBalance >= minContinuousDays && days < minContinuousDays) {
+                return {
+                    valid: false,
+                    complete: true,
+                    days,
+                    state: "error",
+                    message: `Выберите не меньше ${minContinuousDays} дн. подряд.`,
+                    firstInvalid: period.end,
+                };
+            }
             return {
                 valid: true,
                 complete: true,
@@ -310,6 +342,9 @@
             const isPlanningYear = collectionYear === planningYear;
 
             dateInputs.forEach((input) => {
+                input.disabled = !editable || (noPreferences && noPreferences.checked);
+            });
+            remainderInputs.forEach((input) => {
                 input.disabled = !editable || (noPreferences && noPreferences.checked);
             });
 
@@ -357,17 +392,24 @@
 
             const primary = validatePeriod(periods.primary);
             const backup = validatePeriod(periods.backup);
+            const remainderPolicy = (remainderInputs.find((input) => input.checked) || {}).value || "auto";
             setPeriodState(periods.primary, primary.state, primary.message, primary.days);
             setPeriodState(periods.backup, backup.state, backup.message, backup.days);
 
-            const selectedDays = primary.days + backup.days;
+            const selectedDays = primary.days;
             setText(totalDays, selectedDays > 0 ? `${selectedDays} д.` : "0 д.");
-            setText(totalHint, "Основной и запасной варианты считаются отдельно.");
+            if (remainderPolicy === "approval") {
+                setText(totalHint, "Остаток не попадёт в черновик без отдельного согласования.");
+            } else if (remainderPolicy === "defer") {
+                setText(totalHint, "Сверх основного периода система ничего не добавит.");
+            } else {
+                setText(totalHint, "Система сможет добрать остаток безопасными периодами.");
+            }
 
             if (primary.valid && backup.valid) {
                 setAlert(
                     alert,
-                    `Можно сохранить: основной ${primary.days} д., запасной ${backup.days} д.`,
+                    `Можно сохранить: к планированию ${primary.days} д., запасной вариант ${backup.days} д.`,
                     "success",
                 );
                 if (submitButton) {
@@ -388,6 +430,12 @@
         }
 
         dateInputs.forEach((input) => {
+            input.addEventListener("click", () => {
+                openNativeDatePicker(input);
+            });
+            input.addEventListener("focus", () => {
+                openNativeDatePicker(input);
+            });
             input.addEventListener("input", () => {
                 updateSummary();
                 saveDraft();
@@ -403,6 +451,12 @@
                 saveDraft();
             });
         }
+        remainderInputs.forEach((input) => {
+            input.addEventListener("change", () => {
+                updateSummary();
+                saveDraft();
+            });
+        });
         if (comment) {
             comment.addEventListener("input", saveDraft);
             comment.addEventListener("change", saveDraft);

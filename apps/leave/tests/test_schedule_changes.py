@@ -246,6 +246,25 @@ class ScheduleChangeRequestTests(LeaveTestCase):
         self.assertFalse(action["can_request_transfer"])
         self.assertEqual(action["transfer_url"], "")
 
+    def test_transfer_action_uses_prefetched_pending_flag_without_query(self):
+        schedule_item = self._create_schedule_item(start_date=date(2027, 8, 1), end_date=date(2027, 8, 14))
+
+        with self.assertNumQueries(0):
+            action = build_schedule_change_transfer_action(
+                actor=self.employee,
+                employee=self.employee,
+                schedule_item_id=schedule_item.id,
+                start_date=schedule_item.start_date,
+                end_date=schedule_item.end_date,
+                vacation_type_label=schedule_item.get_vacation_type_display(),
+                schedule_status=schedule_item.status,
+                today=date(2027, 1, 1),
+                pending_change_exists=True,
+            )
+
+        self.assertFalse(action["can_request_transfer"])
+        self.assertEqual(action["transfer_url"], "")
+
     def test_manager_initiated_transfer_can_be_rejected_only_by_employee(self):
         schedule_item = self._create_schedule_item(start_date=date(2027, 8, 15), end_date=date(2027, 8, 28))
         change_request = create_schedule_change_request(

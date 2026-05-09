@@ -6,6 +6,7 @@
 
     Calendar.createMonthSummaryController = function (context) {
         let currentMonthNumber = null;
+        const monthDetailRequests = new Map();
 
         function stripModalParams(url) {
             url.searchParams.delete("calendar_modal");
@@ -13,6 +14,8 @@
             url.searchParams.delete("calendar_modal_focus");
             url.searchParams.delete("calendar_modal_scroll");
             url.searchParams.delete("calendar_employee");
+            url.searchParams.delete("calendar_detail_employee");
+            url.searchParams.delete("calendar_detail_month");
         }
 
         function getMonthSummaryDialog() {
@@ -98,6 +101,65 @@
 
         function getMonthDetail(monthNumber) {
             return context.monthDetailsData[String(monthNumber)] || null;
+        }
+
+        function syncMonthDetailsDataNode() {
+            if (context.monthDetailsDataNode) {
+                context.monthDetailsDataNode.textContent = JSON.stringify(context.monthDetailsData || {});
+            }
+        }
+
+        function buildMonthDetailUrl(monthNumber) {
+            const url = new URL(window.location.href);
+            stripModalParams(url);
+            url.searchParams.set("calendar_detail_month", monthNumber);
+            return url.pathname + url.search + url.hash;
+        }
+
+        function fetchMonthDetail(monthNumber) {
+            const key = String(monthNumber || "");
+            if (!key) {
+                return Promise.resolve(null);
+            }
+            const cachedDetail = getMonthDetail(key);
+            if (cachedDetail) {
+                return Promise.resolve(cachedDetail);
+            }
+            if (monthDetailRequests.has(key)) {
+                return monthDetailRequests.get(key);
+            }
+
+            const request = fetch(buildMonthDetailUrl(key), {
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                signal: context.signal,
+            })
+                .then(function (response) {
+                    if (!response.ok) {
+                        throw new Error("Failed to load calendar month detail.");
+                    }
+                    return response.json();
+                })
+                .then(function (payload) {
+                    const detail = payload ? payload.calendar_month_detail : null;
+                    if (!detail) {
+                        return null;
+                    }
+                    context.monthDetailsData = context.monthDetailsData || {};
+                    context.monthDetailsData[key] = detail;
+                    syncMonthDetailsDataNode();
+                    return detail;
+                })
+                .catch(function () {
+                    return null;
+                })
+                .finally(function () {
+                    monthDetailRequests.delete(key);
+                });
+
+            monthDetailRequests.set(key, request);
+            return request;
         }
 
         function setText(node, value) {
@@ -382,8 +444,16 @@
         }
 
         function openMonthSummary(monthNumber, focusTarget) {
+            if (!context.monthSummaryModal) {
+                return;
+            }
             const detail = getMonthDetail(monthNumber);
-            if (!detail || !context.monthSummaryModal) {
+            if (!detail) {
+                fetchMonthDetail(monthNumber).then(function (fetchedDetail) {
+                    if (fetchedDetail) {
+                        openMonthSummary(monthNumber, focusTarget);
+                    }
+                });
                 return;
             }
 
@@ -490,9 +560,7 @@
 
         function updateMonthDetailsData(nextMonthDetailsData) {
             context.monthDetailsData = nextMonthDetailsData || {};
-            if (context.monthDetailsDataNode) {
-                context.monthDetailsDataNode.textContent = JSON.stringify(context.monthDetailsData);
-            }
+            syncMonthDetailsDataNode();
         }
 
         if (context.monthSummaryOpenAction) {

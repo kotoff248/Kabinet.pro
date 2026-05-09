@@ -4,14 +4,14 @@
 {% block title %}Кабинет.pro - {{ department.name }}{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260507-card-edge">
+<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260508-department-current-card-hover">
 <link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260501-filter-hidden-options">
-<link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260501-card-grid-preserve">
+<link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260508-department-card-grid">
 {% endblock %}
 
 {% block extra_scripts %}
 <script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
-<script src="{% static 'js/departments-page.js' %}?v=20260502-department-switch" defer></script>
+<script src="{% static 'js/departments-page.js' %}?v=20260507-scroll-performance" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -27,122 +27,120 @@
         </div>
 
         <div class="department-detail-shell">
-            <article class="department-card department-card--current department-card--risk-{{ department.staffing_forecast_level }}">
-                <div class="department-card__hero">
-                    <span class="department-card__index">Текущий отдел</span>
-                    <div class="department-card__title-row">
-                        <h2 class="department-card__title">{{ department.name }}</h2>
-                        <span
-                            class="department-card__risk-badge"
-                            data-schedule-status-tooltip
-                            data-schedule-status-variant="{% if department.staffing_forecast_level == 'conflict' %}conflict{% elif department.staffing_forecast_level == 'high' or department.staffing_forecast_level == 'medium' %}risk{% else %}planned{% endif %}"
-                            data-tooltip-title="Риск состава"
-                            data-tooltip-text="{{ department.staffing_forecast_primary_reason }}"
-                        >
-                            <span class="material-icons-sharp" aria-hidden="true">{{ department.staffing_forecast_icon }}</span>
-                            <span>Риск: {{ department.staffing_forecast_label|lower }}</span>
+            <article class="department-current-card department-current-card--risk-{{ department.staffing_forecast_level }}" aria-labelledby="department-current-title">
+                <div class="department-current-card__main">
+                    <div class="department-current-card__identity">
+                        <span class="department-current-card__eyebrow">Текущий отдел</span>
+                        <div class="department-current-card__title-row">
+                            <h2 class="department-current-card__title" id="department-current-title">{{ department.name }}</h2>
+                            <span
+                                class="department-current-card__risk-badge"
+                                data-schedule-status-tooltip
+                                data-schedule-status-variant="{% if department.staffing_forecast_level == 'conflict' %}conflict{% elif department.staffing_forecast_level == 'high' or department.staffing_forecast_level == 'medium' %}risk{% else %}planned{% endif %}"
+                                data-tooltip-title="Риск состава"
+                                data-tooltip-text="{{ department.staffing_forecast_primary_reason }}"
+                            >
+                                <span class="material-icons-sharp" aria-hidden="true">{{ department.staffing_forecast_icon }}</span>
+                                <span>Риск: {{ department.staffing_forecast_label|lower }}</span>
+                            </span>
+                        </div>
+                        <span class="department-current-card__since">
+                            <span>Отдел с</span>
+                            <strong>{{ department.date_added|date:"j E Y" }}</strong>
                         </span>
-                    </div>
-                </div>
-
-                <div class="department-card__meta">
-                    <div class="department-card__cell">
-                        <span class="department-card__label">Руководитель</span>
-                        <strong class="department-card__value">{% if department.head %}{{ department.head.full_name }}{% else %}Не назначен{% endif %}</strong>
-                        {% if department.head_position_label %}
-                            <span class="department-card__note">{{ department.head_position_label }}</span>
-                        {% endif %}
+                        <div class="department-current-card__leader">
+                            <span class="department-current-card__label">Руководитель</span>
+                            <strong>{% if department.head %}{{ department.head.full_name }}{% else %}Не назначен{% endif %}</strong>
+                            {% if department.head_position_label %}
+                                <span>{{ department.head_position_label }}</span>
+                            {% endif %}
+                        </div>
                     </div>
 
-                    <div class="department-card__metrics" aria-label="Показатели отдела">
+                    <div class="department-current-card__metrics" aria-label="Показатели отдела">
                         <span
-                            class="department-card__metric"
+                            class="department-current-card__metric"
                             data-schedule-status-tooltip
                             data-schedule-status-variant="info"
                             data-tooltip-title="Сотрудников"
                             data-tooltip-text="Количество активных сотрудников отдела без сервисных ролей."
                         >
                             <span class="material-icons-sharp" aria-hidden="true">groups</span>
-                            <span class="department-card__metric-copy">
-                                <span class="department-card__metric-label">Сотрудников</span>
+                            <span class="department-current-card__metric-copy">
+                                <span>Сотрудников</span>
                                 <strong>{{ department.employee_count }}</strong>
                             </span>
                         </span>
                         <span
-                            class="department-card__metric"
+                            class="department-current-card__metric"
                             data-schedule-status-tooltip
                             data-schedule-status-variant="{% if department.current_vacation_count %}info{% else %}empty{% endif %}"
                             data-tooltip-title="В отпуске сейчас"
                             data-tooltip-text="Сколько сотрудников отдела отсутствуют сегодня по графику или утверждённым заявкам."
                         >
                             <span class="material-icons-sharp" aria-hidden="true">beach_access</span>
-                            <span class="department-card__metric-copy">
-                                <span class="department-card__metric-label">В отпуске сейчас</span>
+                            <span class="department-current-card__metric-copy">
+                                <span>В отпуске сейчас</span>
                                 <strong>{{ department.current_vacation_count }}</strong>
                             </span>
                         </span>
                         <span
-                            class="department-card__metric"
+                            class="department-current-card__metric"
                             data-schedule-status-tooltip
                             data-schedule-status-variant="{% if department.pending_applications_count %}risk{% else %}planned{% endif %}"
                             data-tooltip-title="Заявки"
                             data-tooltip-text="Количество заявок отдела, которые ещё ожидают решения."
                         >
                             <span class="material-icons-sharp" aria-hidden="true">pending_actions</span>
-                            <span class="department-card__metric-copy">
-                                <span class="department-card__metric-label">Заявок</span>
+                            <span class="department-current-card__metric-copy">
+                                <span>Заявок</span>
                                 <strong>{{ department.pending_applications_count }}</strong>
                             </span>
                         </span>
                         <span
-                            class="department-card__metric department-card__metric--workload department-card__metric--level-{{ department.workload_level|default:'none' }}"
+                            class="department-current-card__metric department-current-card__metric--workload department-current-card__metric--level-{{ department.workload_level|default:'none' }}"
                             data-schedule-status-tooltip
                             data-schedule-status-variant="{% if department.workload_level == 'high' %}risk{% elif department.workload_level == 'medium' %}medium{% else %}info{% endif %}"
                             data-tooltip-title="Нагрузка"
                             data-tooltip-text="Оценка текущей отпускной нагрузки отдела. Она учитывается при риске заявок и графика."
                         >
                             <span class="material-icons-sharp" aria-hidden="true">speed</span>
-                            <span class="department-card__metric-copy">
-                                <span class="department-card__metric-label">Нагрузка</span>
+                            <span class="department-current-card__metric-copy">
+                                <span>Нагрузка</span>
                                 <strong>{{ department.workload_label }}</strong>
                             </span>
                         </span>
                     </div>
+                </div>
 
-                    <div class="department-card__risk-panel department-card__risk-panel--{{ department.staffing_forecast_level }}" aria-label="Прогноз рисков состава на {{ department.staffing_forecast_window_label }}">
-                        <div class="department-card__risk-panel-head">
-                            <span class="department-card__risk-panel-icon material-icons-sharp" aria-hidden="true">{{ department.staffing_forecast_icon }}</span>
-                            <span class="department-card__risk-panel-copy">
-                                <span class="department-card__risk-eyebrow">Риск состава · {{ department.staffing_forecast_window_label }}</span>
-                                <strong class="department-card__risk-title">{{ department.staffing_forecast_label }}</strong>
-                            </span>
-                        </div>
-                        <p class="department-card__risk-reason">{{ department.staffing_forecast_primary_reason }}</p>
-                        <div class="department-card__risk-facts" aria-label="Ключевые показатели прогноза">
-                            <span
-                                data-schedule-status-tooltip
-                                data-schedule-status-variant="{% if department.staffing_peak_absent_count %}risk{% else %}planned{% endif %}"
-                                data-tooltip-title="Максимум отсутствующих"
-                                data-tooltip-text="Пиковое количество сотрудников отдела, которые могут отсутствовать одновременно в прогнозном окне."
-                            >
-                                <span class="department-card__risk-fact-label">Макс. отсутствует</span>
-                                <strong>{{ department.staffing_peak_absent_label }}</strong>
-                            </span>
-                            <span
-                                data-schedule-status-tooltip
-                                data-schedule-status-variant="{% if department.staffing_forecast_level == 'conflict' or department.staffing_forecast_level == 'high' %}risk{% else %}planned{% endif %}"
-                                data-tooltip-title="Резерв"
-                                data-tooltip-text="Минимальный запас сотрудников сверх правила состава в прогнозном окне."
-                            >
-                                <span class="department-card__risk-fact-label">Резерв</span>
-                                <strong>{{ department.staffing_min_reserve_label }}</strong>
-                            </span>
-                        </div>
+                <div class="department-current-card__risk" aria-label="Прогноз рисков состава на {{ department.staffing_forecast_window_label }}">
+                    <div class="department-current-card__risk-head">
+                        <span class="department-current-card__risk-icon material-icons-sharp" aria-hidden="true">{{ department.staffing_forecast_icon }}</span>
+                        <span class="department-current-card__risk-copy">
+                            <span>Риск состава · {{ department.staffing_forecast_window_label }}</span>
+                            <strong>{{ department.staffing_forecast_label }}</strong>
+                        </span>
                     </div>
-
-                    <div class="department-card__cell department-card__cell--date">
-                        <span class="department-card__label">Отдел с</span>
-                        <strong class="department-card__value">{{ department.date_added|date:"j E Y" }}</strong>
+                    <p>{{ department.staffing_forecast_primary_reason }}</p>
+                    <div class="department-current-card__risk-facts" aria-label="Ключевые показатели прогноза">
+                        <span
+                            data-schedule-status-tooltip
+                            data-schedule-status-variant="{% if department.staffing_peak_absent_count %}risk{% else %}planned{% endif %}"
+                            data-tooltip-title="Максимум отсутствующих"
+                            data-tooltip-text="Пиковое количество сотрудников отдела, которые могут отсутствовать одновременно в прогнозном окне."
+                        >
+                            <span>Макс. отсутствует</span>
+                            <strong>{{ department.staffing_peak_absent_label }}</strong>
+                        </span>
+                        <span
+                            data-schedule-status-tooltip
+                            data-schedule-status-variant="{% if department.staffing_forecast_level == 'conflict' or department.staffing_forecast_level == 'high' %}risk{% else %}planned{% endif %}"
+                            data-tooltip-title="Резерв"
+                            data-tooltip-text="Минимальный запас сотрудников сверх правила состава в прогнозном окне."
+                        >
+                            <span>Резерв</span>
+                            <strong>{{ department.staffing_min_reserve_label }}</strong>
+                        </span>
                     </div>
                 </div>
             </article>

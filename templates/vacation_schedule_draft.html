@@ -1,0 +1,310 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Кабинет.pro - Черновик графика{% endblock %}
+
+{% block extra_styles %}
+<link rel="stylesheet" href="{% static 'css/pages/schedule-draft.css' %}?v=20260509-plan-target">
+{% endblock %}
+
+{% block content %}
+<section class="profile-page schedule-draft-page" data-page="schedule-draft">
+    {% include 'includes/page_header.html' with eyebrow='Планирование' title='Черновик графика' subtitle=draft_subtitle page_header_back_link=page_header_back_link %}
+
+    <section class="schedule-draft-panel">
+        <div class="panel-heading panel-heading--with-controls schedule-draft-panel__heading">
+            <div class="panel-heading__copy schedule-draft-panel__copy">
+                <span class="schedule-draft-eyebrow">Черновик графика</span>
+                <h2>График отпусков на {{ year }} год</h2>
+                <p>
+                    {% if draft_exists %}
+                        Это рабочая версия: она не отправлена на согласование и не считается утвержденным графиком.
+                    {% else %}
+                        Черновик еще не создан. Создать его может HR после завершения сбора пожеланий.
+                    {% endif %}
+                </p>
+            </div>
+            <div class="panel-heading__actions schedule-draft-panel__actions">
+                <span class="schedule-draft-status{% if draft_exists %} schedule-draft-status--ready{% endif %}">
+                    <span class="material-icons-sharp" aria-hidden="true">{{ draft_status.icon }}</span>
+                    {{ draft_status.label }}
+                </span>
+                {% if can_manage_draft and draft_exists and draft_summary.manual %}
+                <form method="post" action="{{ draft_auto_place_url }}" class="schedule-draft-create-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ current_path }}">
+                    <button type="submit" class="app-modal__button app-modal__button--primary">
+                        <span class="material-icons-sharp" aria-hidden="true">auto_fix_high</span>
+                        Автоматически распределить
+                    </button>
+                </form>
+                {% endif %}
+                {% if can_manage_draft and not draft_exists and collection.status == 'finished' %}
+                <form method="post" action="{{ draft_create_url }}" class="schedule-draft-create-form">
+                    {% csrf_token %}
+                    <button type="submit" class="app-modal__button app-modal__button--primary">
+                        <span class="material-icons-sharp" aria-hidden="true">auto_awesome_motion</span>
+                        Создать черновик
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="schedule-draft-panel__scroll">
+            <div class="schedule-draft-summary" aria-label="Сводка черновика">
+                <article class="schedule-draft-summary__card schedule-draft-summary__card--primary">
+                    <span>Размещено</span>
+                    <strong>{{ draft_summary.placed }}</strong>
+                    <small>Попали в рабочий черновик</small>
+                </article>
+                <article>
+                    <span>Годовой план</span>
+                    <strong>{{ draft_summary.remaining_plan_days_label }}</strong>
+                    <small>Можно распределять в {{ year }} году</small>
+                </article>
+                <article class="schedule-draft-summary__card--blocker">
+                    <span>Блокирует</span>
+                    <strong>{{ draft_summary.blocking }}</strong>
+                    <small>{{ draft_summary.blocking_days_label }} срочного остатка</small>
+                </article>
+                <article>
+                    <span>Вручную</span>
+                    <strong>{{ draft_summary.manual }}</strong>
+                    <small>Сотрудников требуют решения</small>
+                </article>
+                <article class="schedule-draft-summary__card--risk">
+                    <span>Высокий риск</span>
+                    <strong>{{ draft_summary.high_risk }}</strong>
+                    <small>Можно оставить после проверки</small>
+                </article>
+                <article class="schedule-draft-summary__card--conflict">
+                    <span>Конфликты</span>
+                    <strong>{{ draft_summary.conflicts }}</strong>
+                    <small>Нужно разбирать до согласования</small>
+                </article>
+            </div>
+
+            {% if not draft_exists %}
+            <div class="schedule-draft-empty">
+                <span class="material-icons-sharp" aria-hidden="true">pending_actions</span>
+                <h3>Черновик пока не создан</h3>
+                <p>Вернитесь к готовности сбора и создайте рабочую версию графика.</p>
+                <a href="{{ readiness_url }}" class="app-modal__button app-modal__button--secondary" data-app-link>К готовности сбора</a>
+            </div>
+            {% else %}
+            <section class="schedule-draft-section">
+                <div class="schedule-draft-section__head">
+                    <div>
+                        <span class="schedule-draft-eyebrow">Размещенные отпуска</span>
+                        <h3>Пункты черновика</h3>
+                    </div>
+                    <span>{{ draft_summary.placed }} записей</span>
+                </div>
+                {% if placed_rows %}
+                <div class="schedule-draft-list">
+                    {% for row in placed_rows %}
+                    <article class="schedule-draft-card{% if row.planning_need.has_blocker %} schedule-draft-card--blocker{% endif %}{% if row.has_conflict %} schedule-draft-card--conflict{% endif %}{% if row.has_high_risk %} schedule-draft-card--risk{% endif %}">
+                        <a class="schedule-draft-card__profile schedule-draft-card__profile--{{ row.role_variant }}" href="{{ row.profile_url }}" data-app-link title="Открыть профиль {{ row.employee_name }}" aria-label="Открыть профиль {{ row.employee_name }}. {{ row.role_label }}">
+                            {% if row.role_icon_type == 'symbol' %}
+                            <span class="schedule-draft-card__profile-symbol" aria-hidden="true">{{ row.role_icon }}</span>
+                            {% else %}
+                            <span class="material-icons-sharp" aria-hidden="true">{{ row.role_icon }}</span>
+                            {% endif %}
+                        </a>
+                        <div class="schedule-draft-card__identity">
+                            <h4>{{ row.employee_name }}</h4>
+                            <p>{{ row.department_name }} · {{ row.group_name }}</p>
+                            <div class="schedule-draft-card__position-row">
+                                <span class="schedule-draft-card__position">{{ row.position }}</span>
+                                {% for badge in row.management_badges %}
+                                <span class="schedule-draft-card__management-badge schedule-draft-card__management-badge--{{ badge.variant }}">
+                                    {% if badge.icon_type == 'symbol' %}
+                                    <span class="schedule-draft-card__management-symbol" aria-hidden="true">{{ badge.icon }}</span>
+                                    {% else %}
+                                    <span class="material-icons-sharp" aria-hidden="true">{{ badge.icon }}</span>
+                                    {% endif %}
+                                    {{ badge.label }}
+                                </span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div class="schedule-draft-card__period">
+                            <span>{{ row.source_label }}</span>
+                            <strong>{{ row.period_label }}</strong>
+                            <small>{{ row.chargeable_days }} оплач. д.</small>
+                        </div>
+                        <div class="schedule-draft-card__plan schedule-draft-plan schedule-draft-plan--{{ row.planning_need.status.tone }}">
+                            <span>
+                                <span class="material-icons-sharp" aria-hidden="true">{{ row.planning_need.status.icon }}</span>
+                                {{ row.planning_need.status.label }}
+                            </span>
+                            <strong>{{ row.planning_need.placed_days_label }} / {{ row.planning_need.target_days_label }}</strong>
+                            <div class="schedule-draft-plan__breakdown" aria-label="Состав плановой цели">
+                                {% for item in row.planning_need.plan_breakdown %}
+                                <span class="schedule-draft-plan__chip schedule-draft-plan__chip--{{ item.tone }}">
+                                    {{ item.label }} <b>{{ item.value }}</b>
+                                </span>
+                                {% endfor %}
+                            </div>
+                            <small>{{ row.planning_need.action_text }}</small>
+                        </div>
+                        <div class="schedule-draft-card__risk">
+                            <span class="schedule-draft-issue">
+                                <span class="material-icons-sharp" aria-hidden="true">{{ row.issue_icon }}</span>
+                                {{ row.issue_label }}
+                            </span>
+                            <p>{{ row.risk_summary }}</p>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="schedule-draft-empty schedule-draft-empty--compact">
+                    <span class="material-icons-sharp" aria-hidden="true">event_busy</span>
+                    <h3>Никто не размещен автоматически</h3>
+                    <p>Все сотрудники попали в ручное размещение.</p>
+                </div>
+                {% endif %}
+            </section>
+
+            <section class="schedule-draft-section schedule-draft-section--manual">
+                <div class="schedule-draft-section__head">
+                    <div>
+                        <span class="schedule-draft-eyebrow">Ручное размещение</span>
+                        <h3>Осталось распределить</h3>
+                    </div>
+                    <span>{{ manual_count_label }}</span>
+                </div>
+                {% if manual_rows %}
+                <div class="schedule-draft-manual-list">
+                    {% for row in manual_rows %}
+                    <article class="schedule-draft-manual-card schedule-draft-manual-card--{{ row.reason.kind }}{% if row.planning_need.has_blocker %} schedule-draft-manual-card--blocker{% endif %}">
+                        <a class="schedule-draft-card__profile schedule-draft-card__profile--{{ row.role_variant }}" href="{{ row.profile_url }}" data-app-link title="Открыть профиль {{ row.employee_name }}" aria-label="Открыть профиль {{ row.employee_name }}. {{ row.role_label }}">
+                            {% if row.role_icon_type == 'symbol' %}
+                            <span class="schedule-draft-card__profile-symbol" aria-hidden="true">{{ row.role_icon }}</span>
+                            {% else %}
+                            <span class="material-icons-sharp" aria-hidden="true">{{ row.role_icon }}</span>
+                            {% endif %}
+                        </a>
+                        <div class="schedule-draft-card__identity">
+                            <h4>{{ row.employee_name }}</h4>
+                            <p>{{ row.department_name }} · {{ row.group_name }}</p>
+                            <div class="schedule-draft-card__position-row">
+                                <span class="schedule-draft-card__position">{{ row.position }}</span>
+                                {% for badge in row.management_badges %}
+                                <span class="schedule-draft-card__management-badge schedule-draft-card__management-badge--{{ badge.variant }}">
+                                    {% if badge.icon_type == 'symbol' %}
+                                    <span class="schedule-draft-card__management-symbol" aria-hidden="true">{{ badge.icon }}</span>
+                                    {% else %}
+                                    <span class="material-icons-sharp" aria-hidden="true">{{ badge.icon }}</span>
+                                    {% endif %}
+                                    {{ badge.label }}
+                                </span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div class="schedule-draft-manual-card__periods">
+                            <article>
+                                <span>Основной</span>
+                                <strong>{{ row.primary_label }}</strong>
+                            </article>
+                            <article>
+                                <span>Запасной</span>
+                                <strong>{{ row.backup_label }}</strong>
+                            </article>
+                        </div>
+                        <div class="schedule-draft-card__plan schedule-draft-plan schedule-draft-plan--{{ row.planning_need.status.tone }}">
+                            <span>
+                                <span class="material-icons-sharp" aria-hidden="true">{{ row.planning_need.status.icon }}</span>
+                                {{ row.planning_need.status.label }}
+                            </span>
+                            <strong>{{ row.planning_need.placed_days_label }} / {{ row.planning_need.target_days_label }}</strong>
+                            <div class="schedule-draft-plan__breakdown" aria-label="Состав плановой цели">
+                                {% for item in row.planning_need.plan_breakdown %}
+                                <span class="schedule-draft-plan__chip schedule-draft-plan__chip--{{ item.tone }}">
+                                    {{ item.label }} <b>{{ item.value }}</b>
+                                </span>
+                                {% endfor %}
+                            </div>
+                            <small>{{ row.planning_need.action_text }}</small>
+                        </div>
+                        <div class="schedule-draft-manual-card__reason">
+                            <strong>{{ row.reason.text }}</strong>
+                            <p>{{ row.reason.detail }}</p>
+                        </div>
+                        {% if can_manage_draft %}
+                        <div class="schedule-draft-manual-card__action">
+                            {% if row.urgent_closure %}
+                                {% if row.urgent_closure.active_request_url %}
+                                <a href="{{ row.urgent_closure.active_request_url }}"
+                                   class="app-modal__button app-modal__button--secondary schedule-draft-manual-card__button"
+                                   data-app-link>
+                                    <span class="material-icons-sharp" aria-hidden="true">open_in_new</span>
+                                    Открыть согласование
+                                </a>
+                                {% elif row.urgent_closure.can_create %}
+                                <button type="button"
+                                        class="app-modal__button app-modal__button--secondary schedule-draft-manual-card__button"
+                                        data-modal-open="{{ row.urgent_closure.modal_id }}">
+                                    <span class="material-icons-sharp" aria-hidden="true">event_busy</span>
+                                    Закрыть остаток
+                                </button>
+                                {% else %}
+                                <span class="schedule-draft-manual-card__state">
+                                    <span class="material-icons-sharp" aria-hidden="true">info</span>
+                                    Нет безопасных дат
+                                </span>
+                                {% endif %}
+                            {% else %}
+                            <button type="button"
+                                    class="app-modal__button app-modal__button--secondary schedule-draft-manual-card__button"
+                                    data-draft-manual-open
+                                    data-manual-action-url="{{ row.manual_place_url }}"
+                                    data-manual-preview-url="{{ row.manual_preview_url }}"
+                                    data-manual-next-url="{{ current_path }}"
+                                    data-manual-employee="{{ row.employee_name }}"
+                                    data-manual-subtitle="{{ row.department_name }} · {{ row.group_name }}"
+                                    data-manual-reason="{{ row.reason.text }}"
+                                    data-manual-detail="{{ row.reason.detail }}"
+                                    data-manual-primary="{{ row.primary_label }}"
+                                    data-manual-backup="{{ row.backup_label }}"
+                                    data-manual-needed="{{ row.planning_need.open_required_days_label }}"
+                                    data-manual-target="{{ row.planning_need.target_days_label }}"
+                                    data-manual-placed="{{ row.planning_need.placed_days_label }}"
+                                    data-manual-status="{{ row.planning_need.status.label }}">
+                                <span class="material-icons-sharp" aria-hidden="true">edit_calendar</span>
+                                Распределить
+                            </button>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </article>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="schedule-draft-empty schedule-draft-empty--compact">
+                    <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
+                    <h3>Ручное размещение не требуется</h3>
+                    <p>Все сотрудники из сбора получили даты в черновике.</p>
+                </div>
+                {% endif %}
+            </section>
+            {% endif %}
+        </div>
+    </section>
+</section>
+
+{% if can_manage_draft %}
+{% for row in manual_rows %}
+    {% if row.urgent_closure and row.urgent_closure.can_create and not row.urgent_closure.active_request_url %}
+        {% include 'includes/app_modal.html' with modal_id=row.urgent_closure.modal_id title='Закрыть срочный остаток' subtitle='Выберите период, который уйдет руководителю и сотруднику на согласование.' body_template='includes/schedule_draft_urgent_closure_modal_body.html' %}
+    {% endif %}
+{% endfor %}
+{% include 'includes/app_modal.html' with modal_id='schedule-draft-manual-modal' title='Распределить отпуск' subtitle='Выберите период и проверьте дни, остаток и риск перед размещением.' body_template='includes/schedule_draft_manual_modal_body.html' %}
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/schedule-draft.js' %}?v=20260509-urgent-preview" defer></script>
+{% endblock %}

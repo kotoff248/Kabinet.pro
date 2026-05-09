@@ -15,6 +15,7 @@ from .models import (
     VacationScheduleDepartmentApproval,
     VacationScheduleEnterpriseApproval,
     VacationScheduleItem,
+    VacationUrgentClosureRequest,
 )
 
 
@@ -28,6 +29,7 @@ admin.site.register(VacationScheduleDepartmentApproval)
 admin.site.register(VacationScheduleEnterpriseApproval)
 admin.site.register(VacationScheduleAuthorizedApproval)
 admin.site.register(VacationScheduleChangeRequest)
+admin.site.register(VacationUrgentClosureRequest)
 admin.site.register(VacationPreference)
 admin.site.register(VacationPreferenceCollection)
 admin.site.register(DepartmentWorkload)

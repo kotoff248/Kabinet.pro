@@ -9,30 +9,37 @@
         </div>
         <div class="page-hero__aside">
             <div class="calendar-header-actions">
-                {% if calendar_preference_collection.can_manage %}
-                    {% if calendar_preference_collection.is_open %}
-                    <div class="calendar-preference-status">
-                        <span>Сбор пожеланий</span>
+                {% if calendar_preference_collection.can_view %}
+                    <a class="calendar-preference-status calendar-preference-status--{{ calendar_preference_collection.readiness_status_key }}"
+                       href="{{ calendar_preference_collection.primary_url }}"
+                       data-app-link
+                       data-schedule-status-tooltip
+                       data-schedule-status-variant="{% if calendar_preference_collection.draft_exists %}planned{% elif calendar_preference_collection.draft_ready %}planned{% elif calendar_preference_collection.is_open %}medium{% else %}info{% endif %}"
+                       data-tooltip-title="{{ calendar_preference_collection.readiness_status_label }}"
+                       data-tooltip-text="{{ calendar_preference_collection.summary.answered }}/{{ calendar_preference_collection.summary.total }} ответили · Не ответили: {{ calendar_preference_collection.summary.not_answered }} · Без пожеланий: {{ calendar_preference_collection.summary.no_preferences }}. {{ calendar_preference_collection.readiness_status_hint }}">
+                        <span class="calendar-preference-status__label">{{ calendar_preference_collection.primary_label }}</span>
                         <strong>{{ calendar_preference_collection.summary.ready_percentage }}%</strong>
-                        <small>{{ calendar_preference_collection.summary.ready }} из {{ calendar_preference_collection.summary.total }} ответили</small>
-                    </div>
+                        <small>{{ calendar_preference_collection.summary.answered }}/{{ calendar_preference_collection.summary.total }}</small>
+                        <em>{{ calendar_preference_collection.readiness_status_label }}</em>
+                    </a>
+                    {% if calendar_preference_collection.can_manage and calendar_preference_collection.is_open %}
                     <form method="post" action="{{ calendar_preference_collection.finish_url }}" class="calendar-preference-finish-form">
                         {% csrf_token %}
-                        <button type="submit" class="calendar-action-btn calendar-action-btn--finish">
+                        <button type="submit" class="calendar-action-btn calendar-action-btn--finish" title="Завершить сбор пожеланий" aria-label="Завершить сбор пожеланий">
                             <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
-                            Завершить сбор
+                            <span class="calendar-action-btn__label">Завершить сбор</span>
                         </button>
                     </form>
-                    {% else %}
-                    <button type="button" class="calendar-action-btn calendar-action-btn--preferences" data-modal-open="preference-collection-modal">
+                    {% elif calendar_preference_collection.can_manage and not calendar_preference_collection.collection %}
+                    <button type="button" class="calendar-action-btn calendar-action-btn--preferences" data-modal-open="preference-collection-modal" title="Начать сбор пожеланий" aria-label="Начать сбор пожеланий">
                         <span class="material-icons-sharp" aria-hidden="true">fact_check</span>
-                        Начать сбор пожеланий
+                        <span class="calendar-action-btn__label">Начать сбор пожеланий</span>
                     </button>
                     {% endif %}
                 {% endif %}
-                <button type="button" class="calendar-action-btn" data-modal-open="vacation-modal">
+                <button type="button" class="calendar-action-btn calendar-action-btn--plan" data-modal-open="vacation-modal" title="Запланировать отпуск" aria-label="Запланировать отпуск">
                     <span class="material-icons-sharp" aria-hidden="true">event_available</span>
-                    Запланировать отпуск
+                    <span class="calendar-action-btn__label">Запланировать отпуск</span>
                 </button>
             </div>
         </div>

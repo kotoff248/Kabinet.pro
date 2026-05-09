@@ -259,6 +259,7 @@
                         flushBoardScrollState();
                     }
                 }, { signal: signal });
+                document.addEventListener("app:before-navigation", flushBoardScrollState, { signal: signal });
                 signal.addEventListener("abort", function () {
                     flushBoardScrollState();
                     if (gridScrollSyncFrame) {

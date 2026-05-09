@@ -1,0 +1,246 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Кабинет.pro - Срочный остаток отпуска{% endblock %}
+
+{% block content %}
+<section class="profile-page vacation-detail-page urgent-closure-detail-page">
+    {% include 'includes/page_header.html' with eyebrow='Срочный остаток' title='Закрытие остатка отпуска' subtitle='Проверьте период, срок использования, риск состава и маршрут согласования.' page_header_back_link=urgent_closure_detail_back_link %}
+
+    <article class="vacation-decision-card urgent-closure-detail-card">
+        <div class="vacation-decision-card__scroll">
+            <header class="vacation-decision-card__header">
+                {% include 'includes/leave_detail_employee_card.html' with detail_item=urgent_closure profile_url=urgent_closure_detail_employee_profile_url %}
+
+                <div class="vacation-decision-summary schedule-change-summary" aria-label="Краткая сводка закрытия остатка">
+                    <div class="vacation-summary-item vacation-summary-item--status">
+                        <span>Статус</span>
+                        {% include 'includes/status_badge.html' with status_css_class=status_css_class status_icon=status_icon status_label=status_label %}
+                    </div>
+                    <div
+                        class="vacation-summary-item vacation-summary-item--risk"
+                        data-schedule-status-tooltip
+                        data-schedule-status-variant="{% if urgent_closure.risk_is_conflict %}conflict{% elif urgent_closure.risk_level == 'high' %}risk{% elif urgent_closure.risk_level == 'medium' %}medium{% else %}planned{% endif %}"
+                        data-tooltip-title="Оценка риска"
+                        data-tooltip-text="{{ urgent_closure_risk_summary }}"
+                    >
+                        <span>Риск</span>
+                        <strong>{{ urgent_closure.risk_label }} · {{ urgent_closure.risk_score }}%</strong>
+                    </div>
+                    <div
+                        class="vacation-summary-item"
+                        data-schedule-status-tooltip
+                        data-schedule-status-variant="info"
+                        data-tooltip-title="Срочный остаток"
+                        data-tooltip-text="Эти дни нужно закрыть до срока использования, иначе они блокируют согласование графика следующего года."
+                    >
+                        <span>Закрыть</span>
+                        <strong>{{ urgent_closure.required_days_label }}</strong>
+                    </div>
+                    <div
+                        class="vacation-summary-item"
+                        data-schedule-status-tooltip
+                        data-schedule-status-variant="medium"
+                        data-tooltip-title="Срок использования"
+                        data-tooltip-text="Период должен закончиться не позже этой даты."
+                    >
+                        <span>Срок</span>
+                        <strong>{{ urgent_closure.deadline_label }}</strong>
+                    </div>
+                </div>
+            </header>
+
+            {% if urgent_closure.created_schedule_item %}
+            <div class="vacation-review-strip">
+                <span class="material-icons-sharp" aria-hidden="true">verified</span>
+                <span>
+                    Создан пункт графика {{ urgent_closure.created_schedule_item.schedule.year }} года:
+                    {{ urgent_closure_period_label }}.
+                </span>
+            </div>
+            {% endif %}
+
+            <div class="vacation-decision-panels">
+                <div class="leave-detail-subject-stack">
+                    <section class="vacation-decision-panel leave-detail-subject-panel">
+                        <header class="vacation-decision-panel__header">
+                            <span class="detail-eyebrow">Предмет решения</span>
+                            <h3>Срочный остаток</h3>
+                        </header>
+
+                        <div class="schedule-change-compare urgent-closure-compare" aria-label="Предложенный период">
+                            <div class="schedule-change-compare__card schedule-change-compare__card--old">
+                                <span>Нужно закрыть</span>
+                                <strong>{{ urgent_closure.required_days_label }}</strong>
+                                <em>до {{ urgent_closure.deadline_label }}</em>
+                            </div>
+                            <div class="schedule-change-compare__arrow" aria-hidden="true">
+                                <span class="material-icons-sharp">arrow_forward</span>
+                            </div>
+                            <div class="schedule-change-compare__card schedule-change-compare__card--new">
+                                <span>Предложено</span>
+                                <strong>{{ urgent_closure_period_label }}</strong>
+                                <em>{{ urgent_closure.required_days_label }}</em>
+                            </div>
+                        </div>
+
+                        <div class="schedule-change-origin-strip schedule-change-origin-strip--manager">
+                            <span class="material-icons-sharp" aria-hidden="true">event_busy</span>
+                            <div>
+                                <strong>{{ urgent_closure.origin_label }}</strong>
+                                <p>
+                                    Инициатор: {{ urgent_closure.initiator_name }}.
+                                    Пункт графика появится только после проверки руководителя, согласия сотрудника и финализации HR.
+                                </p>
+                            </div>
+                        </div>
+
+                        <dl class="vacation-detail-table vacation-detail-table--transfer">
+                            <div class="vacation-detail-table__row">
+                                <dt>Год черновика</dt>
+                                <dd>{{ urgent_closure.planning_year }}</dd>
+                            </div>
+                            <div class="vacation-detail-table__row">
+                                <dt>Год закрытия</dt>
+                                <dd>{{ urgent_closure.closure_year }}</dd>
+                            </div>
+                            <div class="vacation-detail-table__row vacation-detail-table__row--wide">
+                                <dt>Причина</dt>
+                                <dd>{% if urgent_closure.reason %}{{ urgent_closure.reason }}{% else %}Не указана{% endif %}</dd>
+                            </div>
+                        </dl>
+                    </section>
+
+                    {% include 'includes/leave_detail_recommendation_panel.html' with recommendation_text=system_recommendation_text decision_context=urgent_closure_decision_context %}
+                </div>
+
+                <section class="vacation-decision-panel leave-detail-decision-panel">
+                    <header class="vacation-decision-panel__header">
+                        <span class="detail-eyebrow">Решение</span>
+                        <h3>Контекст решения</h3>
+                    </header>
+                    {% include 'includes/leave_decision_context.html' with decision_context=urgent_closure_decision_context %}
+                </section>
+            </div>
+
+            <section class="vacation-decision-panel urgent-closure-action-panel">
+                <header class="vacation-decision-panel__header">
+                    <span class="detail-eyebrow">Действия</span>
+                    <h3>
+                        {% if can_manager_approve_urgent_closure %}
+                        Проверка руководителя
+                        {% elif can_employee_review_urgent_closure %}
+                        Ответ сотрудника
+                        {% elif can_hr_finalize_urgent_closure %}
+                        Финализация HR
+                        {% else %}
+                        Состояние решения
+                        {% endif %}
+                    </h3>
+                </header>
+
+                {% if can_manager_approve_urgent_closure %}
+                <form method="post" action="{% url 'urgent_closure_manager_approve' urgent_closure.id %}" class="urgent-closure-decision-form">
+                    {% csrf_token %}
+                    <div class="urgent-closure-decision-form__dates">
+                        <label class="schedule-transfer-field" data-date-field>
+                            <span>Дата начала</span>
+                            <input type="date" name="manager_start_date" value="{{ urgent_closure.proposed_start_date|date:'Y-m-d' }}">
+                        </label>
+                        <label class="schedule-transfer-field" data-date-field>
+                            <span>Дата окончания</span>
+                            <input type="date" name="manager_end_date" value="{{ urgent_closure.proposed_end_date|date:'Y-m-d' }}">
+                        </label>
+                    </div>
+                    <label class="urgent-closure-comment-field">
+                        <span>Комментарий руководителя</span>
+                        <textarea name="comment" rows="3" placeholder="Например: период подходит по составу отдела."></textarea>
+                    </label>
+                    <div class="app-modal__actions schedule-transfer-form__actions">
+                        <button type="submit" formaction="{% url 'urgent_closure_reject' urgent_closure.id %}" class="app-modal__button app-modal__button--secondary">
+                            <span class="material-icons-sharp" aria-hidden="true">close</span>
+                            Отклонить
+                        </button>
+                        <button type="submit" class="app-modal__button app-modal__button--primary">
+                            <span class="material-icons-sharp" aria-hidden="true">check_circle</span>
+                            Отправить сотруднику
+                        </button>
+                    </div>
+                </form>
+                {% elif can_employee_review_urgent_closure %}
+                <div class="urgent-closure-employee-actions">
+                    <form method="post" action="{% url 'urgent_closure_employee_accept' urgent_closure.id %}" class="urgent-closure-decision-form">
+                        {% csrf_token %}
+                        <label class="urgent-closure-comment-field">
+                            <span>Комментарий сотрудника</span>
+                            <textarea name="comment" rows="3" placeholder="Можно оставить пустым, если период подходит."></textarea>
+                        </label>
+                        <div class="app-modal__actions schedule-transfer-form__actions">
+                            <button type="submit" formaction="{% url 'urgent_closure_reject' urgent_closure.id %}" class="app-modal__button app-modal__button--secondary">
+                                <span class="material-icons-sharp" aria-hidden="true">close</span>
+                                Отклонить
+                            </button>
+                            <button type="submit" class="app-modal__button app-modal__button--primary">
+                                <span class="material-icons-sharp" aria-hidden="true">check_circle</span>
+                                Принять период
+                            </button>
+                        </div>
+                    </form>
+                    <form method="post" action="{% url 'urgent_closure_employee_propose' urgent_closure.id %}" class="urgent-closure-decision-form urgent-closure-decision-form--secondary">
+                        {% csrf_token %}
+                        <div class="urgent-closure-decision-form__dates">
+                            <label class="schedule-transfer-field" data-date-field>
+                                <span>Другая дата начала</span>
+                                <input type="date" name="propose_start_date" required>
+                            </label>
+                            <label class="schedule-transfer-field" data-date-field>
+                                <span>Другая дата окончания</span>
+                                <input type="date" name="propose_end_date" required>
+                            </label>
+                        </div>
+                        <label class="urgent-closure-comment-field">
+                            <span>Почему другой период лучше</span>
+                            <textarea name="comment" rows="3" placeholder="Например: в предложенные даты уже есть личные ограничения."></textarea>
+                        </label>
+                        <div class="app-modal__actions schedule-transfer-form__actions">
+                            <button type="submit" class="app-modal__button app-modal__button--secondary">
+                                <span class="material-icons-sharp" aria-hidden="true">sync_alt</span>
+                                Предложить другой период
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                {% elif can_hr_finalize_urgent_closure %}
+                <form method="post" action="{% url 'urgent_closure_finalize' urgent_closure.id %}" class="urgent-closure-decision-form">
+                    {% csrf_token %}
+                    <label class="urgent-closure-comment-field">
+                        <span>Комментарий HR</span>
+                        <textarea name="comment" rows="3" placeholder="Например: сотрудник и руководитель согласовали период."></textarea>
+                    </label>
+                    <div class="app-modal__actions schedule-transfer-form__actions">
+                        <button type="submit" formaction="{% url 'urgent_closure_reject' urgent_closure.id %}" class="app-modal__button app-modal__button--secondary">
+                            <span class="material-icons-sharp" aria-hidden="true">close</span>
+                            Отклонить
+                        </button>
+                        <button type="submit" class="app-modal__button app-modal__button--primary">
+                            <span class="material-icons-sharp" aria-hidden="true">verified</span>
+                            Создать пункт графика
+                        </button>
+                    </div>
+                </form>
+                {% elif urgent_closure_decision_state %}
+                <div class="vacation-decision-state urgent-closure-decision-state">
+                    <span class="material-icons-sharp" aria-hidden="true">{{ urgent_closure_decision_state_icon|default:'lock' }}</span>
+                    <span>{{ urgent_closure_decision_state }}</span>
+                </div>
+                {% endif %}
+            </section>
+
+            <div class="vacation-detail-insights">
+                {% include 'includes/leave_detail_route_panel.html' with route_title='Согласование срочного остатка' %}
+                {% include 'includes/leave_detail_history_panel.html' with history_title='История согласования' history_entries=urgent_closure_history %}
+            </div>
+        </div>
+    </article>
+</section>
+{% endblock %}

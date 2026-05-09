@@ -1,6 +1,6 @@
 # Work Summary For Continuing Kabinet.pro
 
-Updated: 2026-05-07
+Updated: 2026-05-09
 
 ## How To Continue In A New Chat
 
@@ -25,278 +25,285 @@ in progress between chats.
 
 ## Current Product Direction
 
-Kabinet.pro is now a manager cabinet for workforce and vacation planning, not
-just a vacation request tracker.
+Kabinet.pro is a manager cabinet for workforce and vacation planning:
 
-The main product flow is becoming:
+- staffing rules and department workload;
+- employee preference collection for the next schedule year;
+- deterministic draft vacation schedule generation;
+- risk/conflict explanation;
+- manager/HR review and manual corrections;
+- later AI/ML decision support after the deterministic flow is trustworthy.
 
-- maintain staffing rules and department workload;
-- collect employee vacation preferences for the next planning year;
-- generate a draft annual vacation schedule;
-- explain risks/conflicts through deterministic rules;
-- let managers adjust and approve the schedule;
-- later add a neural module as decision support, not as decoration.
+Do not add a neural module yet. The current priority is making draft schedule
+creation comfortable, explainable, and correct enough before sending it to
+department heads.
 
-Do not implement the neural module before the deterministic draft schedule flow
-exists. The neural module needs a real planning object to improve and evaluate.
+## Current Important State
 
-## Recent Committed Work
+The latest active year in the demo flow is `2027`.
 
-The login page was fixed and committed separately:
+The main planning pages are:
 
-- commit `982fe5f Improve responsive login screen`;
-- desktop split login is preserved;
-- `<=900px` login uses compact `Сотрудник / Управленец` tabs;
-- resizing across the breakpoint now has a soft morph animation.
+- `/calendar/planning/2027/`
+- `/calendar/planning/2027/?stage=collection`
+- `/calendar/planning/2027/?stage=draft`
+- `/preferences/2027/`
+- `/preferences/2027/readiness/`
+- `/calendar/drafts/2027/`
 
-## Current Large Feature Layer
+The user explicitly said we are **not ready to move to sending the draft to the
+department head yet**. Before implementing the send-to-review stage, audit and
+polish the draft creation experience again.
 
-The current large layer brings the app close to "rules and preferences ready for
-draft schedule generation".
+The demo checkbox/autofill behavior for dissertation showing should remain
+enabled. The project is for demonstration and dissertation work, not production
+deployment right now.
 
-Major areas included:
+## Implemented Since The Previous Summary
 
-- staffing rules UI and diagnostics;
-- department monthly workload editor;
-- risk/conflict explanation on calendar, requests and transfers;
-- calendar month summary drawer in year mode;
-- cell highlighting for risks and conflicts;
-- vacation preference collection flow;
-- updated request and transfer detail pages;
-- application board cards with short risk reasons;
-- notification coverage for preference collection and planning tasks;
-- shared tooltips and reusable leave-detail panels.
+### Schedule Transfers
 
-After committing this layer, the next product step should be draft schedule
-generation.
-
-## Staffing Rules And Workload
-
-Relevant models include:
-
-- `ProductionGroup`
-- `EmployeePosition`
-- `DepartmentCoverageRule`
-- `ProductionGroupSubstitutionRule`
-- `DepartmentWorkload`
-- department deputy / enterprise deputy fields
-
-The `/staffing/` page now manages:
-
-- groups;
-- positions;
-- coverage rules;
-- substitution rules;
-- department deputy;
-- monthly workload for a selected year.
-
-Current access direction:
-
-- HR and enterprise head can edit;
-- department head can view own department rules without broad editing;
-- demo reset is enterprise-head/debug only.
-
-Department workload is an important input for the future draft generator. It
-stores monthly `load_level`, `min_staff_required`, and `max_absent`.
-
-## Risk And Conflict Logic
-
-Risk and conflict are intentionally different:
-
-- conflict means a hard staffing/composition rule is violated;
-- high risk means the period is formally possible but should be checked.
-
-Conflict detection considers:
-
-- department minimum staff;
-- department maximum absences;
-- production group minimum staff;
-- production group maximum absences;
-- allowed substitutions between production groups;
-- substitution capacity and substitute group free reserve;
-- department head + deputy simultaneous absence;
-- enterprise head + enterprise deputy simultaneous absence.
-
-Important behavior:
-
-- if a group drops below minimum and no substitute can cover it, it is a conflict;
-- if substitution covers the shortage, it is high risk, not conflict;
-- if the group absence limit is exceeded, it is a conflict;
-- duplicate group minimum/limit explanations are combined into one readable card.
-
-Risk explanation is now reused across:
-
-- calendar employee drawer;
-- request preview and detail;
-- transfer preview and detail;
-- applications board cards.
-
-The recommendation panel on request/transfer detail is still deterministic
-decision support. It is not the future neural recommendation module.
-
-## Calendar State
-
-The vacation calendar has:
-
-- month/year modes;
-- department and production group filters;
-- issue filter: `Все / Риски / Конфликты`;
-- search;
-- risk/conflict highlighting in year month cells and month day cells;
-- issue markers in totals and date headers;
-- employee drawer with "context + year" layout;
-- grouped staffing problems instead of repeated daily technical strings;
-- year-mode month summary drawer opened from month totals.
-
-Year-mode month summary shows:
-
-- month metrics;
-- days with absent counts and issue markers;
-- grouped problem periods;
-- absent employees grouped by department/group;
-- action to open the month in the calendar.
-
-## Vacation Preferences
-
-New planning-preference entities:
-
-- `VacationPreferenceCollection`
-- `VacationPreference`
-
-Routes:
-
-- `/calendar/preferences/start/`
-- `/calendar/preferences/<year>/finish/`
-- `/preferences/<year>/`
-
-Employees can submit:
-
-- primary preferred vacation period;
-- backup period;
-- or "no preferences".
-
-HR/enterprise planning users can start and finish a collection. Demo autofill
-exists for dissertation/demo data, but the flow is a real model-backed feature.
-
-This is the key input for the next draft schedule generator.
-
-## Requests And Transfers
-
-Request and transfer details now share a more modern decision context:
-
-- employee card;
-- summary metrics;
-- route/history panels;
-- balance and chargeable-day explanation;
-- saved-vs-live risk snapshot;
-- full risk/context block with tooltips;
-- system recommendation panel based on deterministic risk explanation.
-
-Transfer detail now has its own page:
+Schedule transfer details now have their own page:
 
 - `/applications/transfers/<id>/`
 
-Schedule transfer preview and creation use the same risk layer as requests.
+Transfer notifications should lead to the transfer detail page, not only to the
+applications list.
 
-## Notifications
+The applications list transfer card was changed toward "open detail first,
+decide inside detail".
 
-Notifications cover:
+### Navigation And Performance
 
-- vacation request approvals;
-- schedule transfer approvals;
-- manager schedule changes;
-- upcoming vacation reminders;
-- vacation preference collection tasks.
+Navigation and list performance were audited and optimized:
 
-Useful commands:
+- calendar and staffing pages were reduced from repeated server calculations;
+- profile/employees schedule status calculations were bulked up;
+- heavy PJAX transitions were improved;
+- section memory recognizes newly added planning/detail routes;
+- first calendar paint was cleaned up so the page does not briefly render
+  unstyled controls.
 
-```powershell
-.\.venv\Scripts\python.exe manage.py backfill_notifications
-.\.venv\Scripts\python.exe manage.py send_upcoming_vacation_reminders --days-before 7
-```
+Do another browser smoke check after any big frontend edit because these pages
+use internal scroll containers and PJAX-like replacement.
 
-## Demo Data
+### Planning Hub
 
-The seed command now creates:
+The schedule workflow was moved into a planning hub:
 
-- departments and role users;
-- realistic production groups;
-- positions;
-- coverage and substitution rules;
-- department workload;
-- deputies;
-- preference collections/preferences;
-- schedule items and requests with softened risk distribution.
+- `calendar/planning/<year>/`
+- stages are represented as clickable cells/cards, not a separate sidebar item;
+- the old extra slider was intentionally removed because the stage cells already
+  work as navigation.
 
-Run:
+The planning hub should use the shared page header and large panel visual system
+from the rest of the app. Avoid page-specific header heights.
 
-```powershell
-.\.venv\Scripts\python.exe manage.py seed_vacation_requests --confirm-reset
-```
+### Preference Collection
 
-Demo password remains `1234`.
+The preference flow now supports:
+
+- primary vacation period;
+- backup vacation period;
+- "no preferences";
+- saved/filled state with "Изменить" before editing again;
+- date fields that open the date picker by clicking the whole input-like block;
+- wider period lengths, not only up to 28 days;
+- preference readiness page for HR.
+
+Important interpretation:
+
+- primary and backup are alternatives, not two separate vacations;
+- if the employee wants a long vacation, they should be able to enter a long
+  primary period;
+- if the employee gives no preferences, the system may only place safe periods.
+
+### Remainder Policy In Preferences
+
+`VacationPreference.remainder_policy` was added.
+
+The choices are:
+
+- `auto`: "Можно распределить автоматически";
+- `approval`: "Сначала согласовать со мной";
+- `defer`: "Не планировать сверх указанного периода".
+
+This is used to decide what to do with days beyond the employee's selected
+period. This was added because the generator must not blindly consume every
+available day if the employee only asked for a smaller period.
+
+Current intended behavior:
+
+- `auto`: the generator can place annual-plan days beyond the chosen period if
+  staffing risk allows it;
+- `approval`: the chosen period can be placed, but the extra annual-plan part is
+  left as "needs separate agreement";
+- `defer`: the chosen period can be placed, and the extra part is intentionally
+  not planned in this draft.
+
+### Draft Schedule Generator
+
+The draft schedule generator now exists under `apps/leave/services/schedule_drafts.py`.
+
+It creates/updates a draft `VacationSchedule` for the planning year using:
+
+- employee preferences;
+- available paid leave balance;
+- mandatory/urgent leftover days;
+- annual-plan target days;
+- staffing and substitution risk logic;
+- existing vacation requests and schedule items;
+- remainder policy.
+
+Important rule added recently:
+
+- automatic generation should not create standalone paid vacation parts shorter
+  than 14 calendar days, except for urgent previous-year closure cases where a
+  short remainder may be legally unavoidable.
+
+This is based on the rule that one split part of annual paid leave must be at
+least 14 calendar days. The system may still show fewer chargeable days if public
+holidays fall inside the calendar period.
+
+### Draft UI
+
+The draft page exists:
+
+- `/calendar/drafts/<year>/`
+
+It shows:
+
+- items already placed by the system;
+- manual placement rows;
+- urgent/blocking leftovers;
+- role-colored employee avatars and management badges;
+- clean modals for manual placement and urgent closure;
+- scroll memory around forms/modals.
+
+The draft cards intentionally separate:
+
+- employee role color;
+- risk/conflict/status colors;
+- urgent/blocking labels.
+
+Do not recolor employee avatars based on risk.
+
+### Manual Placement
+
+Manual placement uses a modal instead of overcrowding each card.
+
+The modal previews:
+
+- selected dates;
+- chargeable/calendar days;
+- risk level;
+- conflicts;
+- server-side validation messages before final POST.
+
+The row/card should stay compact; detailed checks belong inside the modal.
+
+### Urgent Previous-Year Closure
+
+`VacationUrgentClosureRequest` was added for cases where days must be closed
+before a deadline outside the target schedule year.
+
+Routes include:
+
+- `/calendar/drafts/<year>/urgent-closures/<employee_id>/preview/`
+- `/calendar/drafts/<year>/urgent-closures/<employee_id>/create/`
+- `/applications/urgent-closures/<id>/`
+- manager approve;
+- employee accept/propose;
+- HR finalize/reject.
+
+Intended flow:
+
+1. HR sees a blocking urgent leftover in the draft.
+2. HR clicks "Закрыть остаток".
+3. The system suggests safe periods before the deadline.
+4. HR can pick a suggested period or manually enter another period.
+5. The request goes to the department head and then to the employee.
+6. HR finalizes it into the actual schedule for the previous/current year.
+7. The planning draft recalculates blockers.
+
+This is intentionally separate from the 2027 draft because, for example, a
+leftover that must be used before `03.01.2027` cannot realistically be solved by
+a 2027 annual schedule item. It must be handled in 2026 before the deadline.
+
+## Current Demo Snapshot Before This Handoff
+
+The local demo database was migrated through:
+
+- `apps/core/migrations/0003_alter_notification_event_type.py`
+- `apps/leave/migrations/0013_vacationurgentclosurerequest_and_more.py`
+- `apps/leave/migrations/0014_vacationpreference_remainder_policy.py`
+
+The existing 2027 draft was rebuilt from the current collection after the latest
+generator changes.
+
+Observed browser state after rebuild:
+
+- `/preferences/2027/`: saved answer shows remainder policy; no console errors.
+- `/preferences/2027/readiness/`: about 80% readiness; 86/108 answered; no console errors.
+- `/calendar/drafts/2027/`: placed 145, manual 51, blocking 45, remaining annual-plan days 1387, blocking days 136; no console errors.
+- `/calendar/planning/2027/?stage=draft`: metrics match the draft; no console errors.
+
+There were no generated draft items shorter than 14 calendar days after rebuild.
+
+The database is demo-only. If moving to another computer, it is fine to recreate
+it with migrations and the seed command.
 
 ## Tests Last Run
 
-Last successful checks on 2026-05-07:
+Last successful checks after the latest planning/preference changes:
 
 ```powershell
+.\.venv\Scripts\python.exe manage.py migrate
 .\.venv\Scripts\python.exe manage.py check
-.\.venv\Scripts\python.exe manage.py test apps.accounts apps.employees apps.leave apps.core --keepdb
+.\.venv\Scripts\python.exe manage.py test apps.leave.tests.test_preferences apps.leave.tests.test_urgent_closures --keepdb
+node --check static/js/vacation-preferences.js
+node --check static/js/schedule-draft.js
 ```
 
-The full run found 307 tests and passed.
+Browser smoke checks were done on:
 
-Note: one earlier `--keepdb` full run hit a transient PostgreSQL deadlock during
-a migration test and two stale-state failures, but rerunning the affected tests
-and then the full suite passed. If this appears again, rerun once or run without
-`--keepdb` to rebuild the test schema.
+- `/preferences/2027/`
+- `/preferences/2027/readiness/`
+- `/calendar/drafts/2027/`
+- `/calendar/planning/2027/?stage=draft`
 
-## Current Housekeeping
+## What The Next Agent Should Do Next
 
-Temporary browser screenshots and `vacation-detail-dom-check.json` were removed
-from the repository root before committing the large feature layer.
+Before implementing "send draft to department head", do a focused UX/domain audit
+of draft creation:
 
-If new Playwright screenshots are needed, keep them local and do not commit them
-unless the user explicitly asks for visual artifacts.
+1. Reopen `/calendar/planning/2027/?stage=draft` and `/calendar/drafts/2027/`.
+2. Check whether HR can understand why each employee is in manual placement.
+3. Check whether the "remaining annual plan" number is useful or too noisy.
+4. Check whether urgent closures are clearly separated from normal 2027 planning.
+5. Check whether employees with `approval` or `defer` remainder policy are
+   represented clearly.
+6. Check whether the manual placement modal has enough context and direct links
+   to the employee/profile/calendar.
+7. Check whether HR needs bulk actions/filters before the draft can be reviewed.
+8. Re-check large-screen behavior and internal scroll containers.
 
-## Next Recommended Product Step
+Likely next implementation slice:
 
-Build **Draft Schedule Generator V1** before the neural module.
+- add filters/grouping to the draft page for:
+  - urgent blockers;
+  - employees without preferences;
+  - employees needing separate remainder approval;
+  - staffing/risk issues;
+  - departments/groups;
+- improve explanations for "why manual";
+- add quick navigation from draft rows to employee profile/calendar context;
+- only after that, implement the review stage and notifications to department
+  heads.
 
-Suggested scope:
-
-1. Add a service that creates a draft `VacationSchedule` for a target year from:
-   - employee preferences;
-   - available paid balance;
-   - department workload;
-   - staffing and substitution rules;
-   - existing schedule/request conflicts.
-2. Generate schedule items in `draft` or `planned` state with source metadata.
-3. Score each generated item with the existing risk layer.
-4. Show generation results in the calendar:
-   - preferences satisfied;
-   - skipped/no preference employees;
-   - conflicts;
-   - high-risk months/groups;
-   - employees needing manual placement.
-5. Allow managers to adjust draft items manually.
-6. Only after that, implement the neural module as:
-   - model-backed recommendation scoring;
-   - stored recommendation runs;
-   - comparison between deterministic draft and neural suggestions.
-
-This is the clearest next step because the system already has the required
-inputs and explanations; it now needs to produce an actual yearly draft.
+Do not send the draft to department heads until this usability layer is checked.
 
 ## Important Commands
-
-Run checks:
-
-```powershell
-.\.venv\Scripts\python.exe manage.py check
-.\.venv\Scripts\python.exe manage.py test apps.accounts apps.employees apps.leave apps.core --keepdb
-```
 
 Run local server:
 
@@ -305,3 +312,19 @@ Run local server:
 .\scripts\django_server.ps1 -Action status -Port 8001
 .\scripts\django_server.ps1 -Action stop -Port 8001
 ```
+
+Run checks:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py test apps.accounts apps.employees apps.leave apps.core --keepdb
+```
+
+Recreate demo data:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py seed_vacation_requests --confirm-reset
+.\.venv\Scripts\python.exe manage.py seed_vacation_requests --confirm-reset --fast
+```
+
+Demo users intentionally share password `1234`.

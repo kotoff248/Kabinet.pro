@@ -166,6 +166,114 @@
     gap: 1rem;
 }
 
+.preferences-saved{
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
+        rgba(6, 8, 12, 0.26);
+    border: 1px solid rgba(121, 216, 90, 0.18);
+}
+
+.preferences-saved__header{
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.preferences-saved__header h3{
+    margin: 0.18rem 0 0;
+    color: #ffffff;
+    font-size: 1.1rem;
+}
+
+.preferences-saved__header p{
+    margin: 0.28rem 0 0;
+    color: rgba(205, 218, 236, 0.76);
+    font-weight: 720;
+}
+
+.preferences-saved__icon{
+    display: inline-grid;
+    place-items: center;
+    width: 2.55rem;
+    height: 2.55rem;
+    border-radius: var(--ui-radius-control);
+    color: #d9ffd0;
+    background: rgba(121, 216, 90, 0.14);
+    border: 1px solid rgba(121, 216, 90, 0.24);
+}
+
+.preferences-saved__grid{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem;
+}
+
+.preferences-saved__grid article,
+.preferences-saved__empty,
+.preferences-saved__comment{
+    border-radius: var(--ui-radius-panel-inner);
+    background: rgba(6, 8, 12, 0.26);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.preferences-saved__grid article{
+    display: grid;
+    gap: 0.3rem;
+    padding: 0.9rem 1rem;
+}
+
+.preferences-saved__grid span,
+.preferences-saved__comment span,
+.preferences-saved__empty small{
+    color: rgba(205, 218, 236, 0.76);
+    font-size: 0.78rem;
+    font-weight: 720;
+}
+
+.preferences-saved__grid strong,
+.preferences-saved__empty strong{
+    color: #ffffff;
+    font-weight: 840;
+}
+
+.preferences-saved__grid small{
+    color: rgba(205, 218, 236, 0.78);
+    font-weight: 720;
+}
+
+.preferences-saved__empty{
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+}
+
+.preferences-saved__empty .material-icons-sharp{
+    color: #ffe1ac;
+}
+
+.preferences-saved__empty div{
+    display: grid;
+    gap: 0.22rem;
+}
+
+.preferences-saved__comment{
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.9rem 1rem;
+}
+
+.preferences-saved__comment p{
+    margin: 0;
+    color: rgba(245, 248, 255, 0.92);
+    font-weight: 720;
+}
+
 .preferences-check{
     display: flex;
     align-items: flex-start;
@@ -223,6 +331,10 @@
     gap: 0.42rem;
 }
 
+.preferences-dates label{
+    cursor: pointer;
+}
+
 .preferences-dates input,
 .preferences-comment textarea{
     width: 100%;
@@ -231,11 +343,47 @@
     background: rgba(6, 8, 12, 0.38);
     color: #ffffff;
     font-weight: 700;
+    outline: none;
+    transition:
+        border-color 0.18s ease,
+        background-color 0.18s ease,
+        box-shadow 0.18s ease,
+        color 0.18s ease;
 }
 
 .preferences-dates input{
     min-height: 2.75rem;
     padding: 0 0.85rem;
+    cursor: pointer;
+    color-scheme: dark;
+}
+
+.preferences-dates label:hover input,
+.preferences-dates input:hover{
+    border-color: rgba(56, 200, 255, 0.36);
+    background: rgba(12, 20, 30, 0.52);
+    box-shadow: 0 0 0 1px rgba(56, 200, 255, 0.1) inset;
+}
+
+.preferences-dates input:focus{
+    border-color: rgba(56, 200, 255, 0.58);
+    background: rgba(12, 20, 30, 0.62);
+    box-shadow:
+        0 0 0 3px rgba(56, 200, 255, 0.14),
+        0 0.75rem 1.4rem rgba(0, 175, 245, 0.1);
+}
+
+.preferences-dates input::-webkit-calendar-picker-indicator{
+    cursor: pointer;
+    opacity: 0.78;
+    filter: invert(1);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.preferences-dates input:hover::-webkit-calendar-picker-indicator,
+.preferences-dates input:focus::-webkit-calendar-picker-indicator{
+    opacity: 1;
+    transform: scale(1.05);
 }
 
 .preferences-period[data-validation-state="error"] .preferences-dates input{
@@ -260,6 +408,80 @@
 
 .preferences-period[data-validation-state="error"] .preferences-period__feedback{
     color: #ffd7e4;
+}
+
+.preferences-remainder{
+    display: grid;
+    gap: 0.8rem;
+    padding: 1rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background: rgba(6, 8, 12, 0.26);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.preferences-remainder__head{
+    display: grid;
+    gap: 0.24rem;
+}
+
+.preferences-remainder__head h3{
+    margin: 0;
+    color: #ffffff;
+    font-size: 1rem;
+}
+
+.preferences-remainder__head p{
+    margin: 0;
+    color: rgba(205, 218, 236, 0.76);
+    font-weight: 720;
+}
+
+.preferences-remainder__options{
+    display: grid;
+    gap: 0.65rem;
+}
+
+.preferences-remainder__option{
+    display: flex;
+    align-items: flex-start;
+    gap: 0.72rem;
+    padding: 0.82rem 0.9rem;
+    border-radius: var(--ui-radius-control);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.preferences-remainder__option:hover{
+    border-color: rgba(56, 200, 255, 0.26);
+    background: rgba(56, 200, 255, 0.08);
+}
+
+.preferences-remainder__option input{
+    margin-top: 0.22rem;
+    accent-color: var(--color-primary);
+}
+
+.preferences-remainder__option:has(input:checked){
+    border-color: rgba(56, 200, 255, 0.36);
+    background: rgba(56, 200, 255, 0.1);
+    box-shadow: 0 0 0 1px rgba(56, 200, 255, 0.1) inset;
+}
+
+.preferences-remainder__option span{
+    display: grid;
+    gap: 0.22rem;
+}
+
+.preferences-remainder__option strong{
+    color: #ffffff;
+    font-weight: 820;
+}
+
+.preferences-remainder__option small{
+    color: rgba(205, 218, 236, 0.76);
+    font-weight: 720;
 }
 
 .preferences-live-summary{
@@ -364,7 +586,12 @@
     .preferences-meta,
     .preferences-period-grid,
     .preferences-dates,
-    .preferences-live-summary{
+    .preferences-live-summary,
+    .preferences-saved__grid{
         grid-template-columns: 1fr;
+    }
+
+    .preferences-saved__header{
+        align-items: stretch;
     }
 }

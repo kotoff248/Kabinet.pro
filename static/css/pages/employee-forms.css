@@ -357,38 +357,6 @@
 }
 
 @media (max-width: 992px) {
-    .department-card {
-        grid-template-columns: 1fr;
-        grid-template-rows: auto;
-        gap: 1rem;
-        align-items: stretch;
-    }
-
-    .department-card__meta {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 1rem;
-    }
-
-    .department-card__hero,
-    .department-card__meta > .department-card__cell:first-child,
-    .department-card__cell--date,
-    .department-card__metrics,
-    .department-card__risk-panel {
-        grid-column: auto;
-        grid-row: auto;
-    }
-
-    .department-card__metrics {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        justify-self: stretch;
-        width: 100%;
-    }
-
-    .department-card__risk-panel {
-        grid-template-columns: 1fr;
-    }
-
     .employee-modal__fields {
         grid-template-columns: 1fr;
     }
@@ -462,6 +430,41 @@
     }
 }
 
+@media (max-width: 768px) {
+    .profile-page[data-page="employees"] .page-hero__main,
+    .profile-page[data-page="employees"] .page-hero__aside,
+    .profile-page[data-page="employees"] .page-hero__toolset--employees,
+    .profile-page[data-page="employees"] .employee-hero-filter--compound {
+        flex-wrap: nowrap;
+    }
+
+    .profile-page[data-page="employees"] .page-hero__aside,
+    .profile-page[data-page="employees"] .page-hero__toolset--employees {
+        width: auto;
+        justify-content: flex-start;
+    }
+
+    .profile-page[data-page="employees"] .employee-hero-filter {
+        width: auto;
+        min-width: 0;
+    }
+
+    .profile-page[data-page="employees"] .employee-hero-filter--compound .employee-select--toolbar,
+    .profile-page[data-page="employees"] .employee-hero-filter--compound .employee-select--schedule-status,
+    .profile-page[data-page="employees"] .page-hero__toolset--employees .employee-action-button--employee-create {
+        flex: 0 0 3.5rem;
+        width: 3.5rem;
+        min-width: 3.5rem;
+    }
+
+    .profile-page[data-page="employees"] .department-summary-card--employees {
+        flex: 0 0 6.6rem;
+        width: 6.6rem;
+        min-width: 6.6rem;
+        max-width: 6.6rem;
+    }
+}
+
 @media (max-width: 480px) {
     .department-card__metrics,
     .department-card__risk-facts {
@@ -509,10 +512,18 @@
     .staff_nav form button,
     .line,
     .employee-select__trigger,
+    .employee-select__value,
+    .employee-select__compact-icon,
+    .employee-select__chevron,
     .employee-select__trigger .material-icons-sharp,
     .employee-select__menu,
     .employee-select__option,
+    .department-summary-card--employees,
+    .department-summary-card--employees .department-summary-card__icon,
+    .department-summary-card--employees .department-summary-card__label,
     .employee-action-button,
+    .employee-action-button__compact-icon,
+    .employee-action-button__label,
     .employee-action-button::before,
     .employee-modal__field input,
     .employee-modal__checkbox-box,

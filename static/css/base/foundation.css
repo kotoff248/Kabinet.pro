@@ -146,6 +146,89 @@ body{
     background: transparent;
 }
 
+@supports (content-visibility: auto){
+    .application-card,
+    .employee-card,
+    .notification-card,
+    .department-card,
+    .department-group-card,
+    .vacation-request-card,
+    .preference-readiness-card,
+    .schedule-planning-step,
+    .schedule-planning-card,
+    .schedule-planning-review-row,
+    .schedule-draft-card,
+    .schedule-draft-manual-card,
+    .staffing-row,
+    .staffing-rule-row,
+    .staffing-workload-month{
+        content-visibility: auto;
+        contain: layout paint style;
+    }
+
+    .application-card,
+    .employee-card,
+    .notification-card,
+    .vacation-request-card{
+        contain-intrinsic-size: auto 5.8rem;
+    }
+
+    .department-card,
+    .department-group-card{
+        contain-intrinsic-size: auto 12rem;
+    }
+
+    .preference-readiness-card,
+    .schedule-planning-step,
+    .schedule-planning-card,
+    .schedule-planning-review-row,
+    .schedule-draft-card,
+    .schedule-draft-manual-card,
+    .staffing-row,
+    .staffing-rule-row,
+    .staffing-workload-month{
+        contain-intrinsic-size: auto 6rem;
+    }
+}
+
+.applications-cards-shell.is-scrolling .application-card,
+.employee-cards-shell.is-scrolling .employee-card,
+.department-cards-shell.is-scrolling .department-card,
+.department-detail-shell.is-scrolling .employee-card,
+.department-detail-shell.is-scrolling .department-group-card,
+.notifications-list.is-scrolling .notification-card,
+.preference-readiness-panel__scroll.is-scrolling .preference-readiness-card,
+.schedule-planning-panel__scroll.is-scrolling .schedule-planning-step,
+.schedule-planning-panel__scroll.is-scrolling .schedule-planning-card,
+.schedule-planning-panel__scroll.is-scrolling .schedule-planning-review-row,
+.schedule-draft-panel__scroll.is-scrolling .schedule-draft-card,
+.schedule-draft-panel__scroll.is-scrolling .schedule-draft-manual-card,
+.staffing-board.is-scrolling .staffing-row,
+.staffing-board.is-scrolling .staffing-rule-row,
+.staffing-board.is-scrolling .staffing-workload-month{
+    transition: none !important;
+}
+
+.applications-cards-shell.is-scrolling .application-card:hover,
+.employee-cards-shell.is-scrolling .employee-card:hover,
+.department-cards-shell.is-scrolling .department-card:hover,
+.department-detail-shell.is-scrolling .employee-card:hover,
+.department-detail-shell.is-scrolling .department-group-card:hover,
+.notifications-list.is-scrolling .notification-card:hover,
+.preference-readiness-panel__scroll.is-scrolling .preference-readiness-card:hover,
+.schedule-planning-panel__scroll.is-scrolling .schedule-planning-step:hover,
+.schedule-planning-panel__scroll.is-scrolling .schedule-planning-card:hover,
+.schedule-planning-panel__scroll.is-scrolling .schedule-planning-review-row:hover,
+.schedule-draft-panel__scroll.is-scrolling .schedule-draft-card:hover,
+.schedule-draft-panel__scroll.is-scrolling .schedule-draft-manual-card:hover,
+.staffing-board.is-scrolling .staffing-row:hover,
+.staffing-board.is-scrolling .staffing-rule-row:hover,
+.staffing-board.is-scrolling .staffing-workload-month:hover{
+    transform: none !important;
+    box-shadow: none !important;
+    filter: none !important;
+}
+
 a{
     color: var(--color-white);
     text-decoration: none;

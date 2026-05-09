@@ -103,6 +103,24 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertContains(response, "К графику")
         self.assertNotContains(response, "data-section-back-link")
 
+    def test_employee_profile_from_preference_readiness_uses_explicit_back_link(self):
+        self.client.force_login(self.hr_employee.user)
+        readiness_url = "/preferences/2027/readiness/?status=all"
+
+        response = self.client.get(
+            reverse("employee_profile", args=[self.employee.id]),
+            {
+                "from": "preferences",
+                "back_url": readiness_url,
+                "back_label": "К сбору",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "calendar")
+        self.assertContains(response, f'href="{readiness_url}"')
+        self.assertContains(response, "К сбору")
+
     def test_employee_profile_ignores_unknown_source(self):
         self.client.force_login(self.hr_employee.user)
 

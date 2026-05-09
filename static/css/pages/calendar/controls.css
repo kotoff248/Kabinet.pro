@@ -103,35 +103,220 @@
     align-items: center;
     justify-content: flex-end;
     gap: 0.75rem;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .calendar-preference-status{
-    display: grid;
-    gap: 0.12rem;
-    min-width: 11rem;
-    padding: 0.62rem 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.52rem;
+    height: 3.4rem;
+    min-height: 3.4rem;
+    min-width: 17.4rem;
+    max-width: 100%;
+    padding: 0 0.9rem;
     border-radius: var(--ui-radius-control);
     background: rgba(56, 200, 255, 0.1);
     border: 1px solid rgba(56, 200, 255, 0.18);
     color: rgba(230, 238, 249, 0.92);
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    white-space: nowrap;
+    flex: 0 0 auto;
+    text-decoration: none;
+    cursor: pointer;
 }
 
-.calendar-preference-status span,
+.calendar-preference-status::before{
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(56, 200, 255, 0.16), transparent 54%);
+    opacity: 0.72;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.calendar-preference-status--open{
+    background: rgba(56, 200, 255, 0.1);
+    border-color: rgba(56, 200, 255, 0.2);
+}
+
+.calendar-preference-status--ready{
+    background: rgba(71, 220, 166, 0.12);
+    border-color: rgba(71, 220, 166, 0.26);
+}
+
+.calendar-preference-status--ready::before{
+    background: linear-gradient(135deg, rgba(71, 220, 166, 0.18), transparent 56%);
+}
+
+.calendar-preference-status--not_started{
+    background: rgba(255, 255, 255, 0.055);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.calendar-preference-status--not_started::before{
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 58%);
+}
+
+.calendar-preference-status__label,
 .calendar-preference-status small{
     color: rgba(205, 218, 236, 0.78);
     font-size: 0.72rem;
     font-weight: 700;
 }
 
+.calendar-preference-status__label{
+    text-transform: none;
+}
+
 .calendar-preference-status strong{
     color: #ffffff;
-    font-size: 1.05rem;
+    font-size: 1.08rem;
     line-height: 1.1;
+}
+
+.calendar-preference-status em{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: fit-content;
+    max-width: 100%;
+    padding: 0.22rem 0.46rem;
+    border-radius: var(--ui-radius-compact);
+    background: rgba(56, 200, 255, 0.11);
+    color: rgba(239, 249, 255, 0.92);
+    font-size: 0.66rem;
+    font-style: normal;
+    font-weight: 800;
+}
+
+.calendar-preference-status--ready em{
+    background: rgba(71, 220, 166, 0.13);
+    color: #dfffee;
+}
+
+.calendar-preference-status--not_started em{
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(230, 238, 249, 0.86);
 }
 
 .calendar-preference-finish-form{
     margin: 0;
+}
+
+.calendar-action-btn__label{
+    min-width: 0;
+}
+
+.calendar-page__header .calendar-action-btn--finish,
+.calendar-page__header .calendar-action-btn--preferences,
+.calendar-page__header .calendar-action-btn--plan{
+    flex: 0 0 auto;
+}
+
+@media (max-width: 1500px){
+    .calendar-page__header .calendar-action-btn--finish{
+        width: 3.4rem;
+        min-width: 3.4rem;
+        padding: 0;
+        flex: 0 0 3.4rem;
+    }
+
+    .calendar-action-btn--finish .calendar-action-btn__label{
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+}
+
+@media (max-width: 1180px){
+    .calendar-header-actions{
+        justify-content: flex-end;
+        gap: 0.55rem;
+        flex-wrap: nowrap;
+    }
+
+    .calendar-preference-status{
+        min-width: 7.6rem;
+        width: 7.6rem;
+        padding: 0 0.64rem;
+        gap: 0;
+        justify-content: center;
+    }
+
+    .calendar-preference-status__label,
+    .calendar-preference-status strong,
+    .calendar-preference-status small{
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .calendar-preference-status em{
+        padding: 0.24rem 0.5rem;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .calendar-page__header .calendar-action-btn--preferences,
+    .calendar-page__header .calendar-action-btn--plan{
+        width: 3.4rem;
+        min-width: 3.4rem;
+        padding: 0;
+        flex: 0 0 3.4rem;
+    }
+
+    .calendar-action-btn--preferences .calendar-action-btn__label,
+    .calendar-action-btn--plan .calendar-action-btn__label{
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+}
+
+@media (max-width: 760px){
+    .calendar-preference-status{
+        width: 3.4rem;
+        min-width: 3.4rem;
+        padding: 0;
+    }
+
+    .calendar-preference-status em{
+        display: none;
+    }
+
+    .calendar-preference-status::after{
+        content: 'fact_check';
+        font-family: 'Material Icons Sharp';
+        color: var(--color-primary);
+        font-size: 1.35rem;
+        line-height: 1;
+    }
 }
 
 .preference-collection-form{

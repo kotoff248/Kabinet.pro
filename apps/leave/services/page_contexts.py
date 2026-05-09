@@ -26,6 +26,7 @@ from apps.leave.models import (
     VacationRequest,
     VacationScheduleChangeRequest,
     VacationScheduleItem,
+    VacationUrgentClosureRequest,
 )
 
 from .analytics import build_analytics_payload
@@ -63,6 +64,16 @@ from .scopes import (
     normalize_employee_search_query,
     restrict_change_requests_queryset_for_employee,
     restrict_requests_queryset_for_employee,
+    restrict_urgent_closure_requests_queryset_for_employee,
+)
+from .urgent_closures import (
+    can_department_review_urgent_closure,
+    can_employee_review_urgent_closure,
+    can_finalize_urgent_closure,
+    enrich_urgent_closure_request,
+    get_urgent_closure_requests_queryset,
+    serialize_urgent_closure_request_row,
+    urgent_closure_review_status,
 )
 from .validation import get_paid_request_eligibility_for_year
 
@@ -358,6 +369,10 @@ def build_applications_page_context(current_employee, query_params):
         get_schedule_change_requests_queryset().order_by("-created_at"),
         current_employee,
     )
+    urgent_closure_qs = restrict_urgent_closure_requests_queryset_for_employee(
+        get_urgent_closure_requests_queryset().order_by("-created_at"),
+        current_employee,
+    )
 
     if status_filter in {
         VacationRequest.STATUS_APPROVED,
@@ -366,6 +381,12 @@ def build_applications_page_context(current_employee, query_params):
     }:
         requests_qs = requests_qs.filter(status=status_filter)
         change_requests_qs = change_requests_qs.filter(status=status_filter)
+        if status_filter == VacationRequest.STATUS_APPROVED:
+            urgent_closure_qs = urgent_closure_qs.filter(status=VacationUrgentClosureRequest.STATUS_COMPLETED)
+        elif status_filter == VacationRequest.STATUS_REJECTED:
+            urgent_closure_qs = urgent_closure_qs.filter(status=VacationUrgentClosureRequest.STATUS_REJECTED)
+        else:
+            urgent_closure_qs = urgent_closure_qs.filter(status__in=VacationUrgentClosureRequest.ACTIVE_STATUSES)
 
     vacation_type_options = [{"value": "all", "label": "Все отпуска"}] + [
         {"value": value, "label": label}
@@ -388,13 +409,16 @@ def build_applications_page_context(current_employee, query_params):
     if department_id != "all":
         requests_qs = requests_qs.filter(employee__department_id=department_id)
         change_requests_qs = change_requests_qs.filter(employee__department_id=department_id)
+        urgent_closure_qs = urgent_closure_qs.filter(employee__department_id=department_id)
     if group_id is not None:
         requests_qs = requests_qs.filter(employee__employee_position__production_group_id=group_id)
         change_requests_qs = change_requests_qs.filter(employee__employee_position__production_group_id=group_id)
+        urgent_closure_qs = urgent_closure_qs.filter(employee__employee_position__production_group_id=group_id)
 
     if search_query:
         requests_qs = filter_by_employee_name(requests_qs, search_query)
         change_requests_qs = filter_by_employee_name(change_requests_qs, search_query)
+        urgent_closure_qs = filter_by_employee_name(urgent_closure_qs, search_query)
 
     vacations = [enrich_vacation_request(request_obj) for request_obj in requests_qs]
     for vacation in vacations:
@@ -429,6 +453,38 @@ def build_applications_page_context(current_employee, query_params):
                 "Перенос должен согласовать пользователь с другим уровнем доступа или назначенный руководитель."
             )
 
+    urgent_closures = [enrich_urgent_closure_request(closure_request) for closure_request in urgent_closure_qs]
+    for closure_request in urgent_closures:
+        closure_request.can_approve = (
+            can_department_review_urgent_closure(current_employee, closure_request)
+            or can_employee_review_urgent_closure(current_employee, closure_request)
+            or can_finalize_urgent_closure(current_employee, closure_request)
+        )
+        closure_request.decision_locked = (
+            urgent_closure_review_status(closure_request) == VacationRequest.STATUS_PENDING
+            and not closure_request.can_approve
+        )
+        if closure_request.status == VacationUrgentClosureRequest.STATUS_DEPARTMENT_REVIEW:
+            closure_request.decision_locked_icon = "supervisor_account"
+            closure_request.decision_locked_label = "У руководителя"
+            closure_request.decision_locked_tooltip_title = "Ожидается руководитель"
+            closure_request.decision_locked_tooltip_text = "Период должен проверить руководитель отдела сотрудника."
+        elif closure_request.status == VacationUrgentClosureRequest.STATUS_EMPLOYEE_REVIEW:
+            closure_request.decision_locked_icon = "person"
+            closure_request.decision_locked_label = "У сотрудника"
+            closure_request.decision_locked_tooltip_title = "Ожидается сотрудник"
+            closure_request.decision_locked_tooltip_text = "Сотрудник должен принять период или предложить другой."
+        elif closure_request.status == VacationUrgentClosureRequest.STATUS_HR_FINALIZATION:
+            closure_request.decision_locked_icon = "verified_user"
+            closure_request.decision_locked_label = "У HR"
+            closure_request.decision_locked_tooltip_title = "Ожидается HR"
+            closure_request.decision_locked_tooltip_text = "HR должен финализировать согласованный период."
+        else:
+            closure_request.decision_locked_icon = "task_alt"
+            closure_request.decision_locked_label = "Завершено"
+            closure_request.decision_locked_tooltip_title = "Маршрут закрыт"
+            closure_request.decision_locked_tooltip_text = "Согласование срочного остатка уже завершено."
+
     if task_scope == "mine":
         vacations = [
             vacation
@@ -441,6 +497,18 @@ def build_applications_page_context(current_employee, query_params):
             if change_request.status == VacationScheduleChangeRequest.STATUS_PENDING
             and change_request.can_approve
         ]
+        urgent_closures = [
+            closure_request
+            for closure_request in urgent_closures
+            if urgent_closure_review_status(closure_request) == VacationRequest.STATUS_PENDING
+            and closure_request.can_approve
+        ]
+
+    change_requests = sorted(
+        [*change_requests, *urgent_closures],
+        key=lambda item: (item.created_at, item.id),
+        reverse=True,
+    )
 
     return {
         "vacations": vacations,
@@ -464,7 +532,9 @@ def build_applications_json_payload(vacations, change_requests):
     return {
         "vacations": [serialize_vacation_request_row(vacation) for vacation in vacations],
         "change_requests": [
-            serialize_schedule_change_request_row(change_request)
+            serialize_urgent_closure_request_row(change_request)
+            if isinstance(change_request, VacationUrgentClosureRequest)
+            else serialize_schedule_change_request_row(change_request)
             for change_request in change_requests
         ],
     }
@@ -873,6 +943,107 @@ def _get_schedule_change_approval_route(change_request, current_employee, can_ap
     }
 
 
+def _get_urgent_closure_approval_route(closure_request, current_employee, can_act):
+    current_role = _get_current_role_label(current_employee)
+    if closure_request.status == VacationUrgentClosureRequest.STATUS_EMPLOYEE_REVIEW:
+        reviewer_name = closure_request.employee.full_name or closure_request.employee.login
+        if can_act:
+            availability = "Сотрудник может принять предложенный период или предложить другой."
+        else:
+            availability = "Решение ожидается от сотрудника, чей срочный остаток закрывается."
+        return {
+            "role_label": "Сотрудник",
+            "reviewer_name": reviewer_name,
+            "reason": "После проверки руководителя сотрудник подтверждает период, потому что отпуск нельзя ставить без его участия.",
+            "availability": availability,
+        }
+
+    if closure_request.status == VacationUrgentClosureRequest.STATUS_HR_FINALIZATION:
+        reviewer_name = current_employee.full_name if can_act and current_employee else "HR"
+        availability = (
+            "HR может финализировать согласованный период и создать пункт графика."
+            if can_act
+            else f"Решение недоступно: нужна роль «HR», текущая роль — «{current_role}»."
+        )
+        return {
+            "role_label": "HR",
+            "reviewer_name": reviewer_name,
+            "reason": "HR завершает маршрут только после согласия руководителя и сотрудника.",
+            "availability": availability,
+        }
+
+    expected = get_expected_vacation_approver(closure_request.employee)
+    reviewer = expected.employee
+    reviewer_name = (reviewer.full_name or reviewer.login) if reviewer else ""
+    if closure_request.status in VacationUrgentClosureRequest.TERMINAL_STATUSES:
+        availability = "Согласование срочного остатка уже завершено."
+    elif can_act:
+        availability = "Текущий пользователь может проверить период для отдела."
+    else:
+        availability = f"Решение недоступно: нужна роль «{expected.role_label}», текущая роль — «{current_role}»."
+    return {
+        "role_label": expected.role_label,
+        "reviewer_name": reviewer_name or "согласующий не назначен",
+        "reason": "Руководитель сначала проверяет, не ломает ли период состав отдела.",
+        "availability": availability,
+    }
+
+
+def _get_urgent_closure_history(closure_request):
+    history = [
+        {
+            "title": "Согласование создано",
+            "description": (
+                f"HR предложил закрыть {closure_request.required_days_label} до "
+                f"{closure_request.deadline_label}: {closure_request.period_label}."
+            ),
+            "actor": closure_request.created_by,
+            "created_at": closure_request.created_at,
+        }
+    ]
+    if closure_request.department_reviewed_at or closure_request.department_reviewer_id:
+        history.append(
+            {
+                "title": "Руководитель проверил период",
+                "description": closure_request.department_comment or "Период передан сотруднику без комментария.",
+                "actor": closure_request.department_reviewer,
+                "created_at": closure_request.department_reviewed_at or closure_request.created_at,
+            }
+        )
+    if closure_request.employee_responded_at:
+        history.append(
+            {
+                "title": (
+                    "Сотрудник предложил другой период"
+                    if closure_request.status == VacationUrgentClosureRequest.STATUS_DEPARTMENT_REVIEW
+                    else "Сотрудник ответил"
+                ),
+                "description": closure_request.employee_comment or "Ответ сотрудника без комментария.",
+                "actor": closure_request.employee,
+                "created_at": closure_request.employee_responded_at,
+            }
+        )
+    if closure_request.finalized_at or closure_request.finalized_by_id:
+        history.append(
+            {
+                "title": "HR финализировал закрытие",
+                "description": closure_request.final_comment or "Пункт графика создан без комментария.",
+                "actor": closure_request.finalized_by,
+                "created_at": closure_request.finalized_at or closure_request.updated_at,
+            }
+        )
+    if closure_request.rejected_at or closure_request.rejected_by_id:
+        history.append(
+            {
+                "title": "Согласование отклонено",
+                "description": closure_request.rejection_comment or "Отклонено без комментария.",
+                "actor": closure_request.rejected_by,
+                "created_at": closure_request.rejected_at or closure_request.updated_at,
+            }
+        )
+    return history
+
+
 def _build_saved_vacation_risk_snapshot(vacation):
     overlapping_absences_count = int(vacation.overlapping_absences_count or 0)
     remaining_staff_count = int(vacation.remaining_staff_count or 0)
@@ -1229,6 +1400,72 @@ def build_schedule_change_detail_context(change_request, current_employee, sourc
         "sidebar_section": navigation_source,
         "schedule_change_detail_back_link": explicit_back_link or section_back_links.get(navigation_source),
         "schedule_change_detail_employee_profile_url": employee_profile_url,
+    }
+
+
+def build_urgent_closure_detail_context(closure_request, current_employee, source="", query_params=None):
+    enrich_urgent_closure_request(closure_request)
+    urgent_closure_decision_context = _build_leave_decision_context(
+        closure_request.risk_explanation,
+        period_start=closure_request.proposed_start_date,
+        period_end=closure_request.proposed_end_date,
+        employee_id=closure_request.employee_id,
+        calendar_action_label="Открыть период в графике",
+    )
+    can_manager_approve = can_department_review_urgent_closure(current_employee, closure_request)
+    can_employee_review = can_employee_review_urgent_closure(current_employee, closure_request)
+    can_hr_finalize = can_finalize_urgent_closure(current_employee, closure_request)
+    can_act = can_manager_approve or can_employee_review or can_hr_finalize
+    can_reject = can_act and closure_request.status in VacationUrgentClosureRequest.ACTIVE_STATUSES
+
+    decision_state = ""
+    decision_state_icon = ""
+    if closure_request.status in VacationUrgentClosureRequest.TERMINAL_STATUSES:
+        decision_state = "Согласование уже завершено."
+        decision_state_icon = "task_alt"
+    elif not can_act:
+        decision_state = "Решение недоступно для вашей роли."
+        decision_state_icon = "lock"
+
+    section_back_links = _get_section_back_links()
+    source = source if source in section_back_links else ""
+    if source == "applications" and not can_access_applications(current_employee):
+        source = ""
+    default_source = "applications" if can_access_applications(current_employee) else "calendar"
+    navigation_source = source or default_source
+    explicit_back_link = build_explicit_back_link(query_params or {}, section=navigation_source)
+    employee_profile_query = {}
+    if navigation_source:
+        employee_profile_query["from"] = navigation_source
+        employee_profile_query["return_to"] = "urgent_closure"
+        employee_profile_query["urgent_closure_id"] = closure_request.id
+    employee_profile_url = reverse("employee_profile", args=[closure_request.employee_id])
+    if employee_profile_query:
+        employee_profile_url = f"{employee_profile_url}?{urlencode(employee_profile_query)}"
+
+    return {
+        "urgent_closure": closure_request,
+        "employee": closure_request.employee,
+        "status": closure_request.status,
+        "status_label": closure_request.status_label,
+        "status_icon": closure_request.status_icon,
+        "status_css_class": closure_request.status_css_class,
+        "urgent_closure_period_label": closure_request.period_label,
+        "urgent_closure_risk_summary": _get_schedule_change_risk_summary(closure_request),
+        "urgent_closure_decision_context": urgent_closure_decision_context,
+        "approval_route": _get_urgent_closure_approval_route(closure_request, current_employee, can_act),
+        "urgent_closure_history": _get_urgent_closure_history(closure_request),
+        "system_recommendation_text": closure_request.risk_recommended_action
+        or "Система предлагает закрыть только ту часть остатка, которую нельзя корректно поставить в график следующего года.",
+        "can_manager_approve_urgent_closure": can_manager_approve,
+        "can_employee_review_urgent_closure": can_employee_review,
+        "can_hr_finalize_urgent_closure": can_hr_finalize,
+        "can_reject_urgent_closure": can_reject,
+        "urgent_closure_decision_state": decision_state,
+        "urgent_closure_decision_state_icon": decision_state_icon,
+        "sidebar_section": navigation_source,
+        "urgent_closure_detail_back_link": explicit_back_link or section_back_links.get(navigation_source),
+        "urgent_closure_detail_employee_profile_url": employee_profile_url,
     }
 
 

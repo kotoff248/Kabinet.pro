@@ -1,4 +1,5 @@
 from collections import Counter
+from datetime import timedelta
 from io import StringIO
 import secrets
 
@@ -7,6 +8,7 @@ from django.conf import settings
 from django.contrib.auth import logout as auth_logout, update_session_auth_hash
 from django.core.management import call_command
 from django.db import transaction
+from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -41,6 +43,7 @@ from apps.leave.services.constants import RUSSIAN_MONTH_SHORT_NAMES
 from apps.leave.services.preferences import attach_employee_to_open_preference_collections
 from apps.leave.services.staffing import (
     build_department_group_staffing_forecast_map,
+    build_department_staffing_context_map,
     build_department_staffing_forecast_map,
     format_staff_count,
 )
@@ -341,6 +344,13 @@ def _get_staffing_departments(current_employee):
         "staffing_rule",
     ).prefetch_related(
         "production_groups__positions",
+        Prefetch(
+            "employee_positions",
+            queryset=EmployeePosition.objects.select_related("production_group").order_by(
+                "production_group__name",
+                "title",
+            ),
+        ),
         "coverage_rules__production_group",
         "substitution_rules__source_group",
         "substitution_rules__substitute_group",
@@ -604,7 +614,12 @@ def _decorate_staffing_quality(departments, active_employees):
         and employee.employee_position
         and employee.employee_position.production_group_id
     )
-    department_forecasts = build_department_staffing_forecast_map(departments, start_date=today)
+    staffing_contexts = build_department_staffing_context_map(departments, today + timedelta(days=29))
+    department_forecasts = build_department_staffing_forecast_map(
+        departments,
+        start_date=today,
+        staffing_contexts=staffing_contexts,
+    )
 
     for department in departments:
         staff_count = staff_count_by_department[department.id]
@@ -642,6 +657,7 @@ def _decorate_staffing_quality(departments, active_employees):
             department,
             groups=groups,
             start_date=today,
+            staffing_context=staffing_contexts.get(department.id),
         )
         coverage_rules = list(department.coverage_rules.all())
         coverage_by_group = {rule.production_group_id: rule for rule in coverage_rules}

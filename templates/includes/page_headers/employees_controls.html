@@ -4,7 +4,7 @@
         <input type="hidden" name="status" value="{{ selected_status }}">
         <input type="hidden" name="search" value="{{ search_query }}">
         {% if show_department_filter %}
-        <div class="employee-select employee-select--toolbar employee-select--floating" data-employee-select>
+        <div class="employee-select employee-select--toolbar employee-select--floating employee-select--department" data-employee-select data-employee-select-menu-min-width="260">
             <select id="department" name="department" class="employee-select__native">
                 <option value="all" {% if selected_department == 'all' or not selected_department %}selected{% endif %}>Все отделы</option>
                 {% for department in departments %}
@@ -13,7 +13,8 @@
                 </option>
                 {% endfor %}
             </select>
-            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+            <button type="button" class="employee-select__trigger" data-employee-select-trigger data-employee-select-label="Отдел" aria-haspopup="listbox" aria-expanded="false">
+                <span class="employee-select__compact-icon material-icons-sharp" aria-hidden="true">apartment</span>
                 <span class="employee-select__value" data-employee-select-value>
                     {% if selected_department == 'all' or not selected_department %}
                     Все отделы
@@ -25,7 +26,7 @@
                         {% endfor %}
                     {% endif %}
                 </span>
-                <span class="material-icons-sharp">expand_more</span>
+                <span class="employee-select__chevron material-icons-sharp" aria-hidden="true">expand_more</span>
             </button>
             <div class="employee-select__menu" data-employee-select-menu role="listbox">
                 <button type="button" class="employee-select__option {% if selected_department == 'all' or not selected_department %}is-selected{% endif %}" data-employee-select-option data-value="all" role="option" aria-selected="{% if selected_department == 'all' or not selected_department %}true{% else %}false{% endif %}">
@@ -40,7 +41,7 @@
         </div>
         {% endif %}
         {% if show_group_filter %}
-        <div class="employee-select employee-select--toolbar employee-select--floating employee-select--group" data-employee-select>
+        <div class="employee-select employee-select--toolbar employee-select--floating employee-select--group" data-employee-select data-employee-select-menu-min-width="320">
             <select id="production-group" name="group" class="employee-select__native">
                 <option value="all" {% if selected_group == 'all' or not selected_group %}selected{% endif %}>Все группы</option>
                 {% for group in group_options %}
@@ -49,7 +50,8 @@
                 </option>
                 {% endfor %}
             </select>
-            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+            <button type="button" class="employee-select__trigger" data-employee-select-trigger data-employee-select-label="Группа" aria-haspopup="listbox" aria-expanded="false">
+                <span class="employee-select__compact-icon material-icons-sharp" aria-hidden="true">workspaces</span>
                 <span class="employee-select__value" data-employee-select-value>
                     {% if selected_group == 'all' or not selected_group %}
                     Все группы
@@ -61,7 +63,7 @@
                         {% endfor %}
                     {% endif %}
                 </span>
-                <span class="material-icons-sharp">expand_more</span>
+                <span class="employee-select__chevron material-icons-sharp" aria-hidden="true">expand_more</span>
             </button>
             <div class="employee-select__menu" data-employee-select-menu role="listbox">
                 <button type="button" class="employee-select__option {% if selected_group == 'all' or not selected_group %}is-selected{% endif %}" data-employee-select-option data-value="all" role="option" aria-selected="{% if selected_group == 'all' or not selected_group %}true{% else %}false{% endif %}">
@@ -75,13 +77,14 @@
             </div>
         </div>
         {% endif %}
-        <div class="employee-select employee-select--toolbar employee-select--floating employee-select--schedule-status" data-employee-select>
+        <div class="employee-select employee-select--toolbar employee-select--floating employee-select--schedule-status" data-employee-select data-employee-select-menu-min-width="240">
             <select id="schedule-status" name="schedule_status" class="employee-select__native">
                 {% for option in schedule_status_options %}
                 <option value="{{ option.value }}" {% if option.value == selected_schedule_status %}selected{% endif %}>{{ option.label }}</option>
                 {% endfor %}
             </select>
-            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+            <button type="button" class="employee-select__trigger" data-employee-select-trigger data-employee-select-label="График" aria-haspopup="listbox" aria-expanded="false">
+                <span class="employee-select__compact-icon material-icons-sharp" aria-hidden="true">event_available</span>
                 <span class="employee-select__value" data-employee-select-value>
                     {% for option in schedule_status_options %}
                         {% if option.value == selected_schedule_status %}
@@ -89,7 +92,7 @@
                         {% endif %}
                     {% endfor %}
                 </span>
-                <span class="material-icons-sharp">expand_more</span>
+                <span class="employee-select__chevron material-icons-sharp" aria-hidden="true">expand_more</span>
             </button>
             <div class="employee-select__menu" data-employee-select-menu role="listbox">
                 {% for option in schedule_status_options %}
@@ -112,6 +115,9 @@
     </div>
 
     {% if can_manage_employees %}
-    <button type="button" class="employee-action-button" data-modal-open="employee-create-modal">Создать сотрудника</button>
+    <button type="button" class="employee-action-button employee-action-button--employee-create" data-modal-open="employee-create-modal" aria-label="Создать сотрудника" title="Создать сотрудника">
+        <span class="employee-action-button__compact-icon material-icons-sharp" aria-hidden="true">person_add</span>
+        <span class="employee-action-button__label">Создать сотрудника</span>
+    </button>
     {% endif %}
 </div>

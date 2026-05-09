@@ -9,9 +9,15 @@ from apps.accounts.services import can_approve_leave_for_employee
 from apps.core.models import Notification
 from apps.core.services.notifications import create_notification, mark_notifications_done_by_dedupe_prefix
 from apps.employees.models import Employees
-from apps.leave.models import VacationRequest, VacationScheduleChangeRequest, VacationScheduleItem
+from apps.leave.models import (
+    VacationRequest,
+    VacationScheduleChangeRequest,
+    VacationScheduleItem,
+    VacationUrgentClosureRequest,
+)
 
 from .dates import format_period_label
+from .urgent_closures import urgent_closure_detail_url
 
 
 DEFAULT_UPCOMING_REMINDER_DAYS_BEFORE = 7
@@ -94,6 +100,10 @@ def _schedule_change_action_prefix(change_request):
 
 def _schedule_change_detail_url(change_request):
     return reverse("schedule_change_detail", args=[change_request.id])
+
+
+def _urgent_closure_action_prefix(closure_request):
+    return f"urgent_closure:{closure_request.id}:"
 
 
 def _is_manager_initiated_schedule_change(change_request):
@@ -365,6 +375,189 @@ def notify_schedule_change_reviewed(change_request):
         requires_action=False,
         dedupe_key=f"{event_type}:{change_request.id}:{change_request.employee_id}",
     )
+
+
+def _urgent_closure_period(closure_request):
+    return format_period_label(closure_request.proposed_start_date, closure_request.proposed_end_date)
+
+
+def _urgent_closure_days_label(closure_request):
+    days = closure_request.required_days
+    if days == days.to_integral_value():
+        return f"{int(days)} д."
+    return f"{str(days).replace('.', ',')} д."
+
+
+def _urgent_closure_approvers(closure_request):
+    return get_leave_approvers_for_employee(closure_request.employee)
+
+
+def _urgent_closure_hr_recipients(closure_request):
+    candidates = []
+    if closure_request.created_by_id and closure_request.created_by:
+        candidates.append(closure_request.created_by)
+    candidates.extend(
+        Employees.objects.filter(role=Employees.ROLE_HR, is_active_employee=True)
+    )
+    return _unique_employees(candidates)
+
+
+def notify_urgent_closure_created(closure_request):
+    employee_name = _employee_label(closure_request.employee)
+    period = _urgent_closure_period(closure_request)
+    days = _urgent_closure_days_label(closure_request)
+    mark_notifications_done_by_dedupe_prefix(_urgent_closure_action_prefix(closure_request))
+    for approver in _urgent_closure_approvers(closure_request):
+        create_notification(
+            recipient=approver,
+            actor=closure_request.created_by,
+            event_type=Notification.TYPE_URGENT_CLOSURE_DEPARTMENT_REVIEW,
+            title="Нужно согласовать закрытие остатка",
+            message=(
+                f"{employee_name}: нужно закрыть {days} до {closure_request.deadline:%d.%m.%Y}. "
+                f"HR предложил(а) период {period}."
+            ),
+            action_url=urgent_closure_detail_url(closure_request),
+            priority=Notification.PRIORITY_HIGH,
+            requires_action=True,
+            dedupe_key=f"{_urgent_closure_action_prefix(closure_request)}department:{approver.id}",
+        )
+
+
+def notify_urgent_closure_employee_review(closure_request):
+    employee_name = _employee_label(closure_request.employee)
+    period = _urgent_closure_period(closure_request)
+    days = _urgent_closure_days_label(closure_request)
+    reviewer_name = _employee_label(closure_request.department_reviewer) if closure_request.department_reviewer else "Руководитель"
+    mark_notifications_done_by_dedupe_prefix(_urgent_closure_action_prefix(closure_request))
+    create_notification(
+        recipient=closure_request.employee,
+        actor=closure_request.department_reviewer,
+        event_type=Notification.TYPE_URGENT_CLOSURE_EMPLOYEE_REVIEW,
+        title="Согласуйте период срочного отпуска",
+        message=(
+            f"{reviewer_name} подтвердил(а) период {period}, чтобы закрыть {days} "
+            f"до {closure_request.deadline:%d.%m.%Y}."
+        ),
+        action_url=urgent_closure_detail_url(closure_request),
+        priority=Notification.PRIORITY_HIGH,
+        requires_action=True,
+        dedupe_key=f"{_urgent_closure_action_prefix(closure_request)}employee:{closure_request.employee_id}",
+    )
+    for recipient in _urgent_closure_hr_recipients(closure_request):
+        if recipient.id == closure_request.employee_id:
+            continue
+        create_notification(
+            recipient=recipient,
+            actor=closure_request.department_reviewer,
+            event_type=Notification.TYPE_URGENT_CLOSURE_STATUS,
+            title="Период отправлен сотруднику",
+            message=f"{employee_name}: период {period} отправлен сотруднику на согласие.",
+            action_url=urgent_closure_detail_url(closure_request),
+            priority=Notification.PRIORITY_NORMAL,
+            requires_action=False,
+            dedupe_key=f"{_urgent_closure_action_prefix(closure_request)}status:employee_review:{recipient.id}",
+        )
+
+
+def notify_urgent_closure_period_changed_by_employee(closure_request):
+    employee_name = _employee_label(closure_request.employee)
+    period = _urgent_closure_period(closure_request)
+    mark_notifications_done_by_dedupe_prefix(_urgent_closure_action_prefix(closure_request))
+    for approver in _urgent_closure_approvers(closure_request):
+        create_notification(
+            recipient=approver,
+            actor=closure_request.employee,
+            event_type=Notification.TYPE_URGENT_CLOSURE_DEPARTMENT_REVIEW,
+            title="Сотрудник предложил другой период",
+            message=f"{employee_name} предложил(а) закрыть срочный остаток периодом {period}.",
+            action_url=urgent_closure_detail_url(closure_request),
+            priority=Notification.PRIORITY_HIGH,
+            requires_action=True,
+            dedupe_key=f"{_urgent_closure_action_prefix(closure_request)}department:{approver.id}",
+        )
+    for recipient in _urgent_closure_hr_recipients(closure_request):
+        create_notification(
+            recipient=recipient,
+            actor=closure_request.employee,
+            event_type=Notification.TYPE_URGENT_CLOSURE_STATUS,
+            title="Сотрудник предложил другой период",
+            message=f"{employee_name}: новый вариант {period} снова отправлен руководителю.",
+            action_url=urgent_closure_detail_url(closure_request),
+            priority=Notification.PRIORITY_NORMAL,
+            requires_action=False,
+            dedupe_key=f"{_urgent_closure_action_prefix(closure_request)}status:period_changed:{recipient.id}",
+        )
+
+
+def notify_urgent_closure_hr_finalization(closure_request):
+    employee_name = _employee_label(closure_request.employee)
+    period = _urgent_closure_period(closure_request)
+    mark_notifications_done_by_dedupe_prefix(_urgent_closure_action_prefix(closure_request))
+    for recipient in _urgent_closure_hr_recipients(closure_request):
+        create_notification(
+            recipient=recipient,
+            actor=closure_request.employee,
+            event_type=Notification.TYPE_URGENT_CLOSURE_HR_FINALIZATION,
+            title="Финализируйте закрытие остатка",
+            message=f"{employee_name} согласовал(а) период {period}. Нужно внести корректировку в график.",
+            action_url=urgent_closure_detail_url(closure_request),
+            priority=Notification.PRIORITY_HIGH,
+            requires_action=True,
+            dedupe_key=f"{_urgent_closure_action_prefix(closure_request)}hr:{recipient.id}",
+        )
+
+
+def notify_urgent_closure_rejected(closure_request):
+    employee_name = _employee_label(closure_request.employee)
+    actor_name = _employee_label(closure_request.rejected_by) if closure_request.rejected_by else "Участник согласования"
+    mark_notifications_done_by_dedupe_prefix(_urgent_closure_action_prefix(closure_request))
+    recipients = _unique_employees(
+        [
+            closure_request.created_by,
+            closure_request.employee,
+            closure_request.department_reviewer,
+        ]
+    )
+    for recipient in recipients:
+        if closure_request.rejected_by_id and recipient.id == closure_request.rejected_by_id:
+            continue
+        create_notification(
+            recipient=recipient,
+            actor=closure_request.rejected_by,
+            event_type=Notification.TYPE_URGENT_CLOSURE_STATUS,
+            title="Закрытие остатка отклонено",
+            message=f"{actor_name}: согласование срочного остатка сотрудника {employee_name} отклонено.",
+            action_url=urgent_closure_detail_url(closure_request),
+            priority=Notification.PRIORITY_NORMAL,
+            requires_action=False,
+            dedupe_key=f"{_urgent_closure_action_prefix(closure_request)}rejected:{recipient.id}",
+        )
+
+
+def notify_urgent_closure_completed(closure_request):
+    employee_name = _employee_label(closure_request.employee)
+    period = _urgent_closure_period(closure_request)
+    mark_notifications_done_by_dedupe_prefix(_urgent_closure_action_prefix(closure_request))
+    recipients = _unique_employees(
+        [
+            closure_request.created_by,
+            closure_request.employee,
+            closure_request.department_reviewer,
+        ]
+    )
+    for recipient in recipients:
+        create_notification(
+            recipient=recipient,
+            actor=closure_request.finalized_by,
+            event_type=Notification.TYPE_URGENT_CLOSURE_STATUS,
+            title="Срочный остаток закрыт",
+            message=f"{employee_name}: отпуск {period} внесён в график {closure_request.closure_year} года.",
+            action_url=urgent_closure_detail_url(closure_request),
+            priority=Notification.PRIORITY_NORMAL,
+            requires_action=False,
+            dedupe_key=f"{_urgent_closure_action_prefix(closure_request)}completed:{recipient.id}",
+        )
 
 
 def notify_preferences_collection_started(year, recipients, actor=None):

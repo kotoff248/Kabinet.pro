@@ -1,0 +1,93 @@
+<form method="post"
+      class="schedule-draft-placement-form"
+      id="schedule-draft-placement-form"
+      data-preview-can-submit="false">
+    {% csrf_token %}
+    <input type="hidden" name="next" id="draft-placement-next-url" value="{{ current_path }}">
+
+    <article class="schedule-draft-placement-form__employee">
+        <div>
+            <span>Сотрудник</span>
+            <strong id="draft-placement-employee">—</strong>
+            <small id="draft-placement-subtitle">—</small>
+        </div>
+        <div>
+            <span>Задача</span>
+            <strong id="draft-placement-needed">—</strong>
+            <small id="draft-placement-status">—</small>
+        </div>
+    </article>
+
+    <section class="schedule-draft-placement-form__context" aria-label="Контекст размещения">
+        <article>
+            <span>Основной период</span>
+            <strong id="draft-placement-primary">—</strong>
+        </article>
+        <article>
+            <span>Запасной период</span>
+            <strong id="draft-placement-backup">—</strong>
+        </article>
+        <article>
+            <span>Уже поставлено</span>
+            <strong id="draft-placement-placed">—</strong>
+        </article>
+        <article>
+            <span>Плановая цель</span>
+            <strong id="draft-placement-target">—</strong>
+        </article>
+    </section>
+
+    <p class="schedule-draft-placement-form__reason" id="draft-placement-reason">—</p>
+
+    <div class="schedule-draft-placement-form__dates">
+        <label class="schedule-transfer-field" data-date-field>
+            <span>Дата начала</span>
+            <input type="date" name="start_date" required>
+        </label>
+        <label class="schedule-transfer-field" data-date-field>
+            <span>Дата окончания</span>
+            <input type="date" name="end_date" required>
+        </label>
+    </div>
+
+    <section class="schedule-transfer-preview schedule-draft-placement-preview is-idle"
+             id="draft-placement-preview-panel"
+             aria-live="polite">
+        <div class="schedule-transfer-preview__grid schedule-draft-placement-preview__grid">
+            <article class="schedule-transfer-preview__card">
+                <span>Выбранный период</span>
+                <strong><span id="draft-placement-calendar-days">—</span> календ. д.</strong>
+                <small><span id="draft-placement-chargeable-days">—</span> списываемых д.</small>
+            </article>
+            <article class="schedule-transfer-preview__card">
+                <span>После размещения</span>
+                <strong><span id="draft-placement-remaining-days">—</span> д.</strong>
+                <small>останется распределить</small>
+            </article>
+            <article class="schedule-transfer-preview__card schedule-transfer-preview__card--accent">
+                <span>Итоговый отпуск</span>
+                <strong id="draft-placement-merged-period">Выберите даты</strong>
+                <small><span id="draft-placement-merged-days">—</span> списываемых д.</small>
+            </article>
+        </div>
+        <article class="schedule-transfer-preview__risk" id="draft-placement-risk" hidden>
+            <div class="schedule-transfer-preview__risk-head">
+                <span>Риск состава</span>
+                <strong id="draft-placement-risk-label">Низкий</strong>
+            </div>
+            <p id="draft-placement-risk-reason"></p>
+            <p id="draft-placement-risk-action"></p>
+        </article>
+    </section>
+
+    <p class="schedule-transfer-form__hint" id="draft-placement-form-hint">
+        Выберите даты, чтобы проверить списываемые дни, остаток и риск состава.
+    </p>
+
+    <div class="app-modal__actions schedule-transfer-form__actions">
+        <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>
+        <button type="submit" class="app-modal__button app-modal__button--primary" id="submit-draft-placement-btn" disabled>
+            Поставить в черновик
+        </button>
+    </div>
+</form>

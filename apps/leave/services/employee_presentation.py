@@ -3,6 +3,11 @@ from apps.employees.role_presentation import get_employee_role_card_meta
 
 
 def _get_employee_department_deputy(employee):
+    department = getattr(employee, "department", None)
+    if department is not None and getattr(department, "deputy_id", None) == getattr(employee, "id", None):
+        return department
+    if department is not None:
+        return None
     return getattr(employee, "deputy_department", None)
 
 

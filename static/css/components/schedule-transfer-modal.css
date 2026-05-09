@@ -205,6 +205,10 @@
     background: rgba(56, 200, 255, 0.065);
 }
 
+.schedule-transfer-preview__risk[hidden]{
+    display: none;
+}
+
 .schedule-transfer-preview__risk.is-high,
 .schedule-transfer-preview__risk.is-conflict{
     border-color: rgba(255, 190, 104, 0.27);

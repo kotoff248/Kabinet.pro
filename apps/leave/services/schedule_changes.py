@@ -64,14 +64,17 @@ def build_schedule_change_transfer_action(
     vacation_type_label,
     schedule_status,
     today=None,
+    pending_change_exists=None,
 ):
     today = today or timezone.localdate()
     if schedule_status not in VacationScheduleItem.ACTIVE_STATUSES or start_date <= today:
         return _empty_transfer_action()
-    if VacationScheduleChangeRequest.objects.filter(
-        schedule_item_id=schedule_item_id,
-        status=VacationScheduleChangeRequest.STATUS_PENDING,
-    ).exists():
+    if pending_change_exists is None:
+        pending_change_exists = VacationScheduleChangeRequest.objects.filter(
+            schedule_item_id=schedule_item_id,
+            status=VacationScheduleChangeRequest.STATUS_PENDING,
+        ).exists()
+    if pending_change_exists:
         return _empty_transfer_action()
     if not can_initiate_schedule_change_for_employee(actor, employee):
         return _empty_transfer_action()
