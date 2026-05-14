@@ -1,6 +1,6 @@
 import calendar
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.db import transaction
@@ -32,6 +32,11 @@ from apps.leave.services.schedule_drafts import (
     assess_schedule_draft_candidate,
 )
 from apps.leave.services.candidate_scoring import ACTIVE_CANDIDATE_SCORER_VERSION
+from apps.leave.services.staffing import (
+    build_department_staffing_context_map,
+    get_department_staffing_rule,
+    get_weighted_department_workload,
+)
 
 
 TRACE_SCHEDULE_STATUSES = (VacationSchedule.STATUS_ARCHIVED, VacationSchedule.STATUS_APPROVED)
@@ -57,6 +62,9 @@ class _HistoricalScheduleMLTraceBuilder:
             .first()
         )
         self.stats = Counter()
+        self._staffing_context_cache = {}
+        self._staffing_rule_cache = {}
+        self._workload_cache = {}
 
     @transaction.atomic
     def create(self):
@@ -90,6 +98,7 @@ class _HistoricalScheduleMLTraceBuilder:
         items = self._trace_items(schedule)
         if not items:
             return
+        self._prepare_schedule_risk_cache(schedule, items)
 
         run = VacationScheduleGenerationRun.objects.create(
             schedule=schedule,
@@ -123,6 +132,7 @@ class _HistoricalScheduleMLTraceBuilder:
                     schedule,
                     item,
                     pair,
+                    placements=active_placements,
                     placed_days=placed_days,
                     total_days=total_days,
                 )
@@ -199,7 +209,7 @@ class _HistoricalScheduleMLTraceBuilder:
             grouped[change_request.schedule_item_id].append(change_request)
         return grouped
 
-    def _create_selected_candidate(self, run, schedule, item, pair, *, placed_days, total_days):
+    def _create_selected_candidate(self, run, schedule, item, pair, *, placements, placed_days, total_days):
         kind, preference, preference_match_label = _selected_candidate_kind(item, pair)
         candidate = DraftGenerationCandidate(
             employee=item.employee,
@@ -219,7 +229,13 @@ class _HistoricalScheduleMLTraceBuilder:
                 preference_match_label=preference_match_label,
             ),
         )
-        candidate.assessment = _selected_assessment(item)
+        candidate.assessment = _selected_assessment(
+            item,
+            schedule.year,
+            placements,
+            risk_context=self._risk_context(schedule, item.employee, item.start_date, item.end_date),
+        )
+        _apply_selected_assessment_metadata(candidate, item)
         candidate = _apply_candidate_scoring(candidate)
         stored = _store_candidate(
             run,
@@ -342,6 +358,7 @@ class _HistoricalScheduleMLTraceBuilder:
             placements,
             max_chargeable_days=max(Decimal(item.chargeable_days or 0), Decimal("1.00")),
             exclude_schedule_item_id=item.id,
+            risk_context=self._risk_context(schedule, item.employee, preference.start_date, preference.end_date),
         )
         _apply_hard_rule_assessment(candidate, assessment)
         return self._store_scored_alternative(run, schedule, candidate, decision_rank)
@@ -356,6 +373,7 @@ class _HistoricalScheduleMLTraceBuilder:
                 placements,
                 max_chargeable_days=max(Decimal(item.chargeable_days or 0), Decimal("1.00")),
                 exclude_schedule_item_id=item.id,
+                risk_context=self._risk_context(schedule, item.employee, start_date, end_date),
             )
             if not assessment.get("can_place"):
                 continue
@@ -416,6 +434,7 @@ class _HistoricalScheduleMLTraceBuilder:
             placements,
             max_chargeable_days=max(Decimal(item.chargeable_days or 0), Decimal("1.00")),
             exclude_schedule_item_id=item.id,
+            risk_context=self._risk_context(schedule, item.employee, change_request.new_start_date, change_request.new_end_date),
         )
         _apply_hard_rule_assessment(candidate, assessment)
         return self._store_scored_alternative(run, schedule, candidate, decision_rank)
@@ -432,6 +451,7 @@ class _HistoricalScheduleMLTraceBuilder:
             placements,
             max_chargeable_days=max_days,
             exclude_schedule_item_id=item.id,
+            risk_context=self._risk_context(schedule, item.employee, item.start_date, item.end_date),
         )
         if assessment.get("can_place"):
             assessment = _blocked_overlap_assessment(item)
@@ -547,8 +567,11 @@ class _HistoricalScheduleMLTraceBuilder:
                 continue
             decision = _feedback_decision_for_item(item, index)
             comment = _feedback_comment(item, decision)
-            for reviewer, role in _feedback_reviewers(item, self.actor, self.enterprise_head):
-                VacationScheduleCandidateFeedback.objects.create(
+            for reviewer_index, (reviewer, role) in enumerate(
+                _feedback_reviewers(item, self.actor, self.enterprise_head),
+                start=1,
+            ):
+                feedback = VacationScheduleCandidateFeedback.objects.create(
                     schedule_item=item,
                     candidate=selected_candidate,
                     generation_run=selected_candidate.generation_run,
@@ -560,6 +583,13 @@ class _HistoricalScheduleMLTraceBuilder:
                     confidence_snapshot=selected_candidate.confidence,
                     model_version_snapshot=selected_candidate.model_version,
                     explanation_snapshot=selected_candidate.explanation,
+                )
+                timestamp = selected_candidate.generation_run.started_at + timedelta(
+                    minutes=180 + index * 3 + reviewer_index
+                )
+                VacationScheduleCandidateFeedback.objects.filter(pk=feedback.pk).update(
+                    created_at=timestamp,
+                    updated_at=timestamp,
                 )
                 self.stats["feedback"] += 1
 
@@ -588,6 +618,46 @@ class _HistoricalScheduleMLTraceBuilder:
                 "error_message",
             ]
         )
+
+    def _prepare_schedule_risk_cache(self, schedule, items):
+        departments = {
+            item.employee.department_id: item.employee.department
+            for item in items
+            if item.employee_id
+            and getattr(item.employee, "department_id", None)
+            and getattr(item.employee, "department", None)
+        }
+        if not departments:
+            return
+
+        as_of_date = date(schedule.year, 12, 31)
+        contexts = build_department_staffing_context_map(departments.values(), as_of_date)
+        for department_id, department in departments.items():
+            self._staffing_context_cache[(schedule.year, department_id)] = contexts.get(department_id)
+            if department_id not in self._staffing_rule_cache:
+                self._staffing_rule_cache[department_id] = get_department_staffing_rule(department)
+
+    def _risk_context(self, schedule, employee, start_date, end_date):
+        department = getattr(employee, "department", None)
+        department_id = getattr(employee, "department_id", None)
+        if department is None or not department_id:
+            return {}
+
+        staffing_rule = self._staffing_rule_cache.get(department_id)
+        workload_key = (department_id, start_date, end_date)
+        if workload_key not in self._workload_cache:
+            self._workload_cache[workload_key] = get_weighted_department_workload(
+                department,
+                start_date,
+                end_date,
+                staffing_rule,
+            )
+
+        return {
+            "staffing_context": self._staffing_context_cache.get((schedule.year, department_id)),
+            "staffing_rule": staffing_rule,
+            "weighted_workload": self._workload_cache[workload_key],
+        }
 
 
 def _historical_timestamp(year, *, days):
@@ -712,7 +782,28 @@ def _candidate_metadata(
     }
 
 
-def _selected_assessment(item):
+def _selected_assessment(item, year, placements, *, risk_context=None):
+    assessment = assess_schedule_draft_candidate(
+        item.employee,
+        item.start_date,
+        item.end_date,
+        year,
+        placements,
+        exclude_schedule_item_id=item.id,
+        risk_context=risk_context,
+    )
+    if assessment.get("risk_payload"):
+        reason = assessment.get("reason") or {}
+        return {
+            **assessment,
+            "can_place": True,
+            "has_conflict": bool(assessment.get("has_conflict")),
+            "chargeable_days": assessment.get("chargeable_days") or item.chargeable_days,
+            "reason": {"kind": "historical_selected", "text": "Исторически выбранный вариант."},
+            "historical_assessment_can_place": bool(assessment.get("can_place")),
+            "historical_assessment_reason_key": reason.get("kind", ""),
+        }
+
     risk_payload = {
         "risk_score": item.risk_score,
         "risk_level": item.risk_level,
@@ -729,7 +820,29 @@ def _selected_assessment(item):
         "chargeable_days": item.chargeable_days,
         "risk_payload": risk_payload,
         "reason": {"kind": "historical_selected", "text": "Исторически выбранный вариант."},
+        "historical_assessment_can_place": True,
+        "historical_assessment_reason_key": "historical_selected",
     }
+
+
+def _apply_selected_assessment_metadata(candidate, item):
+    assessment = candidate.assessment or {}
+    risk_payload = assessment.get("risk_payload") or {}
+    risk_score = risk_payload.get("risk_score")
+    risk_level = risk_payload.get("risk_level")
+    candidate.metadata.update(
+        {
+            "passed_hard_rules": True,
+            "block_reason_key": "",
+            "block_reason": "",
+            "chargeable_days": assessment.get("chargeable_days") or item.chargeable_days,
+            "risk_score": risk_score if risk_score is not None else item.risk_score,
+            "risk_level": risk_level or item.risk_level,
+            "historical_assessment_can_place": assessment.get("historical_assessment_can_place", True),
+            "historical_assessment_reason_key": assessment.get("historical_assessment_reason_key", ""),
+        }
+    )
+    return candidate
 
 
 def _alternative_preferences(item, pair):
@@ -830,7 +943,11 @@ def _store_candidate(run, schedule, candidate, *, decision, decision_rank):
         explanation=candidate.metadata.get("scoring_explanation") or candidate.comment,
         decision=decision,
         decision_rank=decision_rank,
-        selected_at=timezone.now() if decision == VacationScheduleCandidate.DECISION_SELECTED else None,
+        selected_at=(
+            run.started_at + timedelta(minutes=decision_rank)
+            if decision == VacationScheduleCandidate.DECISION_SELECTED
+            else None
+        ),
     )
     candidate.stored_candidate = stored
     return stored
@@ -870,7 +987,11 @@ def _create_candidate_package(
         explanation=_package_explanation(decision),
         decision=decision,
         decision_rank=decision_rank,
-        selected_at=timezone.now() if decision == VacationScheduleCandidatePackage.DECISION_SELECTED else None,
+        selected_at=(
+            run.started_at + timedelta(minutes=decision_rank + 10)
+            if decision == VacationScheduleCandidatePackage.DECISION_SELECTED
+            else None
+        ),
     )
     for order, candidate in enumerate(candidates, start=1):
         schedule_item = schedule_items[order - 1] if order <= len(schedule_items) else None

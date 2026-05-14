@@ -5,6 +5,7 @@
     let previewRequestId = 0;
     let urgentPreviewController = null;
     let urgentPreviewRequestId = 0;
+    let autoPlacePollTimer = null;
     const SEARCH_DEBOUNCE_MS = 320;
     const MAX_MANUAL_PERIODS = 3;
 
@@ -1087,6 +1088,9 @@
         const button = document.createElement("button");
         button.type = "button";
         button.className = "schedule-draft-suggestion";
+        if (Number(option.rank || 0) === 1) {
+            button.classList.add("schedule-draft-suggestion--best");
+        }
         if (option.is_preference_candidate) {
             button.classList.add("schedule-draft-suggestion--preference");
         }
@@ -1129,6 +1133,12 @@
         risk.textContent = (option.risk_label || "Низкий") + " · " + (option.risk_score || 0) + "%";
 
         button.append(main, score, risk);
+        if (Number(option.rank || 0) === 1) {
+            const badge = document.createElement("span");
+            badge.className = "schedule-draft-suggestion__badge schedule-draft-suggestion__badge--best";
+            badge.textContent = "Лучший вариант";
+            button.appendChild(badge);
+        }
         if (option.preference_match_label) {
             const badge = document.createElement("span");
             badge.className = "schedule-draft-suggestion__badge";
@@ -1178,7 +1188,7 @@
                 setText(
                     document.getElementById("draft-placement-suggestions-status"),
                     payload.safe_candidates
-                        ? "Показано " + (payload.shown_candidates || 0) + " из " + payload.safe_candidates
+                        ? "Показано " + (payload.shown_candidates || 0) + " лучших из " + payload.safe_candidates
                         : "Нет безопасных вариантов",
                 );
                 list.replaceChildren();
@@ -1508,6 +1518,16 @@
         meta.append(score, risk);
 
         article.append(main, meta);
+        if (Array.isArray(option.periods) && option.periods.length > 1) {
+            const periods = document.createElement("div");
+            periods.className = "schedule-draft-suggestion__periods";
+            option.periods.forEach(function (periodOption) {
+                const chip = document.createElement("span");
+                chip.textContent = periodOption.period_label || periodOption.full_period_label || "";
+                periods.appendChild(chip);
+            });
+            article.appendChild(periods);
+        }
         if (option.calculation_note || option.proposal_note) {
             const calculation = document.createElement("p");
             calculation.className = "schedule-draft-auto-option__calculation";
@@ -1554,16 +1574,209 @@
             if (payload.has_more_options) {
                 const note = document.createElement("p");
                 note.className = "schedule-draft-auto-preview__note";
-                note.textContent = "Показаны первые варианты. При подтверждении система заново проверит все оставшиеся задачи.";
+                note.textContent = "Показаны первые варианты. При подтверждении система заново проверит все незакрытые дни.";
                 content.appendChild(note);
             }
         } else {
-            setModalState(content, "Система не нашла безопасных дат для автодобора.", "info");
+            setModalState(content, "Система не нашла безопасных дат, чтобы добрать незакрытые дни.", "info");
         }
 
         if (submit) {
             submit.disabled = !Number(payload.placed_count || 0);
         }
+    }
+
+    function clearAutoPlacePoll() {
+        if (autoPlacePollTimer) {
+            window.clearTimeout(autoPlacePollTimer);
+            autoPlacePollTimer = null;
+        }
+    }
+
+    function setAutoPlaceSubmitDisabled(disabled) {
+        const submit = document.querySelector("[data-draft-auto-submit]");
+        if (submit) {
+            submit.disabled = Boolean(disabled);
+        }
+    }
+
+    function renderAutoPlaceJobState(payload) {
+        const content = document.querySelector("[data-draft-auto-preview-content]");
+        if (!content) {
+            return;
+        }
+        const status = payload.status || "running";
+        const percent = Math.max(0, Math.min(100, Number(payload.progress_percent || 0)));
+        const wrapper = document.createElement("div");
+        wrapper.className = "schedule-draft-auto-job schedule-draft-auto-job--" + status;
+
+        const head = document.createElement("div");
+        head.className = "schedule-draft-auto-job__head";
+        const title = document.createElement("strong");
+        title.textContent = payload.stage_label || "Добрать незакрытые дни";
+        const percentLabel = document.createElement("span");
+        percentLabel.textContent = Math.round(percent) + "%";
+        head.append(title, percentLabel);
+
+        const track = document.createElement("div");
+        track.className = "schedule-draft-auto-job__track";
+        const bar = document.createElement("span");
+        bar.style.width = percent + "%";
+        track.appendChild(bar);
+
+        const message = document.createElement("p");
+        message.className = "schedule-draft-auto-job__message";
+        message.textContent = payload.error_message || payload.message || "Подбираю лучшие пакеты, чтобы добрать незакрытые дни.";
+
+        const stats = document.createElement("div");
+        stats.className = "schedule-draft-auto-job__stats";
+        [
+            ["Обработано", (payload.processed_employees || 0) + " / " + (payload.total_employees || 0)],
+            ["Добавлено", payload.placed_count || 0],
+            ["Вручную", payload.unresolved_count || 0],
+        ].forEach(function (item) {
+            const chip = document.createElement("span");
+            chip.textContent = item[0] + ": " + item[1];
+            stats.appendChild(chip);
+        });
+
+        wrapper.append(head, track, message, stats);
+
+        if (status === "succeeded") {
+            const note = document.createElement("p");
+            note.className = "schedule-draft-auto-job__note";
+            note.textContent = "Готово. Сейчас обновлю черновик, чтобы показать новые пункты.";
+            wrapper.appendChild(note);
+        }
+
+        if (status === "failed") {
+            const note = document.createElement("p");
+            note.className = "schedule-draft-auto-job__note";
+            note.textContent = "Данные не изменялись частично: ошибка сохранена в статусе задачи.";
+            wrapper.appendChild(note);
+            setAutoPlaceSubmitDisabled(false);
+        }
+
+        content.replaceChildren(wrapper);
+    }
+
+    function reloadAfterAutoPlace(payload) {
+        const targetUrl = payload.detail_url || window.location.href;
+        window.setTimeout(function () {
+            if (targetUrl === window.location.href) {
+                window.location.reload();
+                return;
+            }
+            const navigation = getNavigation();
+            if (navigation && typeof navigation.navigate === "function" && navigation.navigate(targetUrl, true)) {
+                return;
+            }
+            window.location.href = targetUrl;
+        }, 1200);
+    }
+
+    function fetchAutoPlaceJobStatus(statusUrl) {
+        return fetch(statusUrl, {
+            method: "GET",
+            credentials: "same-origin",
+            headers: {
+                "Accept": "application/json",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+        }).then(function (response) {
+            return response.json().then(function (payload) {
+                if (!response.ok || payload.ok === false) {
+                    throw new Error(payload.message || payload.error_message || "Не удалось получить статус действия «Добрать незакрытые дни».");
+                }
+                return payload;
+            });
+        });
+    }
+
+    function pollAutoPlaceJob(statusUrl) {
+        if (!statusUrl) {
+            return;
+        }
+        clearAutoPlacePoll();
+        autoPlacePollTimer = window.setTimeout(function () {
+            fetchAutoPlaceJobStatus(statusUrl)
+                .then(function (payload) {
+                    renderAutoPlaceJobState(payload);
+                    if (payload.status === "succeeded") {
+                        clearAutoPlacePoll();
+                        reloadAfterAutoPlace(payload);
+                        return;
+                    }
+                    if (payload.status === "failed") {
+                        clearAutoPlacePoll();
+                        const form = document.querySelector(".schedule-draft-auto-confirm-form");
+                        if (form) {
+                            form.dataset.autoPlaceRunning = "false";
+                        }
+                        return;
+                    }
+                    pollAutoPlaceJob(statusUrl);
+                })
+                .catch(function (error) {
+                    clearAutoPlacePoll();
+                    const form = document.querySelector(".schedule-draft-auto-confirm-form");
+                    if (form) {
+                        form.dataset.autoPlaceRunning = "false";
+                    }
+                    setAutoPlaceSubmitDisabled(false);
+                    setModalState(
+                        document.querySelector("[data-draft-auto-preview-content]"),
+                        error.message || "Не удалось получить статус действия «Добрать незакрытые дни».",
+                        "error",
+                    );
+                });
+        }, 1500);
+    }
+
+    function submitAutoPlaceForm(form) {
+        if (!form || form.dataset.autoPlaceRunning === "true") {
+            return;
+        }
+        form.dataset.autoPlaceRunning = "true";
+        setAutoPlaceSubmitDisabled(true);
+        clearAutoPlacePoll();
+        renderAutoPlaceJobState({
+            status: "queued",
+            progress_percent: 0,
+            stage_label: "Запуск: добрать незакрытые дни",
+            message: "Запускаю фоновый подбор лучших пакетов.",
+        });
+
+        fetch(form.action, {
+            method: "POST",
+            body: new FormData(form),
+            credentials: "same-origin",
+            headers: {
+                "Accept": "application/json",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+        })
+            .then(function (response) {
+                return response.json().then(function (payload) {
+                    if (!response.ok || payload.ok === false) {
+                        throw new Error(payload.message || payload.error_message || "Не удалось запустить действие «Добрать незакрытые дни».");
+                    }
+                    return payload;
+                });
+            })
+            .then(function (payload) {
+                renderAutoPlaceJobState(payload);
+                pollAutoPlaceJob(payload.status_url);
+            })
+            .catch(function (error) {
+                form.dataset.autoPlaceRunning = "false";
+                setAutoPlaceSubmitDisabled(false);
+                setModalState(
+                    document.querySelector("[data-draft-auto-preview-content]"),
+                    error.message || "Не удалось запустить действие «Добрать незакрытые дни».",
+                    "error",
+                );
+            });
     }
 
     function loadAutoPreview(trigger) {
@@ -1574,10 +1787,15 @@
         if (!modal || !content || !url) {
             return;
         }
+        clearAutoPlacePoll();
+        const form = modal.querySelector(".schedule-draft-auto-confirm-form");
+        if (form) {
+            form.dataset.autoPlaceRunning = "false";
+        }
         if (submit) {
             submit.disabled = true;
         }
-        setModalState(content, "Загружаю предпросмотр автодобора.", "hourglass_top");
+        setModalState(content, "Загружаю предпросмотр действия «Добрать незакрытые дни».", "hourglass_top");
         if (window.appModal && typeof window.appModal.open === "function") {
             window.appModal.open(modal);
         }
@@ -1591,6 +1809,15 @@
                 setModalState(content, error.message || "Не удалось загрузить предпросмотр.", "error");
             });
     }
+
+    document.addEventListener("submit", function (event) {
+        const form = event.target instanceof HTMLFormElement ? event.target : null;
+        if (!form || !form.classList.contains("schedule-draft-auto-confirm-form") || !window.fetch) {
+            return;
+        }
+        event.preventDefault();
+        submitAutoPlaceForm(form);
+    });
 
     document.addEventListener("submit", function (event) {
         const form = event.target instanceof HTMLFormElement ? event.target : null;
@@ -1688,13 +1915,13 @@
     document.addEventListener("click", function (event) {
         const target = event.target instanceof Element ? event.target : null;
         const trigger = target ? target.closest("[data-draft-auto-open]") : null;
-        if (!trigger || event.defaultPrevented) {
+        if (!trigger) {
             return;
         }
         event.preventDefault();
         event.stopImmediatePropagation();
         loadAutoPreview(trigger);
-    });
+    }, true);
 
     document.addEventListener("click", function (event) {
         const target = event.target instanceof Element ? event.target : null;

@@ -1,0 +1,103 @@
+{
+  "class_balance": {
+    "rejected": 360,
+    "rejected_preference": 79,
+    "selected_agree": 1125,
+    "selected_needs_change": 6,
+    "selected_reject": 83
+  },
+  "examples_count": 1653,
+  "feature_schema_version": 1,
+  "input_names": [
+    "auto_candidate",
+    "coverage_complete",
+    "coverage_fit",
+    "cross_month",
+    "deadline_fit",
+    "deadline_miss",
+    "has_risk_payload",
+    "load_pressure",
+    "manager_role",
+    "manual_candidate",
+    "over_plan_pressure",
+    "passed_hard_rules",
+    "period_length_fit",
+    "planning_blocker_pressure",
+    "planning_open_pressure",
+    "preference_backup",
+    "preference_exact",
+    "preference_missing",
+    "preference_partial_remainder",
+    "preference_period_ok",
+    "preference_primary",
+    "quality_prior",
+    "risk_conflict",
+    "risk_pressure",
+    "risk_quality_prior",
+    "risk_safety",
+    "schema_match",
+    "staff_margin_positive",
+    "staff_shortage",
+    "substitution_available",
+    "summer_overlap_ratio",
+    "tenure_maturity"
+  ],
+  "kind": "tabular_mlp",
+  "metrics": {
+    "test": {
+      "avoid_accuracy": 0.765799,
+      "count": 269,
+      "prefer_accuracy": 0.650558,
+      "score_accuracy_0_5": 0.524164,
+      "score_mae": 0.09441,
+      "score_rmse": 0.125062
+    },
+    "train": {
+      "avoid_accuracy": 0.748422,
+      "count": 1109,
+      "prefer_accuracy": 0.679892,
+      "score_accuracy_0_5": 0.529306,
+      "score_mae": 0.095183,
+      "score_rmse": 0.127367
+    },
+    "training_loss": {
+      "best": 0.558747,
+      "first": 0.683641,
+      "last": 0.558747
+    },
+    "val": {
+      "avoid_accuracy": 0.741818,
+      "count": 275,
+      "prefer_accuracy": 0.690909,
+      "score_accuracy_0_5": 0.549091,
+      "score_mae": 0.099736,
+      "score_rmse": 0.134851
+    }
+  },
+  "split_counts": {
+    "test": 269,
+    "train": 1109,
+    "val": 275
+  },
+  "target_heads": [
+    "score",
+    "confidence",
+    "prefer",
+    "avoid"
+  ],
+  "training": {
+    "epochs": 900,
+    "lr": 0.008,
+    "min_examples": 30,
+    "seed": 42
+  },
+  "version": "vacation-candidate-mlp-v2",
+  "years": [
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+  ]
+}

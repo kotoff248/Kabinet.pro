@@ -180,6 +180,9 @@ def _calculate_vacation_request_risk(
     *,
     include_explanation=False,
     extra_absent_employee_ids=None,
+    staffing_context=None,
+    staffing_rule=None,
+    weighted_workload=None,
 ):
     requested_cost = Decimal(get_vacation_day_cost(vacation_type, start_date, end_date))
     requestable_days = get_employee_requestable_leave(employee, start_date)
@@ -209,9 +212,11 @@ def _calculate_vacation_request_risk(
     )
 
     department = employee.department
-    staffing_rule = get_department_staffing_rule(department)
+    if staffing_rule is None:
+        staffing_rule = get_department_staffing_rule(department)
     if department is not None:
-        weighted_workload = get_weighted_department_workload(department, start_date, end_date, staffing_rule)
+        if weighted_workload is None:
+            weighted_workload = get_weighted_department_workload(department, start_date, end_date, staffing_rule)
     else:
         weighted_workload = {
             "department_load_level": 1,
@@ -253,7 +258,9 @@ def _calculate_vacation_request_risk(
             )
         return risk_payload
 
-    department_staffing = build_department_staffing_context(department, end_date)
+    if staffing_context is None:
+        staffing_context = build_department_staffing_context(department, end_date)
+    department_staffing = staffing_context
     department_employee_ids = department_staffing["staff_ids"]
     extra_absent_employee_ids = set(extra_absent_employee_ids or set()) - {employee.id}
     overlapping_employee_ids = get_active_absence_employee_ids(
@@ -397,6 +404,9 @@ def calculate_vacation_request_risk(
     exclude_request_id=None,
     exclude_schedule_item_id=None,
     extra_absent_employee_ids=None,
+    staffing_context=None,
+    staffing_rule=None,
+    weighted_workload=None,
 ):
     return _calculate_vacation_request_risk(
         employee,
@@ -406,6 +416,9 @@ def calculate_vacation_request_risk(
         exclude_request_id=exclude_request_id,
         exclude_schedule_item_id=exclude_schedule_item_id,
         extra_absent_employee_ids=extra_absent_employee_ids,
+        staffing_context=staffing_context,
+        staffing_rule=staffing_rule,
+        weighted_workload=weighted_workload,
     )
 
 
@@ -417,6 +430,9 @@ def calculate_vacation_request_risk_with_explanation(
     exclude_request_id=None,
     exclude_schedule_item_id=None,
     extra_absent_employee_ids=None,
+    staffing_context=None,
+    staffing_rule=None,
+    weighted_workload=None,
 ):
     return _calculate_vacation_request_risk(
         employee,
@@ -427,6 +443,9 @@ def calculate_vacation_request_risk_with_explanation(
         exclude_schedule_item_id=exclude_schedule_item_id,
         include_explanation=True,
         extra_absent_employee_ids=extra_absent_employee_ids,
+        staffing_context=staffing_context,
+        staffing_rule=staffing_rule,
+        weighted_workload=weighted_workload,
     )
 
 
@@ -438,6 +457,9 @@ def build_vacation_request_risk_explanation(
     exclude_request_id=None,
     exclude_schedule_item_id=None,
     extra_absent_employee_ids=None,
+    staffing_context=None,
+    staffing_rule=None,
+    weighted_workload=None,
 ):
     return _calculate_vacation_request_risk(
         employee,
@@ -448,6 +470,9 @@ def build_vacation_request_risk_explanation(
         exclude_schedule_item_id=exclude_schedule_item_id,
         include_explanation=True,
         extra_absent_employee_ids=extra_absent_employee_ids,
+        staffing_context=staffing_context,
+        staffing_rule=staffing_rule,
+        weighted_workload=weighted_workload,
     )["risk_explanation"]
 
 

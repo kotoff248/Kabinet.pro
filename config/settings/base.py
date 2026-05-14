@@ -137,3 +137,9 @@ LOGIN_URL = "/"
 LOGIN_REDIRECT_URL = "main"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+VACATION_CANDIDATE_SCORER_VERSION = os.getenv(
+    "VACATION_CANDIDATE_SCORER_VERSION",
+    "vacation-candidate-mlp-v1",
+)
+VACATION_CANDIDATE_MODEL_DIR = BASE_DIR / "apps" / "leave" / "ml_models"
+

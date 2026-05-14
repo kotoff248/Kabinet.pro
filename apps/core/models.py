@@ -155,3 +155,60 @@ class Notification(models.Model):
             "urgent_closure": "event_busy",
             "planning": "event_note",
         }.get(self.visual_kind, "notifications")
+
+
+class DemoBaselineSnapshot(models.Model):
+    key = models.CharField(max_length=80, unique=True, verbose_name="Ключ снимка")
+    planning_year = models.PositiveIntegerField(verbose_name="Год планирования")
+    seed_value = models.IntegerField(null=True, blank=True, verbose_name="Seed")
+    payload = models.JSONField(default=dict, blank=True, verbose_name="Данные снимка")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        db_table = "core_demo_baseline_snapshot"
+        verbose_name = "Начальный снимок демо-данных"
+        verbose_name_plural = "Начальные снимки демо-данных"
+        ordering = ["key"]
+
+    def __str__(self):
+        return f"{self.key}: {self.planning_year}"
+
+
+class DemoDataResetJob(models.Model):
+    STATUS_QUEUED = "queued"
+    STATUS_RUNNING = "running"
+    STATUS_SUCCEEDED = "succeeded"
+    STATUS_FAILED = "failed"
+
+    STATUS_CHOICES = [
+        (STATUS_QUEUED, "В очереди"),
+        (STATUS_RUNNING, "Выполняется"),
+        (STATUS_SUCCEEDED, "Завершено"),
+        (STATUS_FAILED, "Ошибка"),
+    ]
+
+    token = models.CharField(max_length=96, unique=True, verbose_name="Токен статуса")
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_QUEUED, verbose_name="Статус")
+    seed_value = models.PositiveIntegerField(verbose_name="Seed")
+    progress_percent = models.PositiveSmallIntegerField(default=0, verbose_name="Прогресс")
+    stage_label = models.CharField(max_length=180, blank=True, default="", verbose_name="Текущий этап")
+    message = models.TextField(blank=True, default="", verbose_name="Сообщение")
+    error_message = models.TextField(blank=True, default="", verbose_name="Ошибка")
+    process_id = models.PositiveIntegerField(null=True, blank=True, verbose_name="PID процесса")
+    started_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата запуска")
+    finished_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата завершения")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        db_table = "core_demo_data_reset_job"
+        verbose_name = "Задание пересоздания демо-данных"
+        verbose_name_plural = "Задания пересоздания демо-данных"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["status", "-created_at"], name="core_demo_job_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"Reset job #{self.id}: {self.get_status_display()}"

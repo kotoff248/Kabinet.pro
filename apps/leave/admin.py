@@ -11,6 +11,7 @@ from .models import (
     VacationRequestHistory,
     VacationSchedule,
     VacationScheduleAuthorizedApproval,
+    VacationScheduleAutoPlaceJob,
     VacationScheduleCandidate,
     VacationScheduleCandidateFeedback,
     VacationScheduleCandidatePackage,
@@ -27,6 +28,7 @@ from .models import (
 admin.site.register(VacationRequest)
 admin.site.register(VacationRequestHistory)
 admin.site.register(VacationSchedule)
+admin.site.register(VacationScheduleAutoPlaceJob)
 admin.site.register(VacationScheduleGenerationRun)
 admin.site.register(VacationScheduleCandidate)
 admin.site.register(VacationScheduleCandidateFeedback)

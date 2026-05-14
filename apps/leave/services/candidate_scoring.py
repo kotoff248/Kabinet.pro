@@ -3,11 +3,19 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from apps.leave.models import VacationScheduleCandidate
 
-from .candidate_neural import NEURAL_CANDIDATE_SCORER_VERSION, score_candidate_features_neural
+from .candidate_neural import (
+    NEURAL_CANDIDATE_SCORER_VERSION,
+    get_active_candidate_scorer_version,
+    score_candidate_features_neural,
+)
 
 BASELINE_CANDIDATE_SCORER_VERSION = "candidate-scorer-baseline-v1"
 ACTIVE_CANDIDATE_SCORER_VERSION = NEURAL_CANDIDATE_SCORER_VERSION
 NEURAL_FALLBACK_SCORER_VERSION = f"{NEURAL_CANDIDATE_SCORER_VERSION}+fallback-{BASELINE_CANDIDATE_SCORER_VERSION}"
+
+
+def get_neural_fallback_scorer_version():
+    return f"{get_active_candidate_scorer_version()}+fallback-{BASELINE_CANDIDATE_SCORER_VERSION}"
 
 
 @dataclass(frozen=True)
@@ -194,10 +202,11 @@ def score_candidate_features(features, *, passed_hard_rules=True, use_neural=Tru
                 scorer_kind=neural_result.scorer_kind,
             )
         except Exception:
+            fallback_model_version = get_neural_fallback_scorer_version()
             fallback = score_candidate_features_baseline(
                 features,
                 passed_hard_rules=passed_hard_rules,
-                model_version=NEURAL_FALLBACK_SCORER_VERSION,
+                model_version=fallback_model_version,
             )
             return CandidateScoringResult(
                 score=fallback.score,
@@ -207,7 +216,7 @@ def score_candidate_features(features, *, passed_hard_rules=True, use_neural=Tru
                     "Нейромодуль временно недоступен, применена безопасная базовая оценка. "
                     f"{fallback.explanation}"
                 ),
-                model_version=NEURAL_FALLBACK_SCORER_VERSION,
+                model_version=fallback_model_version,
                 scorer_kind="baseline_fallback",
             )
     return score_candidate_features_baseline(features, passed_hard_rules=passed_hard_rules)

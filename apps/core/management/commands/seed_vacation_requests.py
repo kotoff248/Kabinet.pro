@@ -11,7 +11,9 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 from django.utils import timezone
 
-from apps.core.models import Notification
+from apps.core.models import DemoDataResetJob, Notification
+from apps.core.services.demo_baseline import capture_demo_baseline_snapshot
+from apps.core.services.demo_reset_jobs import update_demo_data_reset_job_progress
 from apps.accounts.services import can_initiate_schedule_change_for_item, sync_employee_user
 from apps.employees.models import (
     DepartmentCoverageRule,
@@ -575,6 +577,22 @@ class NameFactory:
 class Command(BaseCommand):
     help = "Reset demo enterprise data and create realistic departments, employees, logins, and vacation history"
 
+    def execute(self, *args, **options):
+        try:
+            return super().execute(*args, **options)
+        except Exception as exc:
+            progress_job_id = options.get("progress_job_id") or getattr(self, "progress_job_id", None)
+            if progress_job_id:
+                update_demo_data_reset_job_progress(
+                    progress_job_id,
+                    status=DemoDataResetJob.STATUS_FAILED,
+                    progress_percent=getattr(self, "_last_progress_percent", 0),
+                    stage_label="Ошибка пересоздания",
+                    error_message=str(exc),
+                    finished=True,
+                )
+            raise
+
     def add_arguments(self, parser):
         parser.add_argument("--seed-value", type=int, default=42)
         parser.add_argument(
@@ -592,6 +610,12 @@ class Command(BaseCommand):
             "--confirm-reset",
             action="store_true",
             help="Confirm deleting existing demo data before rebuilding the demo enterprise dataset.",
+        )
+        parser.add_argument(
+            "--progress-job-id",
+            type=int,
+            default=None,
+            help="DemoDataResetJob id for background progress updates.",
         )
 
     @transaction.atomic
@@ -627,10 +651,30 @@ class Command(BaseCommand):
         self._calendar_year_paid_days_cache = {}
         self._active_request_periods_by_employee = {}
         self._active_schedule_item_periods_by_employee = {}
+        self.progress_job_id = options.get("progress_job_id")
 
         previous_sync_state = set_vacation_metric_sync_enabled(False)
         try:
+            self._progress(
+                DemoDataResetJob.STATUS_RUNNING,
+                1,
+                "Подготовка",
+                "Запуск полного пересоздания демо-данных.",
+                started=True,
+            )
+            self._progress(
+                DemoDataResetJob.STATUS_RUNNING,
+                5,
+                "Очистка демо-БД",
+                "Удаляются старые демо-сотрудники, графики, заявки и связанные данные.",
+            )
             self._reset_demo_data()
+            self._progress(
+                DemoDataResetJob.STATUS_RUNNING,
+                12,
+                "Структура предприятия",
+                "Создаются отделы, сотрудники, пользователи и правила состава.",
+            )
             departments = self._create_departments()
             self._create_staffing_reference_data(departments)
             enterprise_head = self._create_enterprise_head()
@@ -642,13 +686,38 @@ class Command(BaseCommand):
             self._assign_enterprise_deputy(hr_team)
             self._create_staffing_rules(departments)
             self._create_department_workload(departments)
+            self._progress(
+                DemoDataResetJob.STATUS_RUNNING,
+                24,
+                "Исторические графики",
+                "Создаются архивные и текущие графики отпусков.",
+            )
             self._create_historical_schedules(hr_team[0], enterprise_head, authorized_person, departments)
 
             everyone = [enterprise_head, *hr_team, *department_heads, *employees]
+            self._progress(
+                DemoDataResetJob.STATUS_RUNNING,
+                34,
+                "Пожелания и отпуска",
+                "Формируются исторические пожелания и отпуска сотрудников.",
+            )
             self._create_vacation_preferences(everyone)
-            for employee in everyone:
+            for index, employee in enumerate(everyone, start=1):
                 self._seed_employee_vacations(employee)
+                if index % 20 == 0 or index == len(everyone):
+                    self._progress(
+                        DemoDataResetJob.STATUS_RUNNING,
+                        min(49, 34 + int(index / max(len(everyone), 1) * 15)),
+                        "Пожелания и отпуска",
+                        f"Обработано сотрудников: {index} из {len(everyone)}.",
+                    )
 
+            self._progress(
+                DemoDataResetJob.STATUS_RUNNING,
+                52,
+                "Нормализация истории",
+                "Выравниваются балансы, переносы и календарная история отпусков.",
+            )
             self._cancel_unallocatable_paid_sources(everyone)
             self._normalize_calendar_year_leave_history(everyone)
             self._cancel_unallocatable_paid_sources(everyone)
@@ -662,24 +731,72 @@ class Command(BaseCommand):
             self._stabilize_current_calendar_year_leave(everyone)
             self._normalize_short_paid_leave_fragments(everyone)
             self._cleanup_tiny_generated_calendar_year_leaves(everyone)
+            self._progress(
+                DemoDataResetJob.STATUS_RUNNING,
+                68,
+                "Переносы и ручные кейсы",
+                "Создаются исторические переносы и демо-кейсы для черновика.",
+            )
             self._create_historical_manager_initiated_transfers()
             self._create_pending_current_year_transfers()
             self._create_demo_manual_schedule_draft_cases(everyone)
             self._normalize_historical_schedule_risk_levels()
             self._normalize_demo_historical_staffing_pressure(everyone)
+            self._progress(
+                DemoDataResetJob.STATUS_RUNNING,
+                78,
+                "ML-следы",
+                "Создаются generation runs, candidates, packages и feedback для обучения.",
+            )
             self.historical_ml_trace_stats = create_historical_schedule_ml_traces(
                 self.rng,
                 hr_team[0],
                 self.schedule_end_year,
             )
+            self._progress(
+                DemoDataResetJob.STATUS_RUNNING,
+                88,
+                "Уведомления",
+                "Восстанавливаются уведомления из истории заявок и графиков.",
+            )
             self.notification_stats = backfill_notifications_from_history(as_of_date=self.today)
+            self._progress(
+                DemoDataResetJob.STATUS_RUNNING,
+                92,
+                "Начальная точка",
+                "Сохраняется снимок для быстрого сброса демо-состояния.",
+            )
+            self.demo_baseline_snapshot = capture_demo_baseline_snapshot(
+                planning_year=self.schedule_end_year + 1,
+                seed_value=options["seed_value"],
+            )
         finally:
             set_vacation_metric_sync_enabled(previous_sync_state)
 
-        for employee in everyone:
+        self._progress(
+            DemoDataResetJob.STATUS_RUNNING,
+            94,
+            "Отпускные балансы",
+            "Пересчитываются отпускные балансы сотрудников.",
+        )
+        for index, employee in enumerate(everyone, start=1):
             self._rebuild_employee_leave_ledger(employee)
+            if index % 20 == 0 or index == len(everyone):
+                self._progress(
+                    DemoDataResetJob.STATUS_RUNNING,
+                    min(99, 94 + int(index / max(len(everyone), 1) * 5)),
+                    "Отпускные балансы",
+                    f"Пересчитано сотрудников: {index} из {len(everyone)}.",
+                )
 
         self._write_calendar_leave_audit(everyone)
+        self._progress(
+            DemoDataResetJob.STATUS_SUCCEEDED,
+            100,
+            "Готово",
+            "Демо-данные пересозданы. Можно войти заново с паролем 1234.",
+            finished=True,
+        )
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -725,6 +842,28 @@ class Command(BaseCommand):
                 f"created={self.notification_stats['notifications_created']}, "
                 f"updated={self.notification_stats['notifications_updated']}"
             )
+        )
+        self.stdout.write(
+            self.style.SUCCESS(
+                "Сохранён начальный снимок демо-состояния: "
+                f"planning_year={self.demo_baseline_snapshot.planning_year}, "
+                f"seed={self.demo_baseline_snapshot.seed_value}"
+            )
+        )
+
+    def _progress(self, status, progress_percent, stage_label, message, *, started=False, finished=False):
+        if not getattr(self, "progress_job_id", None):
+            return
+        self._last_progress_percent = progress_percent
+        update_demo_data_reset_job_progress(
+            self.progress_job_id,
+            status=status,
+            progress_percent=progress_percent,
+            stage_label=stage_label,
+            message=message,
+            error_message="" if status != DemoDataResetJob.STATUS_FAILED else None,
+            started=started,
+            finished=finished,
         )
 
     def _write_calendar_leave_audit(self, employees):

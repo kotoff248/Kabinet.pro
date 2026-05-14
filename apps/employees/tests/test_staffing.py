@@ -1,3 +1,5 @@
+from datetime import date
+from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth import SESSION_KEY
@@ -5,6 +7,8 @@ from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.core.models import DemoBaselineSnapshot, DemoDataResetJob, Notification
+from apps.core.services.demo_baseline import capture_demo_baseline_snapshot
 from apps.employees.models import (
     DepartmentCoverageRule,
     Departments,
@@ -12,7 +16,18 @@ from apps.employees.models import (
     ProductionGroup,
     ProductionGroupSubstitutionRule,
 )
-from apps.leave.models import DepartmentStaffingRule, DepartmentWorkload
+from apps.leave.models import (
+    DepartmentStaffingRule,
+    DepartmentWorkload,
+    VacationPreference,
+    VacationPreferenceCollection,
+    VacationSchedule,
+    VacationScheduleCandidate,
+    VacationScheduleCandidateFeedback,
+    VacationScheduleDepartmentApproval,
+    VacationScheduleGenerationRun,
+    VacationScheduleItem,
+)
 
 from .base import EmployeeTestCase
 
@@ -123,8 +138,13 @@ class StaffingRulesPageTests(EmployeeTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context["can_reset_demo_data"])
         self.assertContains(response, "Пересоздать демо-данные")
+        self.assertContains(response, "Сбросить до начальных настроек")
         self.assertContains(response, 'data-modal-open="staffing-demo-reset-modal"')
+        self.assertContains(response, 'data-modal-open="staffing-demo-restore-modal"')
+        self.assertContains(response, "data-demo-reset-form")
+        self.assertContains(response, "data-demo-reset-progress")
         self.assertContains(response, reverse("reset_demo_data"))
+        self.assertContains(response, reverse("restore_demo_initial_state"))
 
     @override_settings(DEBUG=True)
     def test_demo_reset_button_is_hidden_from_hr_and_department_head(self):
@@ -132,11 +152,13 @@ class StaffingRulesPageTests(EmployeeTestCase):
         hr_response = self.client.get(reverse("staffing_rules"))
         self.assertFalse(hr_response.context["can_reset_demo_data"])
         self.assertNotContains(hr_response, 'data-modal-open="staffing-demo-reset-modal"')
+        self.assertNotContains(hr_response, 'data-modal-open="staffing-demo-restore-modal"')
 
         self.client.force_login(self.department_head.user)
         head_response = self.client.get(reverse("staffing_rules"))
         self.assertFalse(head_response.context["can_reset_demo_data"])
         self.assertNotContains(head_response, 'data-modal-open="staffing-demo-reset-modal"')
+        self.assertNotContains(head_response, 'data-modal-open="staffing-demo-restore-modal"')
 
     @override_settings(DEBUG=False)
     def test_demo_reset_button_is_hidden_outside_debug(self):
@@ -146,31 +168,60 @@ class StaffingRulesPageTests(EmployeeTestCase):
 
         self.assertFalse(response.context["can_reset_demo_data"])
         self.assertNotContains(response, 'data-modal-open="staffing-demo-reset-modal"')
+        self.assertNotContains(response, 'data-modal-open="staffing-demo-restore-modal"')
 
     @override_settings(DEBUG=True)
-    @patch("apps.employees.views.call_command")
+    @patch("apps.employees.views.start_demo_data_reset_process")
     @patch("apps.employees.views.secrets.randbelow", return_value=123455)
-    def test_enterprise_head_can_reset_demo_data_and_is_logged_out(self, randbelow_mock, call_command_mock):
+    def test_enterprise_head_can_reset_demo_data_and_is_logged_out(self, randbelow_mock, start_process_mock):
         self.client.force_login(self.enterprise_head.user)
 
-        response = self.client.post(reverse("reset_demo_data"), follow=True)
+        response = self.client.post(reverse("reset_demo_data"))
 
-        self.assertRedirects(response, reverse("login"))
-        call_command_mock.assert_called_once()
-        command_name = call_command_mock.call_args.args[0]
-        command_kwargs = call_command_mock.call_args.kwargs
-        self.assertEqual(command_name, "seed_vacation_requests")
-        self.assertTrue(command_kwargs["confirm_reset"])
-        self.assertEqual(command_kwargs["seed_value"], 123456)
-        self.assertNotIn("fast", command_kwargs)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["status"], DemoDataResetJob.STATUS_QUEUED)
+        self.assertEqual(payload["seed_value"], 123456)
+        self.assertIn("status_url", payload)
+        self.assertIn("token=", payload["status_url"])
+        job = DemoDataResetJob.objects.get(id=payload["job_id"])
+        self.assertEqual(job.seed_value, 123456)
+        self.assertEqual(job.token, payload["token"])
+        start_process_mock.assert_called_once_with(job)
         self.assertNotIn(SESSION_KEY, self.client.session)
-        self.assertContains(response, "Демо-данные пересозданы")
-        self.assertContains(response, "1234")
         randbelow_mock.assert_called_once()
 
     @override_settings(DEBUG=True)
-    @patch("apps.employees.views.call_command")
-    def test_demo_reset_post_is_denied_for_other_roles(self, call_command_mock):
+    @patch("apps.employees.views.start_demo_data_reset_process")
+    @patch("apps.employees.views.secrets.randbelow", return_value=55)
+    def test_demo_reset_reuses_running_job_on_repeat_click(self, randbelow_mock, start_process_mock):
+        running_job = DemoDataResetJob.objects.create(
+            token="running-reset-token",
+            seed_value=42,
+            status=DemoDataResetJob.STATUS_RUNNING,
+            progress_percent=30,
+            stage_label="Исторические графики",
+            process_id=12345,
+        )
+        self.client.force_login(self.enterprise_head.user)
+
+        response = self.client.post(reverse("reset_demo_data"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["job_id"], running_job.id)
+        self.assertEqual(payload["token"], running_job.token)
+        self.assertIn("уже выполняется", payload["message"])
+        self.assertEqual(DemoDataResetJob.objects.count(), 1)
+        start_process_mock.assert_not_called()
+        randbelow_mock.assert_called_once()
+        self.assertNotIn(SESSION_KEY, self.client.session)
+
+    @override_settings(DEBUG=True)
+    @patch("apps.employees.views.start_demo_data_reset_process")
+    def test_demo_reset_post_is_denied_for_other_roles(self, start_process_mock):
         self.client.force_login(self.hr_employee.user)
         hr_response = self.client.post(reverse("reset_demo_data"))
         self.assertRedirects(hr_response, reverse("staffing_rules"))
@@ -182,7 +233,232 @@ class StaffingRulesPageTests(EmployeeTestCase):
         self.client.force_login(self.employee.user)
         employee_response = self.client.post(reverse("reset_demo_data"))
         self.assertRedirects(employee_response, reverse("main"))
-        call_command_mock.assert_not_called()
+        start_process_mock.assert_not_called()
+
+    @override_settings(DEBUG=True)
+    def test_demo_reset_status_requires_valid_token(self):
+        job = DemoDataResetJob.objects.create(
+            token="correct-token",
+            seed_value=42,
+            status=DemoDataResetJob.STATUS_RUNNING,
+            progress_percent=37,
+            stage_label="Исторические графики",
+            message="Создаются архивные графики.",
+        )
+
+        bad_response = self.client.get(reverse("reset_demo_data_status", args=[job.id]), {"token": "wrong"})
+        self.assertEqual(bad_response.status_code, 403)
+
+        good_response = self.client.get(reverse("reset_demo_data_status", args=[job.id]), {"token": "correct-token"})
+        self.assertEqual(good_response.status_code, 200)
+        payload = good_response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["status"], DemoDataResetJob.STATUS_RUNNING)
+        self.assertEqual(payload["progress_percent"], 37)
+        self.assertEqual(payload["stage_label"], "Исторические графики")
+        self.assertEqual(payload["login_url"], reverse("login"))
+
+    @override_settings(DEBUG=True)
+    def test_demo_restore_without_snapshot_shows_error_and_keeps_session(self):
+        self.client.force_login(self.enterprise_head.user)
+
+        response = self.client.post(reverse("restore_demo_initial_state"), follow=True)
+
+        self.assertRedirects(response, reverse("staffing_rules"))
+        self.assertIn(SESSION_KEY, self.client.session)
+        self.assertContains(response, "Быстрый сброс пока недоступен")
+
+    @override_settings(DEBUG=True)
+    def test_demo_restore_is_blocked_while_full_reset_is_running(self):
+        DemoDataResetJob.objects.create(
+            token="running-reset-token",
+            seed_value=42,
+            status=DemoDataResetJob.STATUS_RUNNING,
+            progress_percent=30,
+            stage_label="Исторические графики",
+            process_id=12345,
+        )
+        self.client.force_login(self.enterprise_head.user)
+
+        response = self.client.post(reverse("restore_demo_initial_state"), follow=True)
+
+        self.assertRedirects(response, reverse("staffing_rules"))
+        self.assertContains(response, "Сброс демо-данных уже выполняется")
+        self.assertIn(SESSION_KEY, self.client.session)
+
+    @override_settings(DEBUG=True)
+    @patch("apps.employees.views.reset_demo_to_baseline")
+    def test_demo_restore_post_is_denied_for_other_roles(self, reset_demo_mock):
+        self.client.force_login(self.hr_employee.user)
+        hr_response = self.client.post(reverse("restore_demo_initial_state"))
+        self.assertRedirects(hr_response, reverse("staffing_rules"))
+
+        self.client.force_login(self.department_head.user)
+        head_response = self.client.post(reverse("restore_demo_initial_state"))
+        self.assertRedirects(head_response, reverse("staffing_rules"))
+
+        self.client.force_login(self.employee.user)
+        employee_response = self.client.post(reverse("restore_demo_initial_state"))
+        self.assertRedirects(employee_response, reverse("main"))
+        reset_demo_mock.assert_not_called()
+
+    @override_settings(DEBUG=True)
+    @patch("apps.employees.views.start_demo_data_reset_process")
+    def test_enterprise_head_can_restore_demo_initial_state_without_full_seed(self, start_process_mock):
+        planning_year = 2027
+        self.engineering.head = self.department_head
+        self.engineering.deputy = self.employee
+        self.engineering.save(update_fields=["head", "deputy"])
+        self.employee.is_enterprise_deputy = True
+        self.employee.save(update_fields=["is_enterprise_deputy"])
+        DepartmentStaffingRule.objects.create(
+            department=self.engineering,
+            min_staff_required=4,
+            max_absent=2,
+            criticality_level=3,
+            substitution_group="engineering",
+        )
+        DepartmentWorkload.objects.create(
+            department=self.engineering,
+            year=planning_year,
+            month=1,
+            load_level=5,
+            min_staff_required=4,
+            max_absent=2,
+        )
+        capture_demo_baseline_snapshot(planning_year=planning_year, seed_value=77)
+
+        self.engineering.name = "Changed Engineering"
+        self.engineering.head = None
+        self.engineering.deputy = None
+        self.engineering.save(update_fields=["name", "head", "deputy"])
+        self.employee.department = self.hr_department
+        self.employee.employee_position = self.hr_position
+        self.employee.position = self.hr_position.title
+        self.employee.is_enterprise_deputy = False
+        self.employee.save(update_fields=["department", "employee_position", "position", "is_enterprise_deputy"])
+        self.engineering_group.name = "Changed group"
+        self.engineering_group.save(update_fields=["name"])
+        ProductionGroup.objects.create(department=self.engineering, name="Temporary group")
+        DepartmentWorkload.objects.filter(department=self.engineering, year=planning_year, month=1).update(
+            load_level=1,
+            min_staff_required=1,
+            max_absent=9,
+        )
+
+        collection = VacationPreferenceCollection.objects.create(
+            year=planning_year,
+            status=VacationPreferenceCollection.STATUS_FINISHED,
+            deadline=date(2026, 12, 1),
+            started_by=self.hr_employee,
+            finished_by=self.hr_employee,
+            finished_at=timezone.now(),
+        )
+        VacationPreference.objects.create(
+            employee=self.employee,
+            year=planning_year,
+            start_date=date(planning_year, 7, 1),
+            end_date=date(planning_year, 7, 14),
+            priority=VacationPreference.PRIORITY_PRIMARY,
+            status=VacationPreference.STATUS_FILLED,
+        )
+        schedule = VacationSchedule.objects.create(
+            year=planning_year,
+            status=VacationSchedule.STATUS_DRAFT,
+            created_by=self.hr_employee,
+        )
+        run = VacationScheduleGenerationRun.objects.create(
+            schedule=schedule,
+            year=planning_year,
+            status=VacationScheduleGenerationRun.STATUS_COMPLETED,
+            actor=self.hr_employee,
+        )
+        item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(planning_year, 7, 1),
+            end_date=date(planning_year, 7, 14),
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_DRAFT,
+            generated_by_ai=True,
+            generation_run=run,
+            ai_score=Decimal("72.50"),
+            ai_confidence=Decimal("84.20"),
+            ai_model_version="vacation-candidate-mlp-v2",
+        )
+        candidate = VacationScheduleCandidate.objects.create(
+            generation_run=run,
+            schedule=schedule,
+            employee=self.employee,
+            start_date=item.start_date,
+            end_date=item.end_date,
+            chargeable_days=item.chargeable_days,
+            kind=VacationScheduleCandidate.KIND_AUTO,
+            source=VacationScheduleItem.SOURCE_GENERATED,
+            passed_hard_rules=True,
+            features={"feature_schema_version": 1},
+            score=Decimal("72.50"),
+            confidence=Decimal("84.20"),
+            model_version="vacation-candidate-mlp-v2",
+            decision=VacationScheduleCandidate.DECISION_SELECTED,
+        )
+        item.selected_candidate = candidate
+        item.save(update_fields=["selected_candidate"])
+        VacationScheduleCandidateFeedback.objects.create(
+            schedule_item=item,
+            candidate=candidate,
+            generation_run=run,
+            reviewer=self.hr_employee,
+            reviewer_role=VacationScheduleCandidateFeedback.ROLE_HR,
+            decision=VacationScheduleCandidateFeedback.DECISION_AGREE,
+        )
+        VacationScheduleDepartmentApproval.objects.create(
+            schedule=schedule,
+            department=self.engineering,
+            department_head=self.department_head,
+        )
+        Notification.objects.create(
+            recipient=self.employee,
+            actor=self.hr_employee,
+            event_type=Notification.TYPE_PREFERENCES_COLLECTION_STARTED,
+            title="Сбор пожеланий",
+            message="Заполните пожелания.",
+            dedupe_key=f"{Notification.TYPE_PREFERENCES_COLLECTION_STARTED}:{planning_year}:{self.employee.id}",
+        )
+        self.client.force_login(self.enterprise_head.user)
+
+        response = self.client.post(reverse("restore_demo_initial_state"), follow=True)
+
+        self.assertRedirects(response, reverse("staffing_rules"))
+        self.assertContains(response, "Демо-состояние сброшено")
+        self.assertIn(SESSION_KEY, self.client.session)
+        start_process_mock.assert_not_called()
+        self.assertTrue(DemoBaselineSnapshot.objects.filter(key="initial_demo_state").exists())
+
+        self.engineering.refresh_from_db()
+        self.assertEqual(self.engineering.name, "Engineering")
+        self.assertEqual(self.engineering.head_id, self.department_head.id)
+        self.assertEqual(self.engineering.deputy_id, self.employee.id)
+        self.employee.refresh_from_db()
+        self.assertEqual(self.employee.department_id, self.engineering.id)
+        self.assertEqual(self.employee.employee_position_id, self.engineering_position.id)
+        self.assertTrue(self.employee.is_enterprise_deputy)
+        self.assertEqual(ProductionGroup.objects.get(id=self.engineering_group.id).name, "Инженеры")
+        self.assertFalse(ProductionGroup.objects.filter(name="Temporary group").exists())
+        workload = DepartmentWorkload.objects.get(department=self.engineering, year=planning_year, month=1)
+        self.assertEqual(workload.load_level, 5)
+        self.assertEqual(workload.min_staff_required, 4)
+        self.assertEqual(workload.max_absent, 2)
+        self.assertFalse(VacationPreferenceCollection.objects.filter(id=collection.id).exists())
+        self.assertFalse(VacationPreference.objects.filter(year=planning_year).exists())
+        self.assertFalse(VacationSchedule.objects.filter(year=planning_year).exists())
+        self.assertFalse(VacationScheduleGenerationRun.objects.filter(id=run.id).exists())
+        self.assertFalse(VacationScheduleCandidateFeedback.objects.filter(schedule_item_id=item.id).exists())
+        self.assertFalse(
+            Notification.objects.filter(
+                dedupe_key=f"{Notification.TYPE_PREFERENCES_COLLECTION_STARTED}:{planning_year}:{self.employee.id}"
+            ).exists()
+        )
 
     def test_hr_sees_staffing_item_edit_and_delete_modals(self):
         self.client.force_login(self.hr_employee.user)

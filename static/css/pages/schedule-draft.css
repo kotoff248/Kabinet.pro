@@ -1900,6 +1900,33 @@
     gap: 0.55rem;
 }
 
+.schedule-draft-auto-preview__list,
+.schedule-draft-suggestions__list{
+    max-height: min(28rem, 54vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 0.18rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(94, 219, 255, 0.55) rgba(255, 255, 255, 0.05);
+}
+
+.schedule-draft-auto-preview__list::-webkit-scrollbar,
+.schedule-draft-suggestions__list::-webkit-scrollbar{
+    width: 0.5rem;
+}
+
+.schedule-draft-auto-preview__list::-webkit-scrollbar-track,
+.schedule-draft-suggestions__list::-webkit-scrollbar-track{
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.schedule-draft-auto-preview__list::-webkit-scrollbar-thumb,
+.schedule-draft-suggestions__list::-webkit-scrollbar-thumb{
+    border-radius: 999px;
+    background: rgba(94, 219, 255, 0.5);
+}
+
 .schedule-draft-candidate,
 .schedule-draft-auto-option,
 .schedule-draft-suggestion{
@@ -2011,6 +2038,88 @@
     line-height: 1.38;
 }
 
+.schedule-draft-auto-job{
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.9rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(94, 219, 255, 0.14);
+}
+
+.schedule-draft-auto-job__head{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+}
+
+.schedule-draft-auto-job__head strong{
+    min-width: 0;
+    color: #ffffff;
+    font-size: 0.98rem;
+    line-height: 1.25;
+}
+
+.schedule-draft-auto-job__head span{
+    flex: 0 0 auto;
+    color: rgba(224, 240, 250, 0.92);
+    font-size: 0.84rem;
+    font-weight: 840;
+}
+
+.schedule-draft-auto-job__track{
+    position: relative;
+    overflow: hidden;
+    height: 0.58rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.schedule-draft-auto-job__track span{
+    display: block;
+    height: 100%;
+    min-width: 0.35rem;
+    border-radius: inherit;
+    background: linear-gradient(90deg, rgba(94, 219, 255, 0.95), rgba(121, 216, 90, 0.92));
+    transition: width 0.25s ease;
+}
+
+.schedule-draft-auto-job__message,
+.schedule-draft-auto-job__note{
+    margin: 0;
+    color: rgba(205, 218, 236, 0.78);
+    font-size: 0.78rem;
+    font-weight: 740;
+    line-height: 1.42;
+}
+
+.schedule-draft-auto-job__stats{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.42rem;
+}
+
+.schedule-draft-auto-job__stats span{
+    padding: 0.22rem 0.5rem;
+    border-radius: var(--ui-radius-badge);
+    color: rgba(224, 240, 250, 0.88);
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.075);
+    font-size: 0.7rem;
+    font-weight: 820;
+}
+
+.schedule-draft-auto-job--succeeded{
+    border-color: rgba(121, 216, 90, 0.28);
+    background: rgba(121, 216, 90, 0.07);
+}
+
+.schedule-draft-auto-job--failed{
+    border-color: rgba(255, 116, 91, 0.28);
+    background: rgba(255, 116, 91, 0.075);
+}
+
 .schedule-draft-suggestions{
     display: grid;
     gap: 0.6rem;
@@ -2108,6 +2217,13 @@
     background: rgba(121, 216, 90, 0.075);
 }
 
+.schedule-draft-suggestion--best{
+    border-color: rgba(94, 219, 255, 0.34);
+    background:
+        linear-gradient(135deg, rgba(94, 219, 255, 0.11), rgba(121, 216, 90, 0.055)),
+        rgba(255, 255, 255, 0.055);
+}
+
 .schedule-draft-suggestion--blocked{
     cursor: not-allowed;
     opacity: 0.72;
@@ -2123,6 +2239,12 @@
     font-size: 0.68rem;
     font-weight: 840;
     white-space: nowrap;
+}
+
+.schedule-draft-suggestion__badge--best{
+    color: #dff7ff;
+    background: rgba(94, 219, 255, 0.12);
+    border-color: rgba(94, 219, 255, 0.24);
 }
 
 .schedule-draft-suggestion:hover,

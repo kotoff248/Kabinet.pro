@@ -1,6 +1,7 @@
 import json
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.urls import reverse
 from django.utils import timezone
@@ -31,10 +32,14 @@ from apps.leave.services.preferences import (
     preference_readiness_url,
 )
 from apps.leave.services.schedule_drafts import (
+    DraftGenerationCandidate,
+    DraftGenerationCandidatePackage,
     _build_employee_schedule_planning_need_from_rows,
     _build_auto_generation_candidates,
     _build_draft_generation_context,
     _build_preference_generation_candidates,
+    _manual_package_payload,
+    _rank_manual_candidate_packages,
     auto_place_remaining_schedule_draft,
     build_manual_schedule_draft_preview,
     build_schedule_draft_auto_place_preview,
@@ -219,6 +224,65 @@ class ScheduleDraftManualTests(LeaveTestCase):
         self.assertEqual(payload["preference_option"]["preference_match"], "backup")
         self.assertEqual(payload["preference_option"]["status_label"], "Не подходит")
         self.assertTrue(payload["preference_option"]["reason"])
+
+    def test_manual_package_ranking_compares_whole_package_quality(self):
+        year = self._year()
+
+        def candidate(start_date, days, score, risk_score=20):
+            return DraftGenerationCandidate(
+                employee=self.employee,
+                start_date=start_date,
+                end_date=start_date + timedelta(days=int(days) - 1),
+                kind=VacationScheduleCandidate.KIND_AUTO,
+                source=VacationScheduleItem.SOURCE_GENERATED,
+                comment="Тестовый вариант.",
+                metadata={
+                    "passed_hard_rules": True,
+                    "chargeable_days": Decimal(str(days)),
+                    "open_required_days": Decimal("58.00"),
+                    "risk_score": risk_score,
+                    "risk_level": VacationScheduleItem.RISK_LOW,
+                    "scoring_score": Decimal(str(score)),
+                    "scoring_confidence": Decimal("80.00"),
+                },
+            )
+
+        one_period = DraftGenerationCandidatePackage(
+            employee=self.employee,
+            candidates=[candidate(date(year, 2, 8), 58, "71.32", 27)],
+            source=VacationScheduleItem.SOURCE_GENERATED,
+            explanation="Один период закрывает потребность.",
+            metadata={
+                "total_chargeable_days": Decimal("58.00"),
+                "remaining_after_package": Decimal("0.00"),
+                "package_closes_need": True,
+            },
+        )
+        three_periods = DraftGenerationCandidatePackage(
+            employee=self.employee,
+            candidates=[
+                candidate(date(year, 1, 15), 21, "69.07", 17),
+                candidate(date(year, 11, 8), 28, "68.13", 32),
+                candidate(date(year, 2, 22), 9, "75.97", 22),
+            ],
+            source=VacationScheduleItem.SOURCE_GENERATED,
+            explanation="Три периода закрывают потребность.",
+            metadata={
+                "total_chargeable_days": Decimal("58.00"),
+                "remaining_after_package": Decimal("0.00"),
+                "package_closes_need": True,
+            },
+        )
+
+        with patch("apps.leave.services.schedule_drafts._apply_candidate_scoring", side_effect=lambda item: item):
+            ranked = _rank_manual_candidate_packages([three_periods, one_period])
+            first_payload = _manual_package_payload(ranked[0], rank=1)
+            second_payload = _manual_package_payload(ranked[1], rank=2)
+
+        self.assertIs(ranked[0], one_period)
+        self.assertEqual(first_payload["periods_count"], 1)
+        self.assertEqual(second_payload["periods_count"], 3)
+        self.assertGreater(first_payload["score"], second_payload["score"])
 
     def test_manual_preview_rejects_late_period_that_does_not_close_deadline_blocker(self):
         year = self._year()
@@ -877,7 +941,7 @@ class ScheduleDraftManualTests(LeaveTestCase):
         self.assertEqual(planning_need["placed_days"], Decimal("23.00"))
         self.assertEqual(planning_need["open_required_days"], Decimal("31.00"))
         self.assertEqual(planning_need["future_available_days"], Decimal("52.00"))
-        self.assertIn("автоматического плана", planning_need["action_text"])
+        self.assertIn("незакрытых дней", planning_need["action_text"])
         self.assertNotIn("83", planning_need["action_text"])
 
     def test_schedule_draft_hides_future_reserve_when_plan_is_closed(self):

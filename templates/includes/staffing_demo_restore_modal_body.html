@@ -1,0 +1,31 @@
+<div class="staffing-demo-reset">
+    <p class="staffing-demo-reset__text">
+        Быстрый сброс вернёт демо к началу планирования: до сбора пожеланий и без черновика графика.
+        Полная демо-база не пересоздаётся, текущий вход сохранится.
+    </p>
+
+    <div class="staffing-demo-reset__facts" aria-label="Что произойдёт после быстрого сброса">
+        <article>
+            <span class="material-icons-sharp" aria-hidden="true">event_busy</span>
+            <strong>Планирование очищается</strong>
+            <small>Пожелания, черновик, действие «Добрать незакрытые дни», кандидаты и согласования будущего графика будут удалены.</small>
+        </article>
+        <article>
+            <span class="material-icons-sharp" aria-hidden="true">groups</span>
+            <strong>Состав откатывается</strong>
+            <small>Правила состава, замещения и месячная нагрузка вернутся к состоянию после seed.</small>
+        </article>
+    </div>
+
+    <p class="staffing-demo-reset__warning staffing-demo-reset__warning--soft">
+        Если начальная точка ещё не сохранена, система попросит один раз пересоздать демо-данные полностью.
+    </p>
+
+    <form method="post" action="{% url 'restore_demo_initial_state' %}" class="staffing-demo-reset__form" data-demo-restore-form>
+        {% csrf_token %}
+        <div class="app-modal__actions staffing-delete-modal__actions">
+            <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close data-demo-restore-cancel>Отменить</button>
+            <button type="submit" class="app-modal__button app-modal__button--primary" data-demo-restore-submit>Сбросить до начальных настроек</button>
+        </div>
+    </form>
+</div>

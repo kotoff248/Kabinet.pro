@@ -113,9 +113,13 @@ AUTO_DRAFT_MAX_AUTO_PLACE_PASSES = 3
 AUTO_DRAFT_MIN_GAP_BETWEEN_ITEMS_DAYS = 14
 AUTO_DRAFT_MAX_CANDIDATES_PER_STRATEGY = 6
 AUTO_DRAFT_MAX_CANDIDATES_PER_EMPLOYEE = 12
+AUTO_DRAFT_MAX_PACKAGE_SUGGESTIONS = 10
+AUTO_DRAFT_PREVIEW_PACKAGE_SUGGESTIONS = 1
+AUTO_DRAFT_PERSISTED_PACKAGE_ALTERNATIVES = 6
 MANUAL_DRAFT_MAX_PACKAGE_PERIODS = 3
-MANUAL_DRAFT_MAX_PACKAGE_SUGGESTIONS = 6
-MANUAL_DRAFT_VISIBLE_PACKAGE_SUGGESTIONS = 3
+MANUAL_DRAFT_MAX_PACKAGE_SUGGESTIONS = 18
+MANUAL_DRAFT_VISIBLE_PACKAGE_SUGGESTIONS = 18
+MANUAL_DRAFT_SUGGESTION_CACHE_SCHEMA_VERSION = 2
 DRAFT_GENERATION_RULES_MODEL_VERSION = "rules-v1"
 DRAFT_GENERATION_HYBRID_MODEL_VERSION = ACTIVE_CANDIDATE_SCORER_VERSION
 DRAFT_CANDIDATE_FEATURE_SCHEMA_VERSION = 1
@@ -334,6 +338,7 @@ def assess_schedule_draft_candidate(
     *,
     max_chargeable_days=None,
     exclude_schedule_item_id=None,
+    risk_context=None,
 ):
     if not start_date or not end_date:
         return {
@@ -405,6 +410,7 @@ def assess_schedule_draft_candidate(
         vacation_type="paid",
         exclude_schedule_item_id=exclude_schedule_item_id,
         extra_absent_employee_ids=extra_absent_ids,
+        **(risk_context or {}),
     )
     explanation = risk_payload.get("risk_explanation") or {}
     has_conflict = bool(explanation.get("is_conflict"))
@@ -658,7 +664,7 @@ def _build_employee_schedule_planning_need_from_rows(
     )
 
     if deadline_blocking_days > 0 and annual_remaining_days > 0:
-        remaining_label = "автодобора" if remainder_policy == VacationPreference.REMAINDER_AUTO else "по пожеланию"
+        remaining_label = "добора незакрытых дней" if remainder_policy == VacationPreference.REMAINDER_AUTO else "по пожеланию"
         action_text = (
             f"Сначала {_days_label(deadline_blocking_days)} до {nearest_deadline_label}. "
             f"Затем {_days_label(annual_remaining_days)} {remaining_label}."
@@ -670,7 +676,7 @@ def _build_employee_schedule_planning_need_from_rows(
         )
     elif open_required_days > 0:
         if remainder_policy == VacationPreference.REMAINDER_AUTO:
-            action_text = f"Осталось распределить {_days_label(open_required_days)} автоматического плана."
+            action_text = f"Осталось добрать {_days_label(open_required_days)} незакрытых дней."
         elif preference_state == VacationPreference.STATUS_FILLED:
             action_text = f"Осталось поставить {_days_label(open_required_days)} по пожеланию."
         else:
@@ -696,7 +702,7 @@ def _build_employee_schedule_planning_need_from_rows(
     if auto_remainder_days > 0:
         plan_breakdown.append(
             {
-                "label": "Автодобор",
+                "label": "Добор незакрытых дней",
                 "value": _days_label(auto_remainder_days),
                 "tone": "annual",
             }
@@ -1301,11 +1307,15 @@ def _candidate_is_acceptable_primary_preference(candidate):
         return False
     if not _candidate_passed_hard_rules(candidate):
         return False
-    if candidate.metadata.get("risk_level") == VacationRequest.RISK_HIGH:
+    risk_payload = (candidate.assessment or {}).get("risk_payload") or {}
+    risk_level = risk_payload.get("risk_level") or candidate.metadata.get("risk_level")
+    if risk_level == VacationRequest.RISK_HIGH:
         return False
-    if candidate.metadata.get("scoring_recommendation") == "avoid":
+    if _feature_decimal(risk_payload.get("department_load_level")) >= Decimal("4.00"):
         return False
-    return _candidate_scoring_decimal(candidate, "scoring_score") >= PRIMARY_PREFERENCE_MIN_SCORE
+    if _feature_decimal(risk_payload.get("risk_score") or candidate.metadata.get("risk_score")) >= Decimal("65.00"):
+        return False
+    return True
 
 
 def _select_preference_generation_candidate_from_ranked(candidates):
@@ -1319,15 +1329,18 @@ def _select_preference_generation_candidate_from_ranked(candidates):
         ),
         None,
     )
-    if selected is None or selected is primary:
+    if selected is None:
         return selected
+    if selected is primary:
+        if _candidate_is_acceptable_primary_preference(primary):
+            return selected
+        alternative = _select_first_passed_generation_candidate(
+            [candidate for candidate in candidates if candidate is not primary]
+        )
+        return alternative or selected
     if not _candidate_is_acceptable_primary_preference(primary):
         return selected
-    selected_score = _candidate_scoring_decimal(selected, "scoring_score")
-    primary_score = _candidate_scoring_decimal(primary, "scoring_score")
-    if selected_score - primary_score <= PRIMARY_PREFERENCE_SCORE_TOLERANCE:
-        return primary
-    return selected
+    return primary
 
 
 def _selected_candidate_first(candidates, selected_candidate):
@@ -1955,7 +1968,15 @@ def _register_draft_item_in_generation_context(context, item):
     context.placements.append(DraftPlacement(item.employee_id, item.start_date, item.end_date, item.id))
 
 
-def _virtual_draft_item(employee, start_date, end_date, chargeable_days):
+def _virtual_draft_item(
+    employee,
+    start_date,
+    end_date,
+    chargeable_days,
+    *,
+    source=VacationScheduleItem.SOURCE_MANUAL,
+    selected_candidate=None,
+):
     return SimpleNamespace(
         id=None,
         employee=employee,
@@ -1965,7 +1986,8 @@ def _virtual_draft_item(employee, start_date, end_date, chargeable_days):
         vacation_type="paid",
         chargeable_days=quantize_leave_days(chargeable_days),
         status=VacationScheduleItem.STATUS_DRAFT,
-        source=VacationScheduleItem.SOURCE_MANUAL,
+        source=source,
+        selected_candidate=selected_candidate,
     )
 
 
@@ -2517,6 +2539,222 @@ def _sort_auto_place_employees(employees, planning_need_by_employee):
     )
 
 
+def _auto_candidate_packages_for_employee(context, employee, *, package_limit=AUTO_DRAFT_MAX_PACKAGE_SUGGESTIONS):
+    planning_need = _current_employee_planning_need(context, employee)
+    target = _auto_place_target_for_planning_need(employee, context.year, planning_need)
+    if target is None:
+        return [], None
+
+    packages = []
+    seen = set()
+    for package in _manual_candidate_packages(
+        context,
+        employee,
+        limit=package_limit,
+    ):
+        package = _trim_auto_candidate_package_to_target(package, target["target_days"])
+        key = _manual_package_key(package)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        packages.append(package)
+
+    packages = _rank_auto_candidate_packages(packages)
+    for package in packages:
+        package.metadata.update(
+            {
+                "package_kind": "auto_place_package",
+                "auto_place_package": True,
+                "auto_place_target_days": target["target_days"],
+            }
+        )
+        for candidate in package.candidates:
+            if candidate.metadata.get("is_preference_candidate"):
+                candidate.metadata["auto_place_preference_seed"] = True
+            if candidate.comment.startswith("Предложение модуля"):
+                candidate.comment = "Автоматически распределено: выбран лучший пакет периодов."
+    selected_package = next(
+        (
+            package
+            for package in packages
+            if package.candidates and all(_candidate_passed_hard_rules(candidate) for candidate in package.candidates)
+        ),
+        None,
+    )
+    return packages, selected_package
+
+
+def _trim_auto_candidate_package_to_target(package, target_days):
+    target_days = _feature_decimal(target_days)
+    if target_days <= 0:
+        return package
+
+    selected_candidates = []
+    total_days = Decimal("0.00")
+    for candidate in package.candidates:
+        selected_candidates.append(candidate)
+        total_days += _feature_decimal(
+            candidate.metadata.get("chargeable_days")
+            or (candidate.assessment or {}).get("chargeable_days")
+        )
+        if total_days >= target_days:
+            break
+
+    remaining_days = quantize_leave_days(max(target_days - total_days, Decimal("0.00")))
+    if len(selected_candidates) == len(package.candidates):
+        package.metadata.update(
+            {
+                "auto_place_target_days": target_days,
+                "remaining_after_package": remaining_days,
+                "package_closes_need": remaining_days <= 0,
+            }
+        )
+        return package
+
+    return DraftGenerationCandidatePackage(
+        employee=package.employee,
+        candidates=selected_candidates,
+        source=package.source,
+        explanation=(
+            "Пакет полностью закрывает автоматическую цель."
+            if remaining_days <= 0
+            else "Пакет закрывает часть автоматической цели."
+        ),
+        metadata={
+            **(package.metadata or {}),
+            "total_chargeable_days": total_days,
+            "periods_count": len(selected_candidates),
+            "remaining_after_package": remaining_days,
+            "package_closes_need": remaining_days <= 0,
+            "auto_place_target_days": target_days,
+        },
+    )
+
+
+def _rank_auto_candidate_packages(packages):
+    def package_rank(package):
+        candidates = package.candidates
+        total_days = sum((_feature_decimal(candidate.metadata.get("chargeable_days")) for candidate in candidates), Decimal("0.00"))
+        max_risk = max((int(candidate.metadata.get("risk_score") or 0) for candidate in candidates), default=0)
+        closes_need = bool(package.metadata.get("package_closes_need"))
+        extends_existing = any(candidate.metadata.get("extends_existing_item") for candidate in candidates)
+        target_days = _feature_decimal(package.metadata.get("auto_place_target_days"))
+        target_is_short = Decimal("0.00") < target_days < Decimal(MIN_CONTINUOUS_PAID_LEAVE_DAYS)
+        has_partial_preference = any(str(candidate.metadata.get("preference_match") or "").endswith("_partial") for candidate in candidates)
+        has_exact_preference = any(
+            candidate.metadata.get("preference_match") in {"primary", "backup"}
+            for candidate in candidates
+        )
+        single_period = len(candidates) == 1
+        return (
+            1 if closes_need else 0,
+            1 if extends_existing else 0,
+            1 if has_exact_preference else 0,
+            1 if single_period and not (target_is_short and has_partial_preference) else 0,
+            _manual_package_quality_score(package),
+            total_days,
+            Decimal("100.00") - Decimal(max_risk),
+            -len(candidates),
+        )
+
+    return sorted(packages, key=package_rank, reverse=True)
+
+
+def _register_virtual_candidate_package(context, package):
+    for candidate in package.candidates:
+        chargeable_days = (
+            candidate.metadata.get("chargeable_days")
+            or (candidate.assessment or {}).get("chargeable_days")
+            or 0
+        )
+        virtual_item = _virtual_draft_item(
+            candidate.employee,
+            candidate.start_date,
+            candidate.end_date,
+            chargeable_days,
+            source=candidate.source,
+            selected_candidate=candidate,
+        )
+        _register_draft_item_in_generation_context(context, virtual_item)
+    context.planning_need_by_employee[package.employee.id] = _current_employee_planning_need(context, package.employee)
+
+
+def _persist_auto_candidate_packages(generation_run, schedule, packages, selected_package):
+    selected_key = _manual_package_key(selected_package)
+    selected_record, selected_candidate_records, selected_period_records = _persist_manual_candidate_package(
+        generation_run,
+        schedule,
+        selected_package,
+        decision=VacationScheduleCandidatePackage.DECISION_SELECTED,
+        decision_rank=1,
+    )
+
+    rejected_rank = 2
+    for package in packages[:AUTO_DRAFT_PERSISTED_PACKAGE_ALTERNATIVES]:
+        if _manual_package_key(package) == selected_key:
+            continue
+        _persist_manual_candidate_package(
+            generation_run,
+            schedule,
+            package,
+            decision=VacationScheduleCandidatePackage.DECISION_REJECTED,
+            decision_rank=rejected_rank,
+        )
+        rejected_rank += 1
+
+    return selected_record, selected_candidate_records, selected_period_records
+
+
+def _link_package_periods_to_draft_items(period_records, items):
+    for period_record in period_records:
+        schedule_item = _find_covering_draft_item(items, period_record.start_date, period_record.end_date)
+        if schedule_item is None:
+            continue
+        period_record.schedule_item = schedule_item
+        period_record.save(update_fields=["schedule_item"])
+
+
+def _create_draft_items_from_candidate_package(
+    schedule,
+    context,
+    employee,
+    package,
+    *,
+    generation_run,
+    selected_candidate_records,
+    selected_period_records,
+):
+    created_items = []
+    for candidate, selected_candidate_record in zip(package.candidates, selected_candidate_records):
+        if not _candidate_passed_hard_rules(candidate):
+            continue
+        item = _create_draft_item_from_generation_candidate(
+            schedule,
+            candidate,
+            generation_run=generation_run,
+            selected_candidate_record=selected_candidate_record,
+        )
+        _register_draft_item_in_generation_context(context, item)
+        created_items.append(item)
+
+    _merge_adjacent_employee_draft_items(
+        schedule,
+        employee,
+        context.draft_items_by_employee,
+        context.placements,
+    )
+    refreshed_items = list(
+        VacationScheduleItem.objects.filter(
+            schedule=schedule,
+            employee=employee,
+            status=VacationScheduleItem.STATUS_DRAFT,
+        ).order_by("start_date", "end_date", "id")
+    )
+    _link_package_periods_to_draft_items(selected_period_records, refreshed_items)
+    context.planning_need_by_employee[employee.id] = _current_employee_planning_need(context, employee)
+    return created_items
+
+
 def _auto_place_target_for_planning_need(employee, year, planning_need):
     if not planning_need["needs_manual_attention"]:
         return None
@@ -2641,7 +2879,15 @@ def create_schedule_draft_from_preferences(*, year, actor):
 
 
 @transaction.atomic
-def auto_place_remaining_schedule_draft(*, year, actor, _pass_index=1, _generation_run=None):
+def auto_place_remaining_schedule_draft(
+    *,
+    year,
+    actor,
+    _pass_index=1,
+    _generation_run=None,
+    progress_callback=None,
+    use_package_selection=False,
+):
     schedule = VacationSchedule.objects.select_for_update().filter(
         year=year,
         status=VacationSchedule.STATUS_DRAFT,
@@ -2654,8 +2900,10 @@ def auto_place_remaining_schedule_draft(*, year, actor, _pass_index=1, _generati
     generation_run = _generation_run or _start_schedule_generation_run(schedule, actor)
     placed_count = 0
     unresolved_count = 0
+    auto_employees = _sort_auto_place_employees(context.eligible_employees, context.planning_need_by_employee)
+    total_employees = len(auto_employees)
 
-    for employee in _sort_auto_place_employees(context.eligible_employees, context.planning_need_by_employee):
+    for processed_index, employee in enumerate(auto_employees, start=1):
         chunks_count = 0
         while chunks_count < AUTO_DRAFT_MAX_CHUNKS_PER_EMPLOYEE:
             current_items = context.draft_items_by_employee.get(employee.id, [])
@@ -2664,46 +2912,87 @@ def auto_place_remaining_schedule_draft(*, year, actor, _pass_index=1, _generati
                 context.planning_need_by_employee[employee.id] = planning_need
                 break
 
-            candidates = _rank_auto_generation_candidates(
-                _build_auto_generation_candidates(
+            if use_package_selection:
+                packages, selected_package = _auto_candidate_packages_for_employee(context, employee)
+                if selected_package is None:
+                    unresolved_count += 1
+                    context.planning_need_by_employee[employee.id] = planning_need
+                    break
+
+                _, selected_candidate_records, selected_period_records = _persist_auto_candidate_packages(
+                    generation_run,
+                    schedule,
+                    packages,
+                    selected_package,
+                )
+                created_items = _create_draft_items_from_candidate_package(
+                    schedule,
                     context,
                     employee,
-                    current_items,
-                    planning_need,
+                    selected_package,
+                    generation_run=generation_run,
+                    selected_candidate_records=selected_candidate_records,
+                    selected_period_records=selected_period_records,
                 )
-            )
-            selected_candidate = _select_first_passed_generation_candidate(candidates)
-            selected_candidate_record = _persist_generation_candidates(
-                generation_run,
-                schedule,
-                candidates,
-                selected_candidate=selected_candidate,
-            )
-            if selected_candidate is None:
-                unresolved_count += 1
-                context.planning_need_by_employee[employee.id] = planning_need
-                break
+                placed_periods = len(created_items)
+                if placed_periods <= 0:
+                    unresolved_count += 1
+                    break
+                placed_count += placed_periods
+                chunks_count += placed_periods
+            else:
+                candidates = _rank_auto_generation_candidates(
+                    _build_auto_generation_candidates(
+                        context,
+                        employee,
+                        current_items,
+                        planning_need,
+                    )
+                )
+                selected_candidate = _select_first_passed_generation_candidate(candidates)
+                selected_candidate_record = _persist_generation_candidates(
+                    generation_run,
+                    schedule,
+                    candidates,
+                    selected_candidate=selected_candidate,
+                )
+                if selected_candidate is None:
+                    unresolved_count += 1
+                    context.planning_need_by_employee[employee.id] = planning_need
+                    break
 
-            item = _create_draft_item_from_generation_candidate(
-                schedule,
-                selected_candidate,
-                generation_run=generation_run,
-                selected_candidate_record=selected_candidate_record,
-            )
-            _register_draft_item_in_generation_context(context, item)
-            _merge_adjacent_employee_draft_items(
-                schedule,
-                employee,
-                context.draft_items_by_employee,
-                context.placements,
-            )
-            placed_count += 1
-            chunks_count += 1
+                item = _create_draft_item_from_generation_candidate(
+                    schedule,
+                    selected_candidate,
+                    generation_run=generation_run,
+                    selected_candidate_record=selected_candidate_record,
+                )
+                _register_draft_item_in_generation_context(context, item)
+                _merge_adjacent_employee_draft_items(
+                    schedule,
+                    employee,
+                    context.draft_items_by_employee,
+                    context.placements,
+                )
+                placed_count += 1
+                chunks_count += 1
 
         if chunks_count >= AUTO_DRAFT_MAX_CHUNKS_PER_EMPLOYEE:
             planning_need = _current_employee_planning_need(context, employee)
             if planning_need["needs_manual_attention"]:
                 unresolved_count += 1
+
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "processed": processed_index,
+                    "total": total_employees,
+                    "employee_id": employee.id,
+                    "employee_name": employee.full_name,
+                    "placed_count": placed_count,
+                    "unresolved_count": unresolved_count,
+                }
+            )
 
     removed_conflicts = _remove_conflicting_generated_draft_items(schedule)
     placed_count = max(placed_count - removed_conflicts, 0)
@@ -2714,6 +3003,8 @@ def auto_place_remaining_schedule_draft(*, year, actor, _pass_index=1, _generati
             actor=actor,
             _pass_index=_pass_index + 1,
             _generation_run=generation_run,
+            progress_callback=progress_callback,
+            use_package_selection=use_package_selection,
         )
         placed_count += follow_up_result["placed_count"]
         unresolved_count = follow_up_result["unresolved_count"]
@@ -3060,6 +3351,50 @@ def _package_average(candidates, key):
     return sum((_candidate_scoring_decimal(candidate, key) for candidate in candidates), Decimal("0.00")) / Decimal(len(candidates))
 
 
+def _percent_decimal(value):
+    return max(Decimal("0.00"), min(Decimal("100.00"), Decimal(str(value)))).quantize(Decimal("0.01"))
+
+
+def _manual_package_quality_score(package):
+    candidates = [_apply_candidate_scoring(candidate) for candidate in package.candidates]
+    if not candidates:
+        return Decimal("0.00")
+
+    scores = [_candidate_scoring_decimal(candidate, "scoring_score") for candidate in candidates]
+    average_score = sum(scores, Decimal("0.00")) / Decimal(len(scores))
+    weakest_score = min(scores)
+    total_days = _package_total_days(candidates)
+    open_required_days = _feature_decimal(
+        package.metadata.get("auto_place_target_days") or candidates[0].metadata.get("open_required_days")
+    )
+    remaining_days = _feature_decimal(package.metadata.get("remaining_after_package"))
+    period_count = len(candidates)
+    short_periods = sum(
+        1
+        for candidate in candidates
+        if Decimal("0.00") < _feature_decimal(candidate.metadata.get("chargeable_days")) < Decimal(MIN_CONTINUOUS_PAID_LEAVE_DAYS)
+    )
+    max_risk = max((int(candidate.metadata.get("risk_score") or 0) for candidate in candidates), default=0)
+
+    score = (average_score * Decimal("0.72")) + (weakest_score * Decimal("0.28"))
+    if open_required_days > 0:
+        coverage_gap = abs(total_days - open_required_days) / open_required_days
+        score += max(Decimal("0.00"), Decimal("1.00") - coverage_gap) * Decimal("2.50")
+        if remaining_days > 0:
+            score -= min(Decimal("18.00"), (remaining_days / open_required_days) * Decimal("18.00"))
+
+    score -= Decimal(max(period_count - 1, 0)) * Decimal("1.35")
+    score -= Decimal(short_periods) * Decimal("0.65")
+    score -= Decimal(max_risk) * Decimal("0.015")
+    if any(candidate.metadata.get("extends_existing_item") for candidate in candidates):
+        score += Decimal("2.50")
+    if any(candidate.metadata.get("is_preference_candidate") for candidate in candidates):
+        score += Decimal("2.00")
+
+    package.metadata["package_quality_score"] = _percent_decimal(score)
+    return package.metadata["package_quality_score"]
+
+
 def _package_features(package):
     candidates = package.candidates
     return _json_safe_generation_value(
@@ -3085,6 +3420,7 @@ def _package_features(package):
 
 def _persist_manual_candidate_package(generation_run, schedule, package, *, decision, decision_rank):
     candidates = [_apply_candidate_scoring(candidate) for candidate in package.candidates]
+    package_score = _manual_package_quality_score(package)
     selected_at = timezone.now() if decision == VacationScheduleCandidatePackage.DECISION_SELECTED else None
     candidate_records = []
     blocked_reason = ""
@@ -3146,7 +3482,7 @@ def _persist_manual_candidate_package(generation_run, schedule, package, *, deci
         risk_score=risk_score,
         risk_level=risk_level,
         features=_package_features(package),
-        score=_package_average(candidates, "scoring_score"),
+        score=package_score,
         confidence=_package_average(candidates, "scoring_confidence"),
         model_version=DRAFT_GENERATION_HYBRID_MODEL_VERSION,
         explanation=package.explanation,
@@ -3955,7 +4291,7 @@ def _manual_row_for_employee(
         )
         if planning_need["annual_remaining_days"] > 0:
             remaining_label = (
-                "автодобора"
+                "добора незакрытых дней"
                 if planning_need["remainder_policy"] == VacationPreference.REMAINDER_AUTO
                 else "по пожеланию"
             )
@@ -3994,7 +4330,7 @@ def _manual_row_for_employee(
     elif planning_need["needs_manual_attention"]:
         reason = _manual_reason(
             "remaining_plan",
-            f"Осталось распределить {_days_label(planning_need['open_required_days'])}",
+            f"Осталось добрать {_days_label(planning_need['open_required_days'])}",
             "Пожелание или обязательный остаток еще не закрыты полностью.",
         )
 
@@ -4445,7 +4781,16 @@ def _manual_package_context_after_candidate(context, employee, current_items, ca
     )
     next_items = list(current_items)
     chargeable_days = candidate.metadata.get("chargeable_days") or candidate.assessment.get("chargeable_days") or 0
-    next_items.append(_virtual_draft_item(employee, candidate.start_date, candidate.end_date, chargeable_days))
+    next_items.append(
+        _virtual_draft_item(
+            employee,
+            candidate.start_date,
+            candidate.end_date,
+            chargeable_days,
+            source=candidate.source,
+            selected_candidate=candidate,
+        )
+    )
     next_context.draft_items_by_employee[employee.id] = next_items
     next_context.placements.append(DraftPlacement(employee.id, candidate.start_date, candidate.end_date, None))
     next_context.planning_need_by_employee[employee.id] = _current_employee_planning_need(next_context, employee)
@@ -4510,9 +4855,10 @@ def _build_manual_candidate_package_from_seed(context, employee, seed_candidate)
         )
 
     total_days = sum((_feature_decimal(candidate.metadata.get("chargeable_days")) for candidate in candidates), Decimal("0.00"))
+    remaining_need = _current_employee_planning_need(current_context, employee)
     explanation = (
         "Пакет полностью закрывает плановую потребность."
-        if not _current_employee_planning_need(current_context, employee)["needs_manual_attention"]
+        if not remaining_need["needs_manual_attention"]
         else "Пакет закрывает часть дней, остаток останется вручную."
     )
     return DraftGenerationCandidatePackage(
@@ -4524,6 +4870,8 @@ def _build_manual_candidate_package_from_seed(context, employee, seed_candidate)
             "package_kind": "manual_suggestion",
             "total_chargeable_days": total_days,
             "periods_count": len(candidates),
+            "remaining_after_package": remaining_need["open_required_days"],
+            "package_closes_need": not remaining_need["needs_manual_attention"],
         },
     )
 
@@ -4537,21 +4885,15 @@ def _rank_manual_candidate_packages(packages):
         candidates = package.candidates
         has_preference_candidate = any(candidate.metadata.get("is_preference_candidate") for candidate in candidates)
         has_exact_preference = any(candidate.metadata.get("preference_match") == "backup" for candidate in candidates)
-        passed_count = sum(1 for candidate in candidates if _candidate_passed_hard_rules(candidate))
         total_days = sum((_feature_decimal(candidate.metadata.get("chargeable_days")) for candidate in candidates), Decimal("0.00"))
-        avg_score = (
-            sum((_candidate_scoring_decimal(candidate, "scoring_score") for candidate in candidates), Decimal("0.00"))
-            / Decimal(len(candidates))
-            if candidates
-            else Decimal("0.00")
-        )
         max_risk = max((int(candidate.metadata.get("risk_score") or 0) for candidate in candidates), default=0)
+        closes_need = bool(package.metadata.get("package_closes_need"))
         return (
             1 if has_preference_candidate else 0,
             1 if has_exact_preference else 0,
-            passed_count,
+            1 if closes_need else 0,
+            _manual_package_quality_score(package),
             total_days,
-            avg_score,
             Decimal("100.00") - Decimal(max_risk),
             -len(candidates),
         )
@@ -4586,11 +4928,7 @@ def _manual_package_payload(package, *, rank=None):
     period_payloads = [_generation_candidate_payload(candidate, rank=index) for index, candidate in enumerate(candidates, start=1)]
     preference_payload = next((payload for payload in period_payloads if payload.get("is_preference_candidate")), None)
     total_days = sum((_feature_decimal(payload["chargeable_days"]) for payload in period_payloads), Decimal("0.00"))
-    avg_score = (
-        sum((_feature_decimal(payload["score"]) for payload in period_payloads), Decimal("0.00")) / Decimal(len(period_payloads))
-        if period_payloads
-        else Decimal("0.00")
-    )
+    package_score = _manual_package_quality_score(package)
     avg_confidence = (
         sum((_feature_decimal(payload["confidence"]) for payload in period_payloads), Decimal("0.00"))
         / Decimal(len(period_payloads))
@@ -4624,8 +4962,8 @@ def _manual_package_payload(package, *, rank=None):
         "risk_level": highest_risk.get("risk_level") or VacationScheduleItem.RISK_LOW,
         "risk_label": highest_risk.get("risk_label") or "Низкий",
         "risk_tone": highest_risk.get("risk_tone") or "low",
-        "score": avg_score,
-        "score_label": _percent_label(avg_score),
+        "score": package_score,
+        "score_label": _percent_label(package_score),
         "confidence": avg_confidence,
         "confidence_label": _percent_label(avg_confidence),
         "recommendation_label": "Можно применить",
@@ -4694,6 +5032,7 @@ def _manual_suggestion_payload_from_context(
     packages = _manual_candidate_packages(context, employee, limit=MANUAL_DRAFT_MAX_PACKAGE_SUGGESTIONS)
     visible_packages = packages[:limit]
     return {
+        "suggestion_schema_version": MANUAL_DRAFT_SUGGESTION_CACHE_SCHEMA_VERSION,
         "employee_id": employee.id,
         "employee_name": employee.full_name,
         "needed_label": planning_need["manual_task_label"],
@@ -4720,11 +5059,17 @@ def _get_current_manual_suggestion_cache(schedule, employee_id):
     version = int(schedule.manual_suggestion_cache_version or 0)
     if version <= 0:
         return None
-    return VacationScheduleManualSuggestionCache.objects.filter(
+    cache = VacationScheduleManualSuggestionCache.objects.filter(
         schedule=schedule,
         employee_id=employee_id,
         version=version,
     ).first()
+    if cache is None:
+        return None
+    if int((cache.payload or {}).get("suggestion_schema_version") or 0) != MANUAL_DRAFT_SUGGESTION_CACHE_SCHEMA_VERSION:
+        cache.delete()
+        return None
+    return cache
 
 
 def _rebuild_schedule_draft_manual_suggestion_cache(schedule):
@@ -4878,37 +5223,52 @@ def build_schedule_draft_auto_place_preview(*, year, limit=8):
     placed_count = 0
     blocked_count = 0
     high_risk_count = 0
+    auto_employees = _sort_auto_place_employees(context.eligible_employees, context.planning_need_by_employee)
+    initial_unresolved_count = len(auto_employees)
+    processed_employee_ids = set()
+    max_preview_employees = max(int(limit or 0) * 3, 8)
 
-    for employee in _sort_auto_place_employees(context.eligible_employees, context.planning_need_by_employee):
+    for employee in auto_employees:
+        if len(preview_options) >= limit:
+            break
+        if preview_options and len(processed_employee_ids) >= max_preview_employees:
+            break
+        processed_employee_ids.add(employee.id)
         chunks_count = 0
         while chunks_count < AUTO_DRAFT_MAX_CHUNKS_PER_EMPLOYEE:
-            current_items = context.draft_items_by_employee.get(employee.id, [])
+            if len(preview_options) >= limit:
+                break
             planning_need = _current_employee_planning_need(context, employee)
             if not planning_need["needs_manual_attention"]:
                 context.planning_need_by_employee[employee.id] = planning_need
                 break
 
-            candidates = _rank_auto_generation_candidates(
-                _build_auto_generation_candidates(
-                    context,
-                    employee,
-                    current_items,
-                    planning_need,
-                )
+            packages, selected_package = _auto_candidate_packages_for_employee(
+                context,
+                employee,
+                package_limit=AUTO_DRAFT_PREVIEW_PACKAGE_SUGGESTIONS,
             )
-            selected_candidate = _select_first_passed_generation_candidate(candidates)
-            if selected_candidate is None:
+            if selected_package is None:
                 blocked_count += 1
                 context.planning_need_by_employee[employee.id] = planning_need
                 break
 
-            placed_count += 1
-            chunks_count += 1
-            if selected_candidate.metadata.get("risk_level") == VacationScheduleItem.RISK_HIGH:
-                high_risk_count += 1
+            package_periods_count = len(selected_package.candidates)
+            placed_count += package_periods_count
+            chunks_count += package_periods_count
+            high_risk_count += sum(
+                1
+                for candidate in selected_package.candidates
+                if candidate.metadata.get("risk_level") == VacationScheduleItem.RISK_HIGH
+            )
             if len(preview_options) < limit:
                 day_calculation = build_schedule_day_calculation_payload(employee, year, planning_need)
-                proposal_text = selected_candidate.metadata.get("preference_match_label") or _candidate_kind_label(selected_candidate.kind)
+                package_payload = _manual_package_payload(selected_package, rank=len(preview_options) + 1)
+                proposal_text = (
+                    package_payload.get("preference_match_label")
+                    or package_payload.get("kind_label")
+                    or "пакет периодов"
+                )
                 preview_options.append(
                     {
                         "employee_id": employee.id,
@@ -4920,33 +5280,29 @@ def build_schedule_draft_auto_place_preview(*, year, limit=8):
                             f"{day_calculation['short_reason']}"
                         ),
                         "proposal_note": f"Предложение: {proposal_text.lower()}.",
-                        **_generation_candidate_payload(selected_candidate, rank=placed_count),
+                        **package_payload,
                     }
                 )
 
-            virtual_item = _virtual_draft_item(
-                employee,
-                selected_candidate.start_date,
-                selected_candidate.end_date,
-                selected_candidate.metadata.get("chargeable_days") or selected_candidate.assessment["chargeable_days"],
-            )
-            _register_draft_item_in_generation_context(context, virtual_item)
+            _register_virtual_candidate_package(context, selected_package)
 
         if chunks_count >= AUTO_DRAFT_MAX_CHUNKS_PER_EMPLOYEE:
             planning_need = _current_employee_planning_need(context, employee)
             if planning_need["needs_manual_attention"]:
                 blocked_count += 1
 
-    unresolved_after = sum(
+    processed_unresolved_after = sum(
         1
         for employee in context.eligible_employees
-        if _current_employee_planning_need(context, employee)["needs_manual_attention"]
+        if employee.id in processed_employee_ids
+        and _current_employee_planning_need(context, employee)["needs_manual_attention"]
     )
+    unresolved_after = (initial_unresolved_count - len(processed_employee_ids)) + processed_unresolved_after
     return {
         "placed_count": placed_count,
         "unresolved_count": unresolved_after,
         "blocked_count": blocked_count,
         "high_risk_count": high_risk_count,
         "options": preview_options,
-        "has_more_options": placed_count > len(preview_options),
+        "has_more_options": len(processed_employee_ids) < initial_unresolved_count or placed_count > len(preview_options),
     }

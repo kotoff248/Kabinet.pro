@@ -34,6 +34,11 @@ urlpatterns = [
         name="schedule_draft_auto_place",
     ),
     path(
+        "calendar/drafts/<int:year>/auto-place/jobs/<int:job_id>/status/",
+        views.auto_place_schedule_draft_status,
+        name="schedule_draft_auto_place_status",
+    ),
+    path(
         "calendar/drafts/<int:year>/auto-place/preview/",
         views.auto_place_schedule_draft_preview,
         name="schedule_draft_auto_place_preview",

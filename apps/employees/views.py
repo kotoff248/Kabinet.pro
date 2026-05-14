@@ -1,12 +1,10 @@
 from collections import Counter
 from datetime import timedelta
-from io import StringIO
 import secrets
 
 from django.contrib import messages
 from django.conf import settings
 from django.contrib.auth import logout as auth_logout, update_session_auth_hash
-from django.core.management import call_command
 from django.db import transaction
 from django.db.models import Prefetch
 from django.http import JsonResponse
@@ -29,6 +27,18 @@ from apps.accounts.services import (
     is_enterprise_head_employee,
     is_authorized_person_employee,
     is_hr_employee,
+)
+from apps.core.services.demo_baseline import (
+    DemoBaselineMissingError,
+    DemoBaselineResetInProgressError,
+    reset_demo_to_baseline,
+)
+from apps.core.models import DemoDataResetJob
+from apps.core.services.demo_reset_jobs import (
+    DemoDataResetInProgressError,
+    demo_data_reset_job_payload,
+    get_or_create_demo_data_reset_job,
+    start_demo_data_reset_process,
 )
 from apps.employees.models import (
     DepartmentCoverageRule,
@@ -1153,22 +1163,81 @@ def reset_demo_data(request):
         messages.error(request, "Пересоздать демо-данные может только руководитель предприятия в демо-режиме.")
         return redirect("staffing_rules" if can_access_staffing_page(current_employee) else "main")
 
-    seed_value = secrets.randbelow(DEMO_SEED_MAX_VALUE) + 1
-    output = StringIO()
     try:
-        call_command(
-            "seed_vacation_requests",
-            confirm_reset=True,
-            seed_value=seed_value,
-            stdout=output,
+        seed_value = secrets.randbelow(DEMO_SEED_MAX_VALUE) + 1
+        job, created = get_or_create_demo_data_reset_job(seed_value=seed_value)
+        if created:
+            start_demo_data_reset_process(job)
+    except DemoDataResetInProgressError:
+        return JsonResponse(
+            {
+                "ok": False,
+                "message": "Демо-данные уже сбрасываются. Дождитесь завершения текущей операции.",
+            },
+            status=409,
         )
     except Exception as exc:
-        messages.error(request, f"Не удалось пересоздать демо-данные: {exc}")
-        return redirect("staffing_rules")
+        return JsonResponse({"ok": False, "message": f"Не удалось запустить пересоздание демо-данных: {exc}"}, status=500)
 
     auth_logout(request)
+    status_url = f"{reverse('reset_demo_data_status', args=[job.id])}?token={job.token}"
+    payload = demo_data_reset_job_payload(job)
+    payload.update(
+        {
+            "token": job.token,
+            "status_url": status_url,
+            "message": (
+                "Пересоздание демо-данных запущено."
+                if created
+                else "Пересоздание демо-данных уже выполняется."
+            ),
+        }
+    )
+    return JsonResponse(
+        payload
+    )
+
+
+def reset_demo_data_status(request, job_id):
+    if not settings.DEBUG:
+        return JsonResponse({"ok": False, "message": "Статус пересоздания доступен только в демо-режиме."}, status=404)
+
+    token = request.GET.get("token", "")
+    job = get_object_or_404(DemoDataResetJob, id=job_id)
+    if not token or not secrets.compare_digest(token, job.token):
+        return JsonResponse({"ok": False, "message": "Некорректный токен статуса."}, status=403)
+
+    return JsonResponse(demo_data_reset_job_payload(job))
+
+
+@employee_required
+def restore_demo_initial_state(request):
+    current_employee = get_current_employee(request)
+    if request.method != "POST":
+        return redirect("staffing_rules" if can_access_staffing_page(current_employee) else "main")
+
+    if not _can_reset_demo_data(current_employee):
+        messages.error(request, "Сбросить демо-состояние может только руководитель предприятия в демо-режиме.")
+        return redirect("staffing_rules" if can_access_staffing_page(current_employee) else "main")
+
+    try:
+        result = reset_demo_to_baseline(actor=current_employee)
+    except DemoBaselineMissingError:
+        messages.error(
+            request,
+            "Быстрый сброс пока недоступен: сначала один раз пересоздайте демо-данные, "
+            "чтобы сохранить начальную точку.",
+        )
+        return redirect("staffing_rules")
+    except DemoBaselineResetInProgressError:
+        messages.info(request, "Сброс демо-данных уже выполняется. Дождитесь завершения текущей операции.")
+        return redirect("staffing_rules")
+    except Exception as exc:
+        messages.error(request, f"Не удалось сбросить демо-состояние: {exc}")
+        return redirect("staffing_rules")
+
     messages.success(
         request,
-        f"Демо-данные пересозданы. Seed: {seed_value}. Войдите заново, пароль демо-пользователей: 1234.",
+        f"Демо-состояние сброшено к началу планирования {result['planning_year']} года.",
     )
-    return redirect("login")
+    return redirect("staffing_rules")

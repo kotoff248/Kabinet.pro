@@ -531,6 +531,7 @@
 
 {% if can_reset_demo_data %}
 {% include 'includes/app_modal.html' with modal_id='staffing-demo-reset-modal' eyebrow='Демо-данные' title='Пересоздать демо-данные?' subtitle='Подтвердите полный сброс и повторное создание демонстрационной базы.' aria_label='Закрыть пересоздание демо-данных' body_template='includes/staffing_demo_reset_modal_body.html' %}
+{% include 'includes/app_modal.html' with modal_id='staffing-demo-restore-modal' eyebrow='Демо-данные' title='Сбросить до начальных настроек?' subtitle='Быстрый возврат к началу планирования без полного пересоздания базы.' aria_label='Закрыть быстрый сброс демо-состояния' body_template='includes/staffing_demo_restore_modal_body.html' %}
 {% endif %}
 
 {% if can_edit_staffing %}
@@ -599,5 +600,5 @@
 {% block extra_scripts %}
 <script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
 <script src="{% static 'js/profile-sections.js' %}?v=20260507-scroll-performance" defer></script>
-<script src="{% static 'js/staffing-page.js' %}?v=20260503-workload-year-auto" defer></script>
+<script src="{% static 'js/staffing-page.js' %}?v=20260514-demo-reset-progress" defer></script>
 {% endblock %}

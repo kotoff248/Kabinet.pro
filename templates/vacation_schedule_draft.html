@@ -4,7 +4,7 @@
 {% block title %}Кабинет.pro - Черновик графика{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/schedule-draft.css' %}?v=20260513-draft-columns-list-edge">
+<link rel="stylesheet" href="{% static 'css/pages/schedule-draft.css' %}?v=20260514-auto-place-background">
 {% endblock %}
 
 {% block content %}
@@ -33,7 +33,6 @@
                 <button type="button"
                         class="app-modal__button app-modal__button--primary"
                         data-draft-auto-open
-                        data-modal-open="schedule-draft-auto-modal"
                         data-auto-preview-url="{{ draft_auto_place_preview_url }}">
                         <span class="material-icons-sharp" aria-hidden="true">auto_fix_high</span>
                         Добрать незакрытые дни
@@ -250,7 +249,7 @@
                 <div class="schedule-draft-section__head">
                     <div>
                         <span class="schedule-draft-eyebrow">Ручное размещение</span>
-                        <h3>Осталось распределить</h3>
+                        <h3>Осталось добрать</h3>
                     </div>
                     <span>{{ manual_count_label }}</span>
                 </div>
@@ -404,5 +403,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/schedule-draft.js' %}?v=20260513-draft-search" defer></script>
+<script src="{% static 'js/schedule-draft.js' %}?v=20260514-auto-place-background" defer></script>
 {% endblock %}

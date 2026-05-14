@@ -1,6 +1,6 @@
 # Work Summary For Continuing Kabinet.pro
 
-Updated: 2026-05-13
+Updated: 2026-05-14
 
 ## How To Continue In A New Chat
 
@@ -12,7 +12,7 @@ Start by reading:
 
 Workspace:
 
-`D:\Инст\Диссертация\Kabinet.pro`
+`D:\Fedya\Инст\МАГИСТЕРСКАЯ\Kabinet.pro`
 
 Project name: `Kabinet.pro`.
 
@@ -22,6 +22,231 @@ before editing Russian copy.
 
 Do not revert unrelated dirty files. The project often has active UI/domain work
 in progress between chats.
+
+## Fresh Handoff: 2026-05-14
+
+This is the most important current context for continuing on another computer.
+
+The project is now focused on the **2027 vacation schedule demo with a real
+candidate-based neural module**. The user wants the dissertation demo to look
+convincing: HR collects preferences, creates a draft, uses the neural module to
+place/inspect vacations, then later sends the schedule through approval.
+
+Current active wording for the auto-fill action is:
+
+**`Добрать незакрытые дни`**
+
+Use this wording consistently in UI, modal titles, progress messages and user
+explanations. Avoid mixing it with `Автоматически распределить`,
+`нераспределенные дни`, or `оставшиеся дни` in user-facing action names.
+
+### What Was Implemented Recently
+
+1. Historical ML traces in seed:
+   - `seed_vacation_requests --confirm-reset` now creates historical
+     generation runs, candidates, candidate packages, selected/rejected/blocked
+     examples and feedback for archived/approved historical schedules.
+   - Historical schedule items are connected to selected candidates and AI
+     fields.
+   - Staffing/risk features are stored so the neural module can learn from
+     coverage, reserves, department load and conflicts.
+
+2. v2 neural model training:
+   - PyTorch was added only for training.
+   - Runtime scoring stays pure Python through exported JSON.
+   - Training command:
+
+   ```powershell
+   .\.venv\Scripts\python.exe manage.py train_vacation_candidate_model
+   ```
+
+   - Model files:
+     - `apps/leave/ml_models/vacation_candidate_mlp_v2.json`
+     - `apps/leave/ml_models/vacation_candidate_mlp_v2_metrics.json`
+   - Active model is selected through `.env`:
+
+   ```env
+   VACATION_CANDIDATE_SCORER_VERSION=vacation-candidate-mlp-v2
+   ```
+
+   - If v2 JSON is missing or invalid, scorer falls back safely to v1/baseline.
+
+3. v2 score calibration:
+   - Removed the artificial runtime floor that made many values look like the
+     same `68%`.
+   - Targets now depend on candidate quality: preference match, period length,
+     risk, department load, staffing reserve, urgent balance and partial-period
+     context.
+   - Expected normal range:
+     - good primary preference: about `78-90%`;
+     - normal partial primary: about `68-82%`;
+     - good backup: about `62-78%`;
+     - acceptable but risky: about `45-65%`;
+     - blocked: `0%`.
+
+4. Quick demo reset:
+   - Full reseed is still available, but it can be slow.
+   - A fast button `Сбросить до начальных настроек` was added near full demo
+     reset.
+   - It uses `DemoBaselineSnapshot` and returns the demo to the point before
+     2027 preference collection/draft work.
+   - It does not delete historical schedules, historical ML traces, users,
+     JSON models or metrics.
+
+5. Full demo reset with progress:
+   - Full `Пересоздать демо-данные` no longer freezes the page.
+   - It starts a background Python process and stores progress in
+     `DemoDataResetJob`.
+   - The modal shows progress, current stage, success/error and login link.
+
+6. Smart package recommendations:
+   - Manual placement suggestions now rank package options, not just one period.
+   - Suggestions can compare 1/2/3-period packages and mark the best option.
+   - The list is scrollable inside the modal.
+
+7. Background `Добрать незакрытые дни`:
+   - Full auto-fill for all remaining employees now starts as a background job,
+     so the browser does not hang.
+   - Model: `VacationScheduleAutoPlaceJob`.
+   - Command:
+
+   ```powershell
+   .\.venv\Scripts\python.exe manage.py run_schedule_draft_auto_place --job-id <id> --year 2027 --actor-id <hr_id>
+   ```
+
+   - The job still uses smart package selection:
+     `auto_place_remaining_schedule_draft(..., use_package_selection=True)`.
+   - UI shows progress and reloads the draft after success.
+   - Repeat clicks are guarded: if a job is already queued/running for the same
+     schedule, the view returns that existing job instead of starting another
+     background process.
+
+8. Repeat-click guards for demo reset actions:
+   - Full `Пересоздать демо-данные` reuses an active `DemoDataResetJob` instead
+     of launching a second seed process.
+   - `Сбросить до начальных настроек` uses a PostgreSQL advisory lock and is
+     blocked while full demo reset is queued/running.
+   - The quick-restore form disables its buttons immediately after submit.
+
+### Current Important Files
+
+- `apps/core/services/demo_locks.py`
+- `apps/core/management/commands/seed_vacation_requests.py`
+- `apps/core/management/commands/train_vacation_candidate_model.py`
+- `apps/core/services/demo_baseline.py`
+- `apps/core/services/demo_reset_jobs.py`
+- `apps/leave/services/historical_ml_traces.py`
+- `apps/leave/services/candidate_training.py`
+- `apps/leave/services/candidate_neural.py`
+- `apps/leave/services/candidate_scoring.py`
+- `apps/leave/services/schedule_drafts.py`
+- `apps/leave/services/schedule_auto_place_jobs.py`
+- `apps/leave/management/commands/run_schedule_draft_auto_place.py`
+- `templates/vacation_schedule_draft.html`
+- `templates/vacation_schedule_planning.html`
+- `static/js/schedule-draft.js`
+- `static/css/pages/schedule-draft.css`
+
+### Migrations Added Recently
+
+- `apps/core/migrations/0004_demobaselinesnapshot.py`
+- `apps/core/migrations/0005_demodataresetjob.py`
+- `apps/leave/migrations/0021_vacationscheduleautoplacejob.py`
+
+Run migrations on the other computer:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py migrate
+```
+
+### Transfer / New Computer Checklist
+
+1. Create/update `.env` from `.env.example`.
+2. Install requirements. PyTorch can take a long time; if pip hangs, install
+   PyTorch manually first, then continue with requirements.
+3. Run migrations:
+
+   ```powershell
+   .\.venv\Scripts\python.exe manage.py migrate
+   ```
+
+4. If the copied database is not available, recreate demo data:
+
+   ```powershell
+   .\.venv\Scripts\python.exe manage.py seed_vacation_requests --confirm-reset --seed-value 42
+   ```
+
+   Ask the user before reseeding if an existing demo DB is already present.
+
+5. Train or reuse v2:
+   - If `vacation_candidate_mlp_v2.json` and metrics are copied, no retraining
+     is needed.
+   - If not copied, run:
+
+   ```powershell
+   .\.venv\Scripts\python.exe manage.py train_vacation_candidate_model
+   ```
+
+6. For the dissertation demo, set:
+
+   ```env
+   VACATION_CANDIDATE_SCORER_VERSION=vacation-candidate-mlp-v2
+   ```
+
+7. Start the dev server with the helper:
+
+   ```powershell
+   .\scripts\django_server.ps1 -Action restart -Port 8001 -ReadyTimeoutSeconds 10
+   ```
+
+8. Browser smoke check:
+   - `/calendar/planning/2027/`
+   - `/calendar/planning/2027/?stage=draft`
+   - `/calendar/drafts/2027/`
+   - `/staffing/`
+
+### What To Do Next
+
+Recommended next development direction:
+
+1. Verify the transferred system on the new computer:
+   - migrations apply;
+   - server starts;
+   - v2 scorer loads;
+   - pages above open without console errors.
+
+2. Check the `Добрать незакрытые дни` flow visually:
+   - button text is consistent on planning and draft pages;
+   - modal opens;
+   - preview loads;
+   - background progress appears after confirmation;
+   - page reloads after success.
+
+3. If the user asks to continue product development, the next big feature is
+   still the formal schedule approval workflow:
+   - HR sends draft to department heads;
+   - department heads approve/return;
+   - enterprise head approves/returns;
+   - authorized person finalizes if required;
+   - draft becomes approved schedule.
+
+4. If performance is still a problem, optimize carefully:
+   - do not weaken hard rules;
+   - do not replace smart package selection with a dumb first-match approach;
+   - keep expensive package selection in background jobs;
+   - avoid rebuilding full page context when only counters are needed.
+
+### Working Rules For The Next Chat
+
+- The worktree is dirty and contains intentional changes from several stages.
+  Do not revert broad files just because they differ from `main`.
+- Do not run full reseed automatically. Ask the user first if demo data should
+  be recreated.
+- Do not run long `pip install` loops silently. If PyTorch/dependencies are
+  missing or installation hangs, tell the user exactly what to install.
+- Keep Russian UI text UTF-8 and verify it in the browser if terminal output
+  looks corrupted.
+- Use `Добрать незакрытые дни` as the action name.
 
 ## Current Product Direction
 

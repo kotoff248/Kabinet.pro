@@ -8,6 +8,14 @@
         <span class="material-icons-sharp" aria-hidden="true">restart_alt</span>
         Пересоздать демо-данные
     </button>
+    <button
+        type="button"
+        class="app-modal__button app-modal__button--secondary staffing-action-button staffing-action-button--hero staffing-action-button--demo-restore"
+        data-modal-open="staffing-demo-restore-modal"
+    >
+        <span class="material-icons-sharp" aria-hidden="true">restore_page</span>
+        Сбросить до начальных настроек
+    </button>
     {% endif %}
     {% if can_edit_staffing %}
     <form class="staffing-enterprise-control" method="post">

@@ -1,6 +1,7 @@
 import json
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.urls import reverse
 from django.utils import timezone
@@ -13,14 +14,11 @@ from apps.leave.models import (
     VacationPreference,
     VacationPreferenceCollection,
     VacationSchedule,
+    VacationScheduleAutoPlaceJob,
     VacationScheduleCandidate,
     VacationScheduleCandidateFeedback,
-    VacationScheduleCandidatePackage,
-    VacationScheduleCandidatePackagePeriod,
-    VacationScheduleGenerationRun,
     VacationScheduleDepartmentApproval,
     VacationScheduleItem,
-    VacationScheduleManualSuggestionCache,
     VacationUrgentClosureRequest,
 )
 from apps.leave.services.dates import add_months_safe, get_chargeable_leave_days
@@ -138,10 +136,11 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         self.assertGreater(preview["placed_count"], 0)
         first_option = preview["options"][0]
         self.assertTrue(first_option["is_preference_candidate"])
-        self.assertEqual(first_option["kind"], VacationScheduleCandidate.KIND_BACKUP_PREFERENCE)
+        self.assertEqual(first_option["kind"], "manual_package")
         self.assertEqual(first_option["preference_match"], "backup")
-        self.assertEqual(first_option["start_date"], backup_start.isoformat())
-        self.assertEqual(first_option["end_date"], backup_end.isoformat())
+        self.assertEqual(first_option["periods"][0]["kind"], VacationScheduleCandidate.KIND_BACKUP_PREFERENCE)
+        self.assertEqual(first_option["periods"][0]["start_date"], backup_start.isoformat())
+        self.assertEqual(first_option["periods"][0]["end_date"], backup_end.isoformat())
         self.assertFalse(VacationScheduleCandidate.objects.filter(schedule=schedule).exists())
 
         result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee)
@@ -191,66 +190,60 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         self.assertContains(draft_response, "schedule-draft-placement-form")
         self.assertNotContains(draft_response, "schedule-draft-manual-form")
 
-        response = self.client.post(reverse("schedule_draft_auto_place", args=[year]))
-
-        self.assertRedirects(response, reverse("schedule_draft_detail", args=[year]))
-        schedule.refresh_from_db()
-        self.assertGreater(schedule.manual_suggestion_cache_version, initial_cache_version)
-        self.assertFalse(
-            VacationScheduleManualSuggestionCache.objects.filter(schedule=schedule).exclude(
-                version=schedule.manual_suggestion_cache_version
-            ).exists()
-        )
-        after_count = VacationScheduleItem.objects.filter(schedule=schedule).count()
-        self.assertGreater(after_count, before_count)
-        self.assertTrue(
-            VacationScheduleItem.objects.filter(
-                schedule=schedule,
-                source=VacationScheduleItem.SOURCE_GENERATED,
-                manager_comment__contains="Автоматически распределено",
-            ).exists()
-        )
-        auto_run = (
-            schedule.generation_runs.filter(
-                candidates__kind__in=[
-                    VacationScheduleCandidate.KIND_AUTO,
-                    VacationScheduleCandidate.KIND_AUTO_URGENT,
-                    VacationScheduleCandidate.KIND_AUTO_TOPUP,
-                ]
+        with patch("apps.leave.views.start_schedule_auto_place_process") as mocked_start:
+            response = self.client.post(
+                reverse("schedule_draft_auto_place", args=[year]),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+                HTTP_ACCEPT="application/json",
             )
-            .distinct()
-            .order_by("-started_at", "-id")
-            .first()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["status"], VacationScheduleAutoPlaceJob.STATUS_QUEUED)
+        self.assertIn("status_url", payload)
+        job = VacationScheduleAutoPlaceJob.objects.get(id=payload["job_id"])
+        self.assertEqual(job.year, year)
+        self.assertEqual(job.actor, self.hr_employee)
+        self.assertEqual(job.schedule, schedule)
+        self.assertEqual(mocked_start.call_count, 1)
+        self.assertEqual(mocked_start.call_args.args[0].id, job.id)
+
+        with patch("apps.leave.views.start_schedule_auto_place_process") as mocked_second_start:
+            second_response = self.client.post(
+                reverse("schedule_draft_auto_place", args=[year]),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+                HTTP_ACCEPT="application/json",
+            )
+        self.assertEqual(second_response.status_code, 200)
+        second_payload = second_response.json()
+        self.assertEqual(second_payload["job_id"], job.id)
+        self.assertIn("уже выполняется", second_payload["message"])
+        mocked_second_start.assert_not_called()
+        self.assertEqual(
+            VacationScheduleAutoPlaceJob.objects.filter(
+                year=year,
+                status__in=[
+                    VacationScheduleAutoPlaceJob.STATUS_QUEUED,
+                    VacationScheduleAutoPlaceJob.STATUS_RUNNING,
+                ],
+            ).count(),
+            1,
         )
-        self.assertIsNotNone(auto_run)
-        self.assertEqual(auto_run.status, VacationScheduleGenerationRun.STATUS_COMPLETED)
-        self.assertGreater(auto_run.candidates_count, 0)
-        self.assertTrue(auto_run.candidates.filter(decision=VacationScheduleCandidate.DECISION_SELECTED).exists())
-        self.assertTrue(
-            VacationScheduleItem.objects.filter(
-                schedule=schedule,
-                generation_run=auto_run,
-                selected_candidate__isnull=False,
-                generated_by_ai=True,
-                ai_score__isnull=False,
-            ).exists()
+
+        status_response = self.client.get(payload["status_url"], HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(status_response.status_code, 200)
+        self.assertEqual(status_response.json()["job_id"], job.id)
+        invalid_status_response = self.client.get(
+            reverse("schedule_draft_auto_place_status", args=[year, job.id]) + "?token=wrong",
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
-        selected_auto_candidate = auto_run.candidates.filter(
-            decision=VacationScheduleCandidate.DECISION_SELECTED,
-        ).first()
-        auto_features = selected_auto_candidate.features
-        self.assertIn(
-            auto_features["candidate_kind"],
-            [
-                VacationScheduleCandidate.KIND_AUTO,
-                VacationScheduleCandidate.KIND_AUTO_URGENT,
-                VacationScheduleCandidate.KIND_AUTO_TOPUP,
-            ],
-        )
-        self.assertFalse(auto_features["preference_has_preference"])
-        self.assertGreater(auto_features["planning_candidate_target_days"], 0)
-        self.assertGreater(auto_features["planning_candidate_coverage_ratio"], 0)
-        self.assertIn("risk_overlapping_absences_count", auto_features)
+        self.assertEqual(invalid_status_response.status_code, 403)
+
+        schedule.refresh_from_db()
+        self.assertEqual(schedule.manual_suggestion_cache_version, initial_cache_version)
+        after_count = VacationScheduleItem.objects.filter(schedule=schedule).count()
+        self.assertEqual(after_count, before_count)
 
     def test_auto_place_prefers_whole_long_leave_before_splitting(self):
         year = self._year()

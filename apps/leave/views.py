@@ -1,4 +1,5 @@
 import json
+import secrets
 from datetime import date
 from decimal import Decimal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -37,6 +38,7 @@ from apps.leave.models import (
     VacationPreferenceCollection,
     VacationRequest,
     VacationSchedule,
+    VacationScheduleAutoPlaceJob,
     VacationScheduleChangeRequest,
     VacationScheduleItem,
     VacationUrgentClosureRequest,
@@ -80,7 +82,6 @@ from .services.requests import (
     reject_vacation_request,
 )
 from .services.schedule_drafts import (
-    auto_place_remaining_schedule_draft,
     build_manual_schedule_draft_package_preview,
     build_manual_schedule_draft_preview,
     build_schedule_draft_auto_place_preview,
@@ -92,6 +93,11 @@ from .services.schedule_drafts import (
     get_schedule_draft_status,
     place_manual_schedule_draft_item,
     place_manual_schedule_draft_items,
+)
+from .services.schedule_auto_place_jobs import (
+    get_or_create_schedule_auto_place_job,
+    schedule_auto_place_job_payload,
+    start_schedule_auto_place_process,
 )
 from .services.schedule_planning import (
     build_schedule_planning_page_context,
@@ -133,6 +139,13 @@ def _form_errors_to_messages(form):
 
 def _validation_error_message(exc):
     return " ".join(exc.messages) if getattr(exc, "messages", None) else str(exc)
+
+
+def _request_wants_json(request):
+    return (
+        request.headers.get("x-requested-with") == "XMLHttpRequest"
+        or "application/json" in request.headers.get("accept", "")
+    )
 
 
 def _urgent_closure_create_success_message(demo_result):
@@ -853,8 +866,12 @@ def create_schedule_draft(request, year):
 @employee_required
 def auto_place_schedule_draft_remaining(request, year):
     current_employee = get_current_employee(request)
+    wants_json = _request_wants_json(request)
     if not is_hr_employee(current_employee):
-        messages.error(request, "Автоматически распределить остатки может только HR.")
+        message = "Добрать незакрытые дни может только HR."
+        if wants_json:
+            return JsonResponse({"ok": False, "message": message}, status=403)
+        messages.error(request, message)
         if is_authorized_person_employee(current_employee):
             return redirect("applications")
         return redirect("calendar")
@@ -863,31 +880,75 @@ def auto_place_schedule_draft_remaining(request, year):
 
     redirect_after_action = _safe_next_url(request, reverse("schedule_draft_detail", args=[year]))
     try:
-        result = auto_place_remaining_schedule_draft(year=year, actor=current_employee)
+        job, created = get_or_create_schedule_auto_place_job(year=year, actor=current_employee)
+        if created:
+            start_schedule_auto_place_process(job)
     except ValidationError as exc:
-        messages.error(request, _validation_error_message(exc))
+        message = _validation_error_message(exc)
+        if wants_json:
+            return JsonResponse({"ok": False, "message": message}, status=400)
+        messages.error(request, message)
+        return redirect(redirect_after_action)
+    except Exception as exc:
+        message = f"Не удалось запустить действие «Добрать незакрытые дни»: {exc}"
+        if wants_json:
+            return JsonResponse({"ok": False, "message": message}, status=500)
+        messages.error(request, message)
         return redirect(redirect_after_action)
 
-    if result["placed_count"]:
-        messages.success(
-            request,
-            (
-                f"Автоматически размещено {result['placed_count']} пунктов черновика. "
-                f"Осталось проверить вручную: {result['unresolved_count']}."
+    status_url = f"{reverse('schedule_draft_auto_place_status', args=[year, job.id])}?token={job.token}"
+    payload = schedule_auto_place_job_payload(job)
+    payload.update(
+        {
+            "token": job.token,
+            "status_url": status_url,
+            "message": (
+                "Действие «Добрать незакрытые дни» запущено в фоне."
+                if created
+                else "Действие «Добрать незакрытые дни» уже выполняется."
             ),
-        )
+        }
+    )
+    if wants_json:
+        return JsonResponse(payload)
+
+    if created:
+        messages.info(request, "Действие «Добрать незакрытые дни» запущено в фоне. Обновите страницу через несколько секунд.")
     else:
-        messages.info(request, "Система не нашла безопасных дат для автоматического размещения оставшихся сотрудников.")
+        messages.info(request, "Действие «Добрать незакрытые дни» уже выполняется. Дождитесь завершения текущей задачи.")
     return redirect(redirect_after_action)
+
+
+@employee_required
+def auto_place_schedule_draft_status(request, year, job_id):
+    current_employee = get_current_employee(request)
+    if not is_hr_employee(current_employee):
+        return JsonResponse(
+            {"ok": False, "message": "Статус действия «Добрать незакрытые дни» может открыть только HR."},
+            status=403,
+        )
+
+    token = request.GET.get("token", "")
+    job = get_object_or_404(VacationScheduleAutoPlaceJob, id=job_id, year=year)
+    if not token or not secrets.compare_digest(token, job.token):
+        return JsonResponse({"ok": False, "message": "Некорректный токен статуса."}, status=403)
+
+    return JsonResponse(schedule_auto_place_job_payload(job))
 
 
 @employee_required
 def auto_place_schedule_draft_preview(request, year):
     current_employee = get_current_employee(request)
     if request.method != "GET":
-        return JsonResponse({"ok": False, "message": "Предпросмотр автодобора доступен только GET-запросом."}, status=405)
+        return JsonResponse(
+            {"ok": False, "message": "Предпросмотр действия «Добрать незакрытые дни» доступен только GET-запросом."},
+            status=405,
+        )
     if not is_hr_employee(current_employee):
-        return JsonResponse({"ok": False, "message": "Предпросмотр автодобора может открыть только HR."}, status=403)
+        return JsonResponse(
+            {"ok": False, "message": "Предпросмотр действия «Добрать незакрытые дни» может открыть только HR."},
+            status=403,
+        )
 
     try:
         preview = build_schedule_draft_auto_place_preview(year=year)

@@ -21,11 +21,31 @@
         Это действие предназначено только для демонстрационной базы и необратимо заменит текущие демо-данные.
     </p>
 
-    <form method="post" action="{% url 'reset_demo_data' %}" class="staffing-demo-reset__form">
+    <div class="staffing-demo-reset__progress" data-demo-reset-progress hidden>
+        <div class="staffing-demo-reset__progress-head">
+            <strong data-demo-reset-stage>Подготовка</strong>
+            <span data-demo-reset-percent>0%</span>
+        </div>
+        <div class="staffing-demo-reset__progress-track" aria-hidden="true">
+            <span class="staffing-demo-reset__progress-bar" data-demo-reset-bar style="width: 0%;"></span>
+        </div>
+        <p class="staffing-demo-reset__progress-message" data-demo-reset-message>
+            Пересоздание запускается в фоне.
+        </p>
+    </div>
+
+    <div class="staffing-demo-reset__result" data-demo-reset-result hidden>
+        <p data-demo-reset-result-message></p>
+        <a href="{% url 'login' %}" class="app-modal__button app-modal__button--primary" data-demo-reset-login hidden>
+            Войти заново
+        </a>
+    </div>
+
+    <form method="post" action="{% url 'reset_demo_data' %}" class="staffing-demo-reset__form" data-demo-reset-form>
         {% csrf_token %}
         <div class="app-modal__actions staffing-delete-modal__actions">
-            <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>
-            <button type="submit" class="app-modal__button app-modal__button--danger">Пересоздать демо-данные</button>
+            <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close data-demo-reset-cancel>Отменить</button>
+            <button type="submit" class="app-modal__button app-modal__button--danger" data-demo-reset-submit>Пересоздать демо-данные</button>
         </div>
     </form>
 </div>

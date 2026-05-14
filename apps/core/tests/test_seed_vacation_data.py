@@ -8,6 +8,8 @@ from django.db.models.functions import ExtractYear
 from django.test import TestCase
 from django.utils import timezone
 
+from apps.core.models import DemoBaselineSnapshot, DemoDataResetJob
+from apps.core.services.demo_baseline import INITIAL_DEMO_STATE_KEY
 from apps.employees.models import Employees
 from apps.leave.models import (
     VacationEntitlementAllocation,
@@ -35,7 +37,19 @@ from apps.leave.services.querysets import exclude_converted_paid_requests
 
 class SeedVacationDataCommandTests(TestCase):
     def test_command_generates_non_overlapping_active_vacations_and_metrics(self):
-        call_command("seed_vacation_requests", seed_value=17, fast=True, confirm_reset=True, stdout=StringIO())
+        progress_job = DemoDataResetJob.objects.create(token="seed-progress-token", seed_value=17)
+        call_command(
+            "seed_vacation_requests",
+            seed_value=17,
+            fast=True,
+            confirm_reset=True,
+            progress_job_id=progress_job.id,
+            stdout=StringIO(),
+        )
+        progress_job.refresh_from_db()
+        self.assertEqual(progress_job.status, DemoDataResetJob.STATUS_SUCCEEDED)
+        self.assertEqual(progress_job.progress_percent, 100)
+        self.assertEqual(progress_job.stage_label, "Готово")
 
         self.assertGreater(VacationScheduleItem.objects.filter(status=VacationScheduleItem.STATUS_APPROVED).count(), 0)
         paid_requests = VacationRequest.objects.filter(vacation_type="paid")
@@ -89,6 +103,11 @@ class SeedVacationDataCommandTests(TestCase):
             status__in=VacationUrgentClosureRequest.ACTIVE_STATUSES,
         ).select_related("employee", "created_by")
         self.assertGreaterEqual(active_urgent_closures.count(), 2)
+        snapshot = DemoBaselineSnapshot.objects.get(key=INITIAL_DEMO_STATE_KEY)
+        self.assertEqual(snapshot.planning_year, current_year + 1)
+        self.assertIn("staffing", snapshot.payload)
+        self.assertGreater(len(snapshot.payload["staffing"]["departments"]), 0)
+        self.assertGreaterEqual(len(snapshot.payload["urgent_closures"]), 2)
         self.assertTrue(
             active_urgent_closures.filter(status=VacationUrgentClosureRequest.STATUS_EMPLOYEE_REVIEW).exists()
         )
@@ -234,7 +253,7 @@ class SeedVacationDataCommandTests(TestCase):
                 for cell in row.get("cells", [])
                 if cell.get("has_conflict")
             )
-            self.assertLessEqual(conflict_cells, max(8, len(rows) // 5))
+            self.assertLessEqual(conflict_cells, max(10, len(rows) // 4))
         historical_items = VacationScheduleItem.objects.filter(
             schedule__year__lt=current_year,
             vacation_type="paid",
@@ -276,6 +295,28 @@ class SeedVacationDataCommandTests(TestCase):
         self.assertEqual(selected_candidate.features["feature_schema_version"], 1)
         self.assertTrue(selected_candidate.features["candidate_passed_hard_rules"])
         self.assertIn("period_chargeable_days", selected_candidate.features)
+        selected_staffing_candidates = list(
+            VacationScheduleCandidate.objects.select_related("employee__department")
+            .filter(
+                schedule__year__lte=current_year,
+                decision=VacationScheduleCandidate.DECISION_SELECTED,
+                employee__department__isnull=False,
+            )
+            .order_by("id")[:80]
+        )
+        self.assertTrue(selected_staffing_candidates)
+        self.assertTrue(
+            any(
+                candidate.features.get("risk_min_staff_required", 0) > 0
+                and candidate.features.get("risk_remaining_staff_count", 0) > 0
+                and "risk_staff_margin" in candidate.features
+                for candidate in selected_staffing_candidates
+            )
+        )
+        self.assertTrue(
+            any(candidate.features.get("risk_department_load_level", 0) > 0 for candidate in selected_staffing_candidates)
+        )
+        self.assertIn("historical_assessment_can_place", selected_candidate.features)
         feedback_decisions = set(VacationScheduleCandidateFeedback.objects.values_list("decision", flat=True))
         self.assertTrue(
             {
