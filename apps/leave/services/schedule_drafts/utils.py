@@ -208,6 +208,135 @@ def _manual_reason(kind, text, detail=""):
     }
 
 
+def _int_or_none(value):
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _staffing_chip(label, tone="neutral"):
+    return {
+        "label": label,
+        "tone": tone,
+    }
+
+
+def _staffing_summary_from_risk_payload(risk_payload):
+    risk_payload = risk_payload or {}
+    if not risk_payload:
+        return {}
+
+    risk_explanation = risk_payload.get("risk_explanation") or {}
+    if any(detail.get("kind") == "missing_department" for detail in (risk_explanation.get("details") or [])):
+        return {}
+
+    remaining_staff = _int_or_none(risk_payload.get("remaining_staff_count"))
+    if remaining_staff is None:
+        remaining_staff = _int_or_none(risk_explanation.get("remaining_staff"))
+    required_staff = _int_or_none(risk_payload.get("min_staff_required"))
+    if required_staff is None:
+        required_staff = _int_or_none(risk_explanation.get("required_staff"))
+    overlapping_absences = _int_or_none(risk_payload.get("overlapping_absences_count"))
+    if overlapping_absences is None:
+        overlapping_absences = _int_or_none(risk_explanation.get("overlapping_absences_count"))
+    department_load_level = _int_or_none(risk_payload.get("department_load_level"))
+    risk_score = _int_or_none(risk_payload.get("risk_score")) or 0
+    risk_level = risk_payload.get("risk_level") or VacationRequest.RISK_LOW
+    is_conflict = bool(risk_explanation.get("is_conflict"))
+
+    if (
+        remaining_staff is None
+        and required_staff is None
+        and overlapping_absences is None
+        and department_load_level is None
+    ):
+        return {}
+
+    absent_total = overlapping_absences + 1 if overlapping_absences is not None else None
+    staff_margin = (
+        remaining_staff - required_staff
+        if remaining_staff is not None and required_staff is not None and required_staff > 0
+        else None
+    )
+    if is_conflict or (staff_margin is not None and staff_margin < 0):
+        tone = "conflict"
+    elif (
+        staff_margin == 0
+        or risk_level == VacationRequest.RISK_HIGH
+        or (department_load_level is not None and department_load_level >= 4)
+    ):
+        tone = "warning"
+    else:
+        tone = "ok"
+
+    chips = []
+    if absent_total is not None:
+        chips.append(_staffing_chip(f"Отсутствуют {absent_total}"))
+    if remaining_staff is not None:
+        if required_staff is not None and required_staff > 0:
+            chips.append(_staffing_chip(f"Останется {remaining_staff} / мин. {required_staff}", tone if tone == "conflict" else "neutral"))
+        else:
+            chips.append(_staffing_chip(f"Останется {remaining_staff}"))
+    if staff_margin is not None:
+        if staff_margin < 0:
+            chips.append(_staffing_chip(f"Нехватка {abs(staff_margin)}", "conflict"))
+        elif staff_margin == 0:
+            chips.append(_staffing_chip("На минимуме", "warning"))
+        else:
+            chips.append(_staffing_chip(f"Запас +{staff_margin}", "ok"))
+    elif department_load_level is not None and department_load_level >= 4:
+        chips.append(_staffing_chip(f"Нагрузка {department_load_level}/5", "warning"))
+
+    return {
+        "absent_total": absent_total,
+        "overlapping_absences_count": overlapping_absences,
+        "remaining_staff": remaining_staff,
+        "required_staff": required_staff,
+        "staff_margin": staff_margin,
+        "department_load_level": department_load_level,
+        "risk_score": risk_score,
+        "risk_level": risk_level,
+        "is_conflict": is_conflict,
+        "tone": tone,
+        "chips": chips[:3],
+    }
+
+
+def _staffing_summary_from_candidate(candidate):
+    risk_payload = (candidate.assessment or {}).get("risk_payload") or {}
+    return _staffing_summary_from_risk_payload(risk_payload)
+
+
+def _staffing_summary_sort_key(payload):
+    payload = payload or {}
+    summary = payload.get("staffing_summary") or {}
+    tone_rank = {
+        "ok": 0,
+        "warning": 1,
+        "conflict": 2,
+    }.get(summary.get("tone"), 0)
+    staff_margin = summary.get("staff_margin")
+    if staff_margin is None:
+        staff_margin = 999
+    return (
+        tone_rank,
+        int(payload.get("risk_score") or summary.get("risk_score") or 0),
+        -int(staff_margin),
+    )
+
+
+def _worst_staffing_summary_from_payloads(payloads):
+    payloads = [payload for payload in (payloads or []) if (payload.get("staffing_summary") or {})]
+    if not payloads:
+        return {}, []
+    summary = dict(max(payloads, key=_staffing_summary_sort_key).get("staffing_summary") or {})
+    chips = list(summary.get("chips") or [])
+    return summary, chips
+
+
 def _preference_chargeable_days(preference):
     if (
         preference is None

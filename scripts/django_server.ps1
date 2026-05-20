@@ -127,7 +127,7 @@ function Start-Server {
     }
 
     # Keep redirection inside cmd.exe. PowerShell's Start-Process redirection can
-    # keep the Codex shell request open while the long-lived Django child runs.
+    # keep the parent shell request open while the long-lived Django child runs.
     $cmdLine = "call `"$launchPython`" manage.py runserver $HostName`:$Port --noreload 1> .run\django-$Port.out.log 2> .run\django-$Port.err.log"
     $process = Start-Process `
         -FilePath $env:ComSpec `

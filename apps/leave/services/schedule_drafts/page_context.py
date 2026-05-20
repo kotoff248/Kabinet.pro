@@ -388,6 +388,165 @@ def _draft_item_ai_context(item):
     }
 
 
+def _package_recommendation_label(package):
+    features = package.features or {}
+    recommendation = features.get("package_recommendation")
+    if not recommendation and package.score is not None:
+        if package.score >= Decimal("80.00"):
+            recommendation = "prefer"
+        elif package.score >= Decimal("55.00"):
+            recommendation = "normal"
+        else:
+            recommendation = "avoid"
+    return _candidate_recommendation_label(recommendation)
+
+
+def _package_preference_label(features):
+    if features.get("has_primary_preference_period"):
+        return "Учтено основное пожелание"
+    if features.get("has_backup_preference_period"):
+        return "Учтено запасное пожелание"
+    if features.get("has_preference_period"):
+        return "Учтено пожелание"
+    return "Пожелание не использовано"
+
+
+def _package_period_payload(period):
+    features = period.features if isinstance(period.features, dict) else {}
+    risk_level = period.risk_level or VacationScheduleItem.RISK_LOW
+    return {
+        "period_label": _short_period_label(period.start_date, period.end_date),
+        "full_period_label": _period_label(period.start_date, period.end_date),
+        "chargeable_days_label": _days_label(period.chargeable_days),
+        "risk_score": period.risk_score,
+        "risk_level": risk_level,
+        "risk_label": dict(VacationScheduleItem.RISK_CHOICES).get(risk_level, "Низкий"),
+        "risk_tone": _risk_tone(risk_level, bool(features.get("risk_is_conflict"))),
+        "hard_rules_label": "Правила пройдены" if period.passed_hard_rules else "Есть блокировка",
+        "block_reason": period.block_reason,
+    }
+
+
+def _package_payload(package, *, alternatives_count=None):
+    features = package.features or {}
+    periods = [_package_period_payload(period) for period in package.periods.all()]
+    risk_level = package.risk_level or VacationScheduleItem.RISK_LOW
+    hard_rules_label = "Жесткие правила пройдены" if package.passed_hard_rules else "Есть блокировка правил"
+    package_days_label = _days_label(package.total_chargeable_days)
+    preference_label = _package_preference_label(features)
+    stats = [
+        {"label": "Закрыто дней", "value": package_days_label},
+        {"label": "Пожелания", "value": preference_label},
+        {"label": "Правила", "value": hard_rules_label},
+        {
+            "label": "Максимальный риск",
+            "value": f"{dict(VacationScheduleItem.RISK_CHOICES).get(risk_level, 'Низкий')} · {package.risk_score}%",
+        },
+    ]
+    if package.model_version:
+        stats.append({"label": "Модель", "value": package.model_version})
+    if package.confidence is not None:
+        stats.append({"label": "Уверенность", "value": _percent_label(package.confidence)})
+
+    factors = [
+        f"пакет закрывает {package_days_label}",
+        preference_label.lower(),
+        hard_rules_label.lower(),
+        f"максимальный риск: {dict(VacationScheduleItem.RISK_CHOICES).get(risk_level, 'Низкий').lower()}",
+    ]
+    if alternatives_count:
+        factors.append(f"сравнено альтернатив: {alternatives_count}")
+
+    return {
+        "id": package.id,
+        "periods_count": package.periods_count,
+        "total_chargeable_days": package.total_chargeable_days,
+        "total_chargeable_days_label": package_days_label,
+        "score": package.score,
+        "score_label": _percent_label(package.score),
+        "confidence": package.confidence,
+        "confidence_label": _percent_label(package.confidence),
+        "model_version": package.model_version,
+        "recommendation_label": _package_recommendation_label(package),
+        "explanation": package.explanation,
+        "decision": package.decision,
+        "decision_label": dict(VacationScheduleCandidatePackage.DECISION_CHOICES).get(package.decision, "Не выбран"),
+        "decision_rank": package.decision_rank,
+        "risk_score": package.risk_score,
+        "risk_level": risk_level,
+        "risk_label": dict(VacationScheduleItem.RISK_CHOICES).get(risk_level, "Низкий"),
+        "risk_tone": _risk_tone(risk_level),
+        "passed_hard_rules": package.passed_hard_rules,
+        "hard_rules_label": hard_rules_label,
+        "preference_label": preference_label,
+        "stats": stats,
+        "factors": factors,
+        "periods": periods,
+    }
+
+
+def _selected_package_for_item(item):
+    package = (
+        VacationScheduleCandidatePackage.objects.filter(
+            schedule=item.schedule,
+            employee=item.employee,
+            decision=VacationScheduleCandidatePackage.DECISION_SELECTED,
+            periods__schedule_item=item,
+        )
+        .prefetch_related("periods")
+        .order_by("decision_rank", "-score", "-confidence", "id")
+        .first()
+    )
+    if package is not None:
+        return package
+    if item.generation_run_id:
+        return (
+            VacationScheduleCandidatePackage.objects.filter(
+                schedule=item.schedule,
+                employee=item.employee,
+                generation_run_id=item.generation_run_id,
+                decision=VacationScheduleCandidatePackage.DECISION_SELECTED,
+            )
+            .prefetch_related("periods")
+            .order_by("decision_rank", "-selected_at", "-score", "id")
+            .first()
+        )
+    return None
+
+
+def _package_report_for_item(item):
+    selected_package = _selected_package_for_item(item)
+    if selected_package is None:
+        return None
+
+    alternatives_queryset = VacationScheduleCandidatePackage.objects.filter(
+        schedule=item.schedule,
+        employee=item.employee,
+    ).exclude(pk=selected_package.pk)
+    if selected_package.generation_run_id:
+        alternatives_queryset = alternatives_queryset.filter(generation_run_id=selected_package.generation_run_id)
+    alternatives_queryset = alternatives_queryset.prefetch_related("periods").order_by(
+        "decision_rank",
+        "-score",
+        "-confidence",
+        "id",
+    )
+    alternatives_count = alternatives_queryset.count()
+    alternatives = [
+        _package_payload(package)
+        for package in alternatives_queryset[:3]
+    ]
+    selected_payload = _package_payload(selected_package, alternatives_count=alternatives_count)
+    selected_payload["alternatives"] = alternatives
+    selected_payload["alternatives_count"] = alternatives_count
+    selected_payload["comparison_note"] = (
+        f"Показаны ближайшие альтернативы: {len(alternatives)} из {alternatives_count}."
+        if alternatives_count
+        else "Для этого пункта не сохранены альтернативные пакеты."
+    )
+    return selected_payload
+
+
 def _candidate_kind_label(kind):
     return dict(VacationScheduleCandidate.KIND_CHOICES).get(kind, "Кандидат")
 
@@ -489,6 +648,7 @@ def build_schedule_draft_item_review_context(item, *, actor=None):
         "risk_score": item.risk_score,
         "risk_tone": _risk_tone(item.risk_level),
         "ai_decision": _draft_item_ai_context(item),
+        "package_report": _package_report_for_item(item),
         "feedback": feedback_context,
         "candidates": [_stored_candidate_payload(candidate) for candidate in candidates],
         "calendar_url": _calendar_employee_url(
@@ -504,6 +664,7 @@ def _generation_candidate_payload(candidate, *, rank=None):
     risk_level = candidate.metadata.get("risk_level") or VacationScheduleItem.RISK_LOW
     risk_score = int(candidate.metadata.get("risk_score") or 0)
     is_conflict = bool((candidate.assessment or {}).get("risk_payload", {}).get("risk_explanation", {}).get("is_conflict"))
+    staffing_summary = _staffing_summary_from_candidate(candidate)
     preference_match = candidate.metadata.get("preference_match") or ""
     preference_match_label = candidate.metadata.get("preference_match_label") or ""
     passed_hard_rules = _candidate_passed_hard_rules(candidate)
@@ -526,6 +687,8 @@ def _generation_candidate_payload(candidate, *, rank=None):
         "risk_level": risk_level,
         "risk_label": dict(VacationScheduleItem.RISK_CHOICES).get(risk_level, "Низкий"),
         "risk_tone": _risk_tone(risk_level, is_conflict),
+        "staffing_summary": staffing_summary,
+        "staffing_chips": list(staffing_summary.get("chips") or []),
         "score": _candidate_scoring_decimal(candidate, "scoring_score"),
         "score_label": _percent_label(_candidate_scoring_decimal(candidate, "scoring_score")),
         "confidence": _candidate_scoring_decimal(candidate, "scoring_confidence"),

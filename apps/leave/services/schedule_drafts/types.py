@@ -56,3 +56,6 @@ class DraftGenerationContext:
     placements: list
     planning_need_by_employee: dict
     excluded_schedule_item_ids: set = field(default_factory=set)
+    planning_static_by_employee: dict = field(default_factory=dict)
+    assessment_cache: dict = field(default_factory=dict)
+    risk_context_cache: dict = field(default_factory=dict)

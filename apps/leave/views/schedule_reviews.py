@@ -23,6 +23,7 @@ from apps.leave.services.schedule_drafts.department_rework import (
     get_schedule_department_rework_approval,
     replace_department_rework_employee_package,
 )
+from apps.leave.services.schedule_drafts.constants import MANUAL_DRAFT_VISIBLE_PACKAGE_SUGGESTIONS
 from apps.leave.services.schedule_drafts.page_context import build_schedule_draft_page_context
 from apps.leave.services.schedule_approvals import (
     approve_schedule_enterprise_review as approve_schedule_enterprise_review_service,
@@ -175,7 +176,7 @@ def schedule_department_review_rework_suggestions(request, year, approval_id, em
         return JsonResponse({"ok": False, "message": "Доработать возвращённый отдел может только HR."}, status=403)
 
     try:
-        limit = int(request.GET.get("limit") or 3)
+        limit = int(request.GET.get("limit") or MANUAL_DRAFT_VISIBLE_PACKAGE_SUGGESTIONS)
         suggestions = build_schedule_department_rework_suggestions(
             year=year,
             approval_id=approval_id,

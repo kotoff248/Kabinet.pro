@@ -46,6 +46,7 @@ from apps.leave.services.schedule_drafts.manual_suggestions import (
     build_schedule_draft_manual_suggestions,
     build_schedule_draft_urgent_closure_options,
 )
+from apps.leave.services.schedule_drafts.constants import MANUAL_DRAFT_VISIBLE_PACKAGE_SUGGESTIONS
 from apps.leave.services.schedule_drafts.page_context import (
     build_manual_schedule_draft_preview,
     build_schedule_draft_item_review_context,
@@ -316,7 +317,7 @@ def manual_schedule_draft_suggestions(request, year, employee_id):
 
     before_items_count = VacationScheduleItem.objects.count()
     try:
-        limit = int(request.GET.get("limit") or 3)
+        limit = int(request.GET.get("limit") or MANUAL_DRAFT_VISIBLE_PACKAGE_SUGGESTIONS)
         suggestions = build_schedule_draft_manual_suggestions(year=year, employee_id=employee_id, limit=limit)
     except ValidationError as exc:
         return JsonResponse({"ok": False, "message": _validation_error_message(exc)}, status=400)

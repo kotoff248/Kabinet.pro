@@ -51,12 +51,14 @@ class Command(BaseCommand):
             processed = int(payload.get("processed") or 0)
             percent = 5 + int(min(90, (processed / total) * 90))
             employee_name = payload.get("employee_name") or "сотрудник"
+            stage_label = payload.get("stage_label") or f"Добрать незакрытые дни: {processed} из {total}"
+            message = payload.get("message") or f"Подбираю лучший пакет для: {employee_name}."
             update_schedule_auto_place_job_progress(
                 job_id,
                 status=VacationScheduleAutoPlaceJob.STATUS_RUNNING,
                 progress_percent=percent,
-                stage_label=f"Добрать незакрытые дни: {processed} из {total}",
-                message=f"Подбираю лучший пакет для: {employee_name}.",
+                stage_label=stage_label,
+                message=message,
                 placed_count=payload.get("placed_count"),
                 unresolved_count=payload.get("unresolved_count"),
                 processed_employees=processed,

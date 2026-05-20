@@ -152,6 +152,17 @@ def _manual_package_preview_json(preview):
         "risk_short_reason": preview["risk_short_reason"],
         "risk_recommended_action": preview["risk_recommended_action"],
         "risk_is_conflict": preview["risk_is_conflict"],
+        "staffing_summary": preview.get("staffing_summary") or {},
+        "staffing_chips": preview.get("staffing_chips") or [],
+        "package_score": _json_number(preview.get("package_score", 0)),
+        "package_score_label": preview.get("package_score_label", ""),
+        "package_confidence": _json_number(preview.get("package_confidence", 0)),
+        "package_confidence_label": preview.get("package_confidence_label", ""),
+        "package_model_version": preview.get("package_model_version", ""),
+        "package_recommendation": preview.get("package_recommendation", ""),
+        "package_recommendation_label": preview.get("package_recommendation_label", ""),
+        "package_explanation": preview.get("package_explanation", ""),
+        "alternative_count": preview.get("alternative_count", 0),
         "periods": [
             {
                 "order": period["order"],
@@ -171,6 +182,8 @@ def _manual_package_preview_json(preview):
                 "risk_short_reason": period["risk_short_reason"],
                 "risk_recommended_action": period["risk_recommended_action"],
                 "risk_is_conflict": period["risk_is_conflict"],
+                "staffing_summary": period.get("staffing_summary") or {},
+                "staffing_chips": period.get("staffing_chips") or [],
                 "remaining_after_period": _json_number(period["remaining_after_period"]),
             }
             for period in preview["periods"]

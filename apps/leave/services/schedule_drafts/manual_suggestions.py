@@ -131,6 +131,8 @@ def _manual_package_target_candidates(context, employee, current_items, planning
                 max_chargeable_days=target,
                 limit=AUTO_DRAFT_MAX_CANDIDATES_PER_STRATEGY,
                 exclude_schedule_item_ids=context.excluded_schedule_item_ids,
+                assessment_cache=context.assessment_cache,
+                risk_context_cache=context.risk_context_cache,
             )
         )
         candidates.extend(
@@ -202,6 +204,8 @@ def _backup_preference_candidate(context, employee, planning_need, *, metadata=N
         context.placements,
         max_chargeable_days=Decimal(target_days),
         exclude_schedule_item_ids=context.excluded_schedule_item_ids,
+        assessment_cache=context.assessment_cache,
+        risk_context_cache=context.risk_context_cache,
     )
 
 
@@ -216,6 +220,9 @@ def _manual_package_context_after_candidate(context, employee, current_items, ca
         placements=list(context.placements),
         planning_need_by_employee=dict(context.planning_need_by_employee),
         excluded_schedule_item_ids=set(context.excluded_schedule_item_ids),
+        planning_static_by_employee=context.planning_static_by_employee,
+        assessment_cache=context.assessment_cache,
+        risk_context_cache=context.risk_context_cache,
     )
     next_items = list(current_items)
     chargeable_days = candidate.metadata.get("chargeable_days") or candidate.assessment.get("chargeable_days") or 0
@@ -270,6 +277,8 @@ def _build_manual_candidate_package_from_seed(context, employee, seed_candidate)
                 max_chargeable_days=planning_need["open_required_days"],
                 limit=AUTO_DRAFT_MAX_CANDIDATES_PER_STRATEGY,
                 exclude_schedule_item_ids=current_context.excluded_schedule_item_ids,
+                assessment_cache=current_context.assessment_cache,
+                risk_context_cache=current_context.risk_context_cache,
             )
         )
         next_candidates = _rank_generation_candidates(
@@ -362,7 +371,7 @@ def _manual_candidate_packages(context, employee, limit=MANUAL_DRAFT_MAX_PACKAGE
     return _rank_manual_candidate_packages(packages)[:limit]
 
 
-def _manual_package_payload(package, *, rank=None):
+def _manual_package_payload(package, *, rank=None, alternative_count=0):
     candidates = [_apply_candidate_scoring(candidate) for candidate in package.candidates]
     period_payloads = [_generation_candidate_payload(candidate, rank=index) for index, candidate in enumerate(candidates, start=1)]
     preference_payload = next((payload for payload in period_payloads if payload.get("is_preference_candidate")), None)
@@ -380,6 +389,9 @@ def _manual_package_payload(package, *, rank=None):
         default={},
     )
     first_period = period_payloads[0] if period_payloads else {}
+    staffing_summary, staffing_chips = _worst_staffing_summary_from_payloads(period_payloads)
+    package_explanation = package.metadata.get("package_scoring_explanation") or package.explanation
+    package_recommendation = package.metadata.get("package_recommendation", "")
     return {
         "rank": rank,
         "periods_count": len(period_payloads),
@@ -401,13 +413,20 @@ def _manual_package_payload(package, *, rank=None):
         "risk_level": highest_risk.get("risk_level") or VacationScheduleItem.RISK_LOW,
         "risk_label": highest_risk.get("risk_label") or "Низкий",
         "risk_tone": highest_risk.get("risk_tone") or "low",
+        "staffing_summary": staffing_summary,
+        "staffing_chips": staffing_chips,
         "score": package_score,
         "score_label": _percent_label(package_score),
         "confidence": avg_confidence,
         "confidence_label": _percent_label(avg_confidence),
-        "recommendation_label": "Можно применить",
-        "explanation": package.explanation,
-        "message": package.explanation,
+        "model_version": package.metadata.get("package_model_version", ""),
+        "scorer_kind": package.metadata.get("package_scorer_kind", ""),
+        "recommendation": package_recommendation,
+        "recommendation_label": _package_preview_recommendation_label(package_recommendation),
+        "explanation": package_explanation,
+        "package_explanation": package_explanation,
+        "alternative_count": int(alternative_count or 0),
+        "message": package_explanation,
     }
 
 
@@ -494,7 +513,7 @@ def _manual_suggestion_payload_from_context(
         "preference_option": preference_option,
         "visible_limit": limit,
         "options": [
-            _manual_package_payload(package, rank=index)
+            _manual_package_payload(package, rank=index, alternative_count=max(len(packages) - 1, 0))
             for index, package in enumerate(visible_packages, start=1)
         ],
         "total_candidates": len(packages),

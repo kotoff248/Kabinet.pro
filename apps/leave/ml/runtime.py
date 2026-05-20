@@ -79,8 +79,8 @@ def load_candidate_mlp_model(version=None, *, allow_fallback=True):
     errors = []
     for current_version in candidate_versions:
         path = candidate_model_path(current_version)
-        cache_key = (str(path), current_version)
         try:
+            cache_key = (str(path), current_version, path.stat().st_mtime_ns)
             if cache_key not in _MODEL_CACHE:
                 _MODEL_CACHE[cache_key] = _read_candidate_mlp_model(current_version)
             return _MODEL_CACHE[cache_key]

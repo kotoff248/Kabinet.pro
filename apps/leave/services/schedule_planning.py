@@ -1,4 +1,5 @@
 from collections import Counter
+from decimal import Decimal
 from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 
 from django.db.models import Count
@@ -14,6 +15,7 @@ from apps.accounts.services import (
 from apps.leave.models import (
     VacationPreferenceCollection,
     VacationSchedule,
+    VacationScheduleCandidatePackage,
     VacationScheduleDepartmentApproval,
     VacationScheduleEnterpriseApproval,
     VacationScheduleItem,
@@ -28,12 +30,16 @@ from .planning_cycles import (
     get_active_planning_year,
     get_next_planning_cycle_start_state,
 )
-from apps.leave.services.schedule_drafts.page_context import build_schedule_draft_summary_context
+from apps.leave.services.schedule_drafts.page_context import (
+    build_schedule_draft_summary_context,
+    has_department_schedule_hard_conflicts,
+)
 from apps.leave.services.schedule_drafts.utils import get_schedule_draft_status
 from .schedule_auto_place_jobs import (
     get_active_schedule_auto_place_job,
     schedule_auto_place_job_page_payload,
 )
+from .neural_training_jobs import build_neural_training_context
 from .schedule_approvals import (
     can_review_schedule_department_approval,
     can_review_schedule_enterprise_approval,
@@ -171,6 +177,130 @@ def _calendar_summary(year, schedule):
     }
 
 
+def _percent_label(value):
+    if value is None:
+        return ""
+    value = Decimal(str(value)).quantize(Decimal("0.01"))
+    if value == value.to_integral_value():
+        return f"{int(value)}%"
+    return f"{str(value).replace('.', ',')}%"
+
+
+def _package_model_label(packages):
+    models = Counter(package.model_version for package in packages if package.model_version)
+    if not models:
+        return "Модель не сохранена"
+    if len(models) == 1:
+        return models.most_common(1)[0][0]
+    main_model, _ = models.most_common(1)[0]
+    return f"{main_model} + ещё {len(models) - 1}"
+
+
+def _schedule_package_ml_summary(schedule, *, department_id=None):
+    if schedule is None:
+        return {
+            "has_data": False,
+            "packages_count": 0,
+            "employees_count": 0,
+            "average_score_label": "",
+            "high_risk_count": 0,
+            "hard_conflicts": False,
+            "model_label": "Модель не сохранена",
+            "status_label": "Нет пакетной оценки",
+            "status_tone": "muted",
+            "attention_departments": [],
+            "attention_departments_label": "Нет отделов с повышенным риском",
+        }
+
+    queryset = VacationScheduleCandidatePackage.objects.select_related("employee__department").filter(
+        schedule=schedule,
+        decision=VacationScheduleCandidatePackage.DECISION_SELECTED,
+    )
+    if department_id:
+        queryset = queryset.filter(employee__department_id=department_id)
+    packages = list(queryset)
+    department_ids = {
+        package.employee.department_id
+        for package in packages
+        if getattr(package.employee, "department_id", None)
+    }
+    if department_id:
+        department_ids.add(department_id)
+    else:
+        department_ids.update(
+            VacationScheduleItem.objects.filter(schedule=schedule, employee__department_id__isnull=False)
+            .values_list("employee__department_id", flat=True)
+            .distinct()
+        )
+    conflict_department_ids = {
+        item_department_id
+        for item_department_id in department_ids
+        if has_department_schedule_hard_conflicts(schedule, item_department_id)
+    }
+    hard_conflicts = bool(conflict_department_ids)
+
+    scored_packages = [package for package in packages if package.score is not None]
+    average_score = (
+        sum((Decimal(str(package.score)) for package in scored_packages), Decimal("0.00")) / Decimal(len(scored_packages))
+        if scored_packages
+        else None
+    )
+    high_risk_packages = [
+        package
+        for package in packages
+        if package.risk_level == VacationScheduleItem.RISK_HIGH or int(package.risk_score or 0) >= 70
+    ]
+    attention_departments = sorted(
+        {
+            package.employee.department.name
+            for package in high_risk_packages
+            if getattr(package.employee, "department", None) is not None
+        }
+    )
+    if hard_conflicts:
+        conflict_departments = {
+            package.employee.department.name
+            for package in packages
+            if getattr(package.employee, "department", None) is not None
+            and package.employee.department_id in conflict_department_ids
+        }
+        conflict_departments.update(
+            VacationScheduleItem.objects.select_related("employee__department")
+            .filter(schedule=schedule, employee__department_id__in=conflict_department_ids)
+            .values_list("employee__department__name", flat=True)
+            .distinct()
+        )
+        attention_departments = sorted({*attention_departments, *conflict_departments})
+
+    if hard_conflicts:
+        status_label = "Есть hard-конфликты"
+        status_tone = "danger"
+    elif high_risk_packages:
+        status_label = "Есть рисковые пакеты"
+        status_tone = "warning"
+    elif packages:
+        status_label = "Пакеты безопасны"
+        status_tone = "ok"
+    else:
+        status_label = "Нет пакетной оценки"
+        status_tone = "muted"
+
+    return {
+        "has_data": bool(packages) or hard_conflicts,
+        "packages_count": len(packages),
+        "employees_count": len({package.employee_id for package in packages}),
+        "average_score": average_score,
+        "average_score_label": _percent_label(average_score),
+        "high_risk_count": len(high_risk_packages),
+        "hard_conflicts": hard_conflicts,
+        "model_label": _package_model_label(packages),
+        "status_label": status_label,
+        "status_tone": status_tone,
+        "attention_departments": attention_departments,
+        "attention_departments_label": ", ".join(attention_departments) if attention_departments else "Нет отделов с повышенным риском",
+    }
+
+
 def _review_summary(schedule, employee=None):
     approvals = []
     counts = Counter()
@@ -223,6 +353,7 @@ def _review_summary(schedule, employee=None):
                 "return_url": reverse("schedule_department_review_return", args=[schedule.year, approval.id]),
                 "rework_url": reverse("schedule_department_review_rework", args=[schedule.year, approval.id]),
                 "resubmit_url": reverse("schedule_department_review_resubmit", args=[schedule.year, approval.id]),
+                "ml_summary": _schedule_package_ml_summary(schedule, department_id=approval.department_id),
             }
         )
 
@@ -315,6 +446,7 @@ def _final_summary(schedule, review_summary, employee=None):
             employee=employee,
         ),
         "rework_departments": rework_departments,
+        "ml_summary": _schedule_package_ml_summary(schedule),
     }
 
 
@@ -432,6 +564,7 @@ def build_schedule_planning_page_context(year, employee, params=None):
     department_review_start_state = get_schedule_department_review_start_state(year, employee)
     enterprise_review_start_state = get_schedule_enterprise_review_start_state(year, employee)
     next_cycle_start_state = get_next_planning_cycle_start_state(year, employee)
+    neural_training = build_neural_training_context(year, employee, schedule=schedule)
     planning_year_options = [
         {
             "year": option_year,
@@ -514,4 +647,5 @@ def build_schedule_planning_page_context(year, employee, params=None):
         "next_planning_cycle_start_block_reason": next_cycle_start_state.get("reason", ""),
         "next_planning_cycle_start_url": reverse("schedule_planning_start_next", args=[year]),
         "next_planning_cycle_start_next_url": schedule_planning_url(next_cycle_start_state.get("next_year", year + 1)),
+        "neural_training": neural_training,
     }

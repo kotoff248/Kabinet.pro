@@ -1,3 +1,5 @@
+from decimal import Decimal, ROUND_HALF_UP
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.urls import reverse
@@ -38,6 +40,66 @@ from apps.leave.ml.request_support import (
 from .schedule_items import create_schedule_item_from_paid_vacation_request
 from .text import build_text_preview
 from .validation import validate_vacation_request_for_employee
+
+APPLICATION_MODULE_BADGE_RECOMMENDATION_LABELS = {
+    "prefer": "удачный период",
+    "normal": "можно одобрять",
+    "avoid": "лучше проверить",
+    "blocked": "есть ограничения",
+}
+
+APPLICATION_MODULE_BADGE_VARIANTS = {
+    "prefer": "planned",
+    "normal": "info",
+    "avoid": "medium",
+    "blocked": "risk",
+}
+
+
+def _percent_badge_label(value):
+    if value is None or value == "":
+        return ""
+    try:
+        percent = max(Decimal("0"), min(Decimal("100"), Decimal(str(value))))
+    except Exception:
+        return ""
+    return f"{int(percent.quantize(Decimal('1'), rounding=ROUND_HALF_UP))}%"
+
+
+def _application_module_badge(request_obj):
+    if request_obj.status == VacationRequest.STATUS_PENDING:
+        score = request_obj.ai_score
+        recommendation = request_obj.ai_recommendation
+        explanation = request_obj.ai_explanation
+        source_label = "На момент подачи"
+    elif request_obj.decision_ai_score is not None:
+        score = request_obj.decision_ai_score
+        recommendation = request_obj.decision_ai_recommendation
+        explanation = request_obj.decision_ai_explanation
+        source_label = "На момент решения"
+    else:
+        return None
+
+    score_label = _percent_badge_label(score)
+    if not score_label:
+        return None
+
+    recommendation = recommendation or "normal"
+    return {
+        "score_label": score_label,
+        "recommendation": recommendation,
+        "recommendation_label": APPLICATION_MODULE_BADGE_RECOMMENDATION_LABELS.get(
+            recommendation,
+            APPLICATION_MODULE_BADGE_RECOMMENDATION_LABELS["normal"],
+        ),
+        "variant": APPLICATION_MODULE_BADGE_VARIANTS.get(
+            recommendation,
+            APPLICATION_MODULE_BADGE_VARIANTS["normal"],
+        ),
+        "source_label": source_label,
+        "tooltip_text": explanation or f"Оценка модуля сохранена: {source_label.lower()}.",
+    }
+
 
 def _validate_reviewer_can_approve(reviewer, employee):
     if not can_approve_leave_for_employee(reviewer, employee):
@@ -101,6 +163,7 @@ def enrich_vacation_request(request_obj, *, include_live_risk_explanation=False)
     request_obj.risk_recommended_action = request_obj.risk_explanation["recommended_action"]
     request_obj.risk_is_conflict = request_obj.risk_explanation["is_conflict"]
     request_obj.reason_preview = build_text_preview(request_obj.reason)
+    request_obj.module_badge = _application_module_badge(request_obj)
     enrich_application_employee_presentation(request_obj)
     return request_obj
 
@@ -126,6 +189,7 @@ def serialize_vacation_request_row(request_obj):
         "risk_recommended_action": request_obj.risk_recommended_action,
         "risk_is_conflict": request_obj.risk_is_conflict,
         "reason_preview": request_obj.reason_preview,
+        "module_badge": request_obj.module_badge,
         "can_approve": getattr(request_obj, "can_approve", False),
         "decision_locked": getattr(request_obj, "decision_locked", False),
     } | serialize_application_employee_presentation(request_obj)

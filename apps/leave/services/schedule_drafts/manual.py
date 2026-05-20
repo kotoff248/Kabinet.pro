@@ -54,6 +54,12 @@ from apps.leave.services.schedule_auto_place_jobs import get_active_schedule_aut
 from apps.leave.services.staffing import format_staff_count
 from apps.leave.services.urgent_closures import detect_previous_year_closure_need, get_active_urgent_closure_payload_map
 from apps.leave.services.validation import MIN_CONTINUOUS_PAID_LEAVE_DAYS, get_overlapping_requests, get_overlapping_schedule_items
+from apps.leave.ml.package_scoring import (
+    build_generation_package_features,
+    build_package_features,
+    score_generation_package,
+    score_package_features,
+)
 
 from apps.leave.services.schedule_drafts.constants import *
 from apps.leave.services.schedule_drafts.types import *
@@ -130,6 +136,7 @@ def _manual_period_preview_payload(period, assessment, remaining_after):
         "risk_explanation": {},
     }
     risk_explanation = risk_payload.get("risk_explanation") or {}
+    staffing_summary = _staffing_summary_from_risk_payload(risk_payload)
     start_date = period["start_date"]
     end_date = period["end_date"]
     chargeable_days = assessment.get("chargeable_days")
@@ -156,6 +163,8 @@ def _manual_period_preview_payload(period, assessment, remaining_after):
         "risk_short_reason": risk_explanation.get("short_reason", ""),
         "risk_recommended_action": risk_explanation.get("recommended_action", ""),
         "risk_is_conflict": bool(risk_explanation.get("is_conflict")),
+        "staffing_summary": staffing_summary,
+        "staffing_chips": list(staffing_summary.get("chips") or []),
         "remaining_after_period": remaining_after,
         "assessment": assessment,
     }
@@ -174,6 +183,74 @@ def _manual_package_preview_message(can_submit, period_payloads, planning_need, 
     if can_submit:
         return "Периоды можно поставить в черновик. Часть дней останется на ручное распределение."
     return "Проверьте выбранные периоды."
+
+
+def _package_preview_recommendation_label(recommendation):
+    return {
+        "prefer": "Предпочтительный",
+        "normal": "Допустимый",
+        "avoid": "С осторожностью",
+        "blocked": "Заблокирован",
+    }.get(recommendation or "", "Оценен")
+
+
+def _manual_package_preview_scoring_payload(period_payloads, planning_need, post_planning_need, *, can_submit):
+    if not period_payloads:
+        return {
+            "package_score": None,
+            "package_score_label": "",
+            "package_confidence": None,
+            "package_confidence_label": "",
+            "package_model_version": "",
+            "package_recommendation": "",
+            "package_recommendation_label": "",
+            "package_explanation": "",
+            "alternative_count": 0,
+        }
+
+    rows = [
+        {
+            "start_date": period["start_date"],
+            "end_date": period["end_date"],
+            "chargeable_days": period["chargeable_days"],
+            "risk_score": period["risk_score"],
+            "risk_level": period["risk_level"],
+            "risk_is_conflict": period["risk_is_conflict"],
+            "staff_margin": (
+                ((period.get("assessment") or {}).get("risk_payload") or {})
+                .get("risk_explanation", {})
+                .get("remaining_staff", 0)
+            ),
+            "passed_hard_rules": bool(period["can_place"]),
+        }
+        for period in period_payloads
+    ]
+    total_days = sum((_feature_decimal(period["chargeable_days"]) for period in period_payloads), Decimal("0.00"))
+    features = build_package_features(
+        {
+            "total_chargeable_days": total_days,
+            "package_target_days": planning_need["open_required_days"],
+            "remaining_after_package": post_planning_need["open_required_days"],
+            "package_closes_need": post_planning_need["open_required_days"] <= 0,
+        },
+        rows,
+        package_source=VacationScheduleItem.SOURCE_MANUAL,
+    )
+    result = score_package_features(
+        features,
+        passed_hard_rules=bool(can_submit) and all(period["can_place"] for period in period_payloads),
+    )
+    return {
+        "package_score": result.score,
+        "package_score_label": _percent_label(result.score),
+        "package_confidence": result.confidence,
+        "package_confidence_label": _percent_label(result.confidence),
+        "package_model_version": result.model_version,
+        "package_recommendation": result.recommendation,
+        "package_recommendation_label": _package_preview_recommendation_label(result.recommendation),
+        "package_explanation": result.explanation,
+        "alternative_count": 0,
+    }
 
 
 def _merged_paid_leave_segments(items):
@@ -239,6 +316,8 @@ def build_manual_schedule_draft_package_preview(*, year, employee_id, periods):
             "risk_short_reason": "",
             "risk_recommended_action": "",
             "risk_is_conflict": False,
+            "staffing_summary": {},
+            "staffing_chips": [],
             "planning_need": planning_need,
             "post_planning_need": planning_need,
         }
@@ -321,6 +400,13 @@ def build_manual_schedule_draft_package_preview(*, year, employee_id, periods):
         (period["risk_recommended_action"] for period in period_payloads if period["risk_recommended_action"]),
         "",
     )
+    staffing_summary, staffing_chips = _worst_staffing_summary_from_payloads(period_payloads)
+    package_scoring = _manual_package_preview_scoring_payload(
+        period_payloads,
+        planning_need,
+        post_planning_need,
+        can_submit=can_submit,
+    )
 
     return {
         "can_submit": can_submit,
@@ -345,8 +431,11 @@ def build_manual_schedule_draft_package_preview(*, year, employee_id, periods):
         "risk_short_reason": risk_short_reason,
         "risk_recommended_action": risk_recommended_action,
         "risk_is_conflict": risk_is_conflict,
+        "staffing_summary": staffing_summary,
+        "staffing_chips": staffing_chips,
         "planning_need": planning_need,
         "post_planning_need": post_planning_need,
+        **package_scoring,
     }
 
 
@@ -396,42 +485,14 @@ def _percent_decimal(value):
 
 
 def _manual_package_quality_score(package):
+    if "package_quality_score" in package.metadata:
+        return _feature_decimal(package.metadata.get("package_quality_score"))
     candidates = [_apply_candidate_scoring(candidate) for candidate in package.candidates]
     if not candidates:
         return Decimal("0.00")
 
-    scores = [_candidate_scoring_decimal(candidate, "scoring_score") for candidate in candidates]
-    average_score = sum(scores, Decimal("0.00")) / Decimal(len(scores))
-    weakest_score = min(scores)
-    total_days = _package_total_days(candidates)
-    open_required_days = _feature_decimal(
-        package.metadata.get("auto_place_target_days") or candidates[0].metadata.get("open_required_days")
-    )
-    remaining_days = _feature_decimal(package.metadata.get("remaining_after_package"))
-    period_count = len(candidates)
-    short_periods = sum(
-        1
-        for candidate in candidates
-        if Decimal("0.00") < _feature_decimal(candidate.metadata.get("chargeable_days")) < Decimal(MIN_CONTINUOUS_PAID_LEAVE_DAYS)
-    )
-    max_risk = max((int(candidate.metadata.get("risk_score") or 0) for candidate in candidates), default=0)
-
-    score = (average_score * Decimal("0.72")) + (weakest_score * Decimal("0.28"))
-    if open_required_days > 0:
-        coverage_gap = abs(total_days - open_required_days) / open_required_days
-        score += max(Decimal("0.00"), Decimal("1.00") - coverage_gap) * Decimal("2.50")
-        if remaining_days > 0:
-            score -= min(Decimal("18.00"), (remaining_days / open_required_days) * Decimal("18.00"))
-
-    score -= Decimal(max(period_count - 1, 0)) * Decimal("1.35")
-    score -= Decimal(short_periods) * Decimal("0.65")
-    score -= Decimal(max_risk) * Decimal("0.015")
-    if any(candidate.metadata.get("extends_existing_item") for candidate in candidates):
-        score += Decimal("2.50")
-    if any(candidate.metadata.get("is_preference_candidate") for candidate in candidates):
-        score += Decimal("2.00")
-
-    package.metadata["package_quality_score"] = _percent_decimal(score)
+    result = score_generation_package(package)
+    package.metadata["package_quality_score"] = result.score
     return package.metadata["package_quality_score"]
 
 
@@ -440,6 +501,7 @@ def _package_features(package):
     return _json_safe_generation_value(
         {
             **(package.metadata or {}),
+            **build_generation_package_features(package),
             "periods_count": len(candidates),
             "periods": [
                 {
@@ -509,6 +571,9 @@ def _persist_manual_candidate_package(generation_run, schedule, package, *, deci
     if not passed_package:
         decision = VacationScheduleCandidatePackage.DECISION_BLOCKED
     risk_level, risk_score = _package_risk_payload(candidates)
+    package_confidence = package.metadata.get("package_confidence") or _package_average(candidates, "scoring_confidence")
+    package_model_version = package.metadata.get("package_model_version") or DRAFT_GENERATION_HYBRID_MODEL_VERSION
+    package_explanation = package.metadata.get("package_scoring_explanation") or package.explanation
     package_record = VacationScheduleCandidatePackage.objects.create(
         generation_run=generation_run,
         schedule=schedule,
@@ -523,9 +588,9 @@ def _persist_manual_candidate_package(generation_run, schedule, package, *, deci
         risk_level=risk_level,
         features=_package_features(package),
         score=package_score,
-        confidence=_package_average(candidates, "scoring_confidence"),
-        model_version=DRAFT_GENERATION_HYBRID_MODEL_VERSION,
-        explanation=package.explanation,
+        confidence=package_confidence,
+        model_version=package_model_version,
+        explanation=package_explanation,
         decision=decision,
         decision_rank=decision_rank,
         selected_at=selected_at if decision == VacationScheduleCandidatePackage.DECISION_SELECTED else None,

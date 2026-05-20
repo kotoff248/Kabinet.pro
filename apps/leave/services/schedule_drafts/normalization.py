@@ -312,6 +312,7 @@ def _remove_conflicting_generated_draft_items(schedule):
         removed_count += deleted_count
 
 
+@transaction.atomic
 def normalize_schedule_draft_adjacent_items(year):
     schedule = VacationSchedule.objects.select_for_update().filter(
         year=year,

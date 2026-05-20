@@ -357,6 +357,19 @@
                                 <em>{{ row.status_label }}</em>
                             </div>
                         </div>
+                        {% if row.ml_summary.has_data %}
+                        <div class="schedule-planning-review-row__ml schedule-planning-review-row__ml--{{ row.ml_summary.status_tone }}">
+                            <div>
+                                <span>Пакетная оценка</span>
+                                <strong>{{ row.ml_summary.status_label }}</strong>
+                            </div>
+                            <small>
+                                Средняя оценка {% if row.ml_summary.average_score_label %}{{ row.ml_summary.average_score_label }}{% else %}—{% endif %}
+                                · сотрудников {{ row.ml_summary.employees_count }}
+                                · высокий риск {{ row.ml_summary.high_risk_count }}
+                            </small>
+                        </div>
+                        {% endif %}
                         {% if row.can_review or row.can_rework %}
                         <div class="schedule-planning-review-actions">
                             {% if row.can_review %}
@@ -448,6 +461,38 @@
                         <small>{% if schedule.approved_at %}Утверждён {{ schedule.approved_at|date:"d.m.Y" }}{% else %}Ожидает предыдущие этапы{% endif %}</small>
                     </article>
                 </div>
+                {% if final_summary.ml_summary.has_data %}
+                <section class="schedule-planning-ml-summary schedule-planning-ml-summary--{{ final_summary.ml_summary.status_tone }}">
+                    <div class="schedule-planning-ml-summary__head">
+                        <div>
+                            <span>Интеллектуальное планирование</span>
+                            <h4>Итог пакетной оценки</h4>
+                        </div>
+                        <strong>{{ final_summary.ml_summary.status_label }}</strong>
+                    </div>
+                    <div class="schedule-planning-ml-summary__grid">
+                        <article>
+                            <span>Сотрудников закрыто пакетами</span>
+                            <strong>{{ final_summary.ml_summary.employees_count }}</strong>
+                        </article>
+                        <article>
+                            <span>Средняя оценка</span>
+                            <strong>{% if final_summary.ml_summary.average_score_label %}{{ final_summary.ml_summary.average_score_label }}{% else %}—{% endif %}</strong>
+                        </article>
+                        <article>
+                            <span>Высокий риск</span>
+                            <strong>{{ final_summary.ml_summary.high_risk_count }}</strong>
+                        </article>
+                        <article>
+                            <span>Модель</span>
+                            <strong>{{ final_summary.ml_summary.model_label }}</strong>
+                        </article>
+                    </div>
+                    <p>
+                        Отделы требуют внимания: {{ final_summary.ml_summary.attention_departments_label }}.
+                    </p>
+                </section>
+                {% endif %}
                 {% if final_summary.enterprise.can_review %}
                 <div class="schedule-planning-review-actions schedule-planning-final-actions">
                     <form method="post" action="{{ final_summary.enterprise.approve_url }}" class="schedule-planning-review-approve-form">
@@ -538,6 +583,60 @@
                     </div>
                 </div>
                 {% endif %}
+                {% if neural_training %}
+                <div
+                    class="schedule-planning-neural-card schedule-planning-neural-card--{{ neural_training.status.tone }}"
+                    data-neural-training
+                    data-status="{% if neural_training.active_job %}{{ neural_training.active_job.status }}{% else %}{{ neural_training.status.key }}{% endif %}"
+                    data-status-url="{% if neural_training.active_job %}{{ neural_training.active_job.status_url }}{% endif %}"
+                >
+                    <div class="schedule-planning-neural-card__head">
+                        <div>
+                            <span class="schedule-planning-eyebrow">Нейромодуль</span>
+                            <h4>Переобучение на утверждённом графике</h4>
+                        </div>
+                        <span class="schedule-planning-status schedule-planning-status--{{ neural_training.status.tone }}">
+                            <span class="material-icons-sharp" aria-hidden="true">model_training</span>
+                            <span class="schedule-planning-status__label" data-neural-training-status-label>{{ neural_training.status.label }}</span>
+                        </span>
+                    </div>
+                    <p data-neural-training-message>
+                        {% if neural_training.active_job %}
+                            {{ neural_training.active_job.message }}
+                        {% elif neural_training.is_current %}
+                            Модель уже соответствует текущей demo-БД.
+                        {% elif neural_training.block_reason %}
+                            {{ neural_training.block_reason }}
+                        {% else %}
+                            Можно обучить v2 и v3 на истории и утверждённом {{ year }} годе.
+                        {% endif %}
+                    </p>
+                    <div class="schedule-planning-neural-card__track" aria-hidden="true">
+                        <span data-neural-training-bar style="width: {% if neural_training.active_job %}{{ neural_training.active_job.progress_percent }}{% elif neural_training.is_current %}100{% else %}0{% endif %}%;"></span>
+                    </div>
+                    <div class="schedule-planning-neural-card__stats">
+                        <div>
+                            <span>Годы в текущей БД</span>
+                            <strong data-neural-training-years>{% if neural_training.current_source.years %}{{ neural_training.current_source.years|join:", " }}{% else %}—{% endif %}</strong>
+                        </div>
+                        <div>
+                            <span>v2 examples</span>
+                            <strong data-neural-training-candidate-count>{{ neural_training.metrics.candidate.examples_count|default:"—" }}</strong>
+                        </div>
+                        <div>
+                            <span>v3 packages</span>
+                            <strong data-neural-training-package-count>{{ neural_training.metrics.package.examples_count|default:"—" }}</strong>
+                        </div>
+                    </div>
+                    <form method="post" action="{{ neural_training.start_url }}" data-neural-training-form>
+                        {% csrf_token %}
+                        <button type="submit" class="app-modal__button app-modal__button--primary" {% if not neural_training.can_start %}disabled{% endif %}>
+                            <span class="material-icons-sharp" aria-hidden="true">psychology</span>
+                            Переобучить нейромодуль
+                        </button>
+                    </form>
+                </div>
+                {% endif %}
             </section>
             {% endif %}
         </div>
@@ -549,5 +648,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/schedule/schedule-planning.js' %}?v=20260514-auto-place-progress" defer></script>
+<script src="{% static 'js/schedule/schedule-planning.js' %}?v=20260518-neural-training" defer></script>
 {% endblock %}

@@ -17,6 +17,7 @@ from apps.leave.models import (
     VacationScheduleAutoPlaceJob,
     VacationScheduleCandidate,
     VacationScheduleCandidateFeedback,
+    VacationScheduleCandidatePackage,
     VacationScheduleDepartmentApproval,
     VacationScheduleItem,
     VacationUrgentClosureRequest,
@@ -29,6 +30,7 @@ from apps.leave.services.preferences import (
     preference_readiness_url,
 )
 from apps.leave.services.schedule_drafts.auto_place import (
+    _optimized_auto_place_group_state,
     _should_repeat_auto_place_pass,
     auto_place_remaining_schedule_draft,
 )
@@ -47,12 +49,134 @@ from apps.leave.services.schedule_drafts.manual import place_manual_schedule_dra
 from apps.leave.services.schedule_drafts.manual_suggestions import build_schedule_draft_auto_place_preview
 from apps.leave.services.schedule_drafts.page_context import build_manual_schedule_draft_preview
 from apps.leave.services.schedule_drafts.planning_need import _build_employee_schedule_planning_need_from_rows
+from apps.leave.services.schedule_drafts.types import DraftGenerationCandidate, DraftGenerationCandidatePackage, DraftGenerationContext, DraftPlacement
 from apps.leave.services.schedule_planning import schedule_planning_url
 from apps.leave.ml.scoring import ACTIVE_CANDIDATE_SCORER_VERSION
 from apps.leave.tests.base import LeaveTestCase
 
 
 class ScheduleDraftAutoTests(LeaveTestCase):
+    def _planning_need(self, days):
+        days = Decimal(str(days))
+        return {
+            "needs_manual_attention": True,
+            "has_blocker": False,
+            "nearest_deadline": None,
+            "open_required_days": days,
+            "blocking_days": Decimal("0.00"),
+            "target_days": days,
+            "manual_task_label": f"Добрать {int(days)} д.",
+            "status": {"label": "Нужно добавить"},
+        }
+
+    def test_global_optimizer_keeps_better_combination_not_first_package(self):
+        year = self._year()
+        schedule = VacationSchedule.objects.create(
+            year=year,
+            status=VacationSchedule.STATUS_DRAFT,
+            created_by=self.hr_employee,
+        )
+        second_employee = Employees.objects.create(
+            first_name="Иван",
+            last_name="Глобальный",
+            middle_name="Тестовый",
+            role=Employees.ROLE_EMPLOYEE,
+            department=self.employee.department,
+            employee_position=self.employee.employee_position,
+            date_joined=date(year - 2, 1, 10),
+            annual_paid_leave_days=52,
+            is_active_employee=True,
+        )
+        context = DraftGenerationContext(
+            year=year,
+            schedule=schedule,
+            eligible_employees=[self.employee, second_employee],
+            draft_items_by_employee={},
+            preference_pair_by_employee={},
+            preference_state_by_employee={},
+            placements=[],
+            planning_need_by_employee={
+                self.employee.id: self._planning_need(52),
+                second_employee.id: self._planning_need(52),
+            },
+        )
+        january_start = date(year, 1, 15)
+        march_start = date(year, 3, 15)
+        february_start = date(year, 2, 15)
+
+        def package(employee, start_date, score):
+            return DraftGenerationCandidatePackage(
+                employee=employee,
+                candidates=[
+                    DraftGenerationCandidate(
+                        employee=employee,
+                        start_date=start_date,
+                        end_date=start_date + timedelta(days=13),
+                        kind=VacationScheduleCandidate.KIND_AUTO,
+                        source=VacationScheduleItem.SOURCE_GENERATED,
+                        comment="Тестовый пакет.",
+                        metadata={
+                            "passed_hard_rules": True,
+                            "chargeable_days": Decimal("14.00"),
+                            "risk_score": 0,
+                            "risk_level": VacationScheduleItem.RISK_LOW,
+                            "scoring_score": Decimal(str(score)),
+                            "scoring_confidence": Decimal("90.00"),
+                        },
+                    )
+                ],
+                source=VacationScheduleItem.SOURCE_GENERATED,
+                explanation="Тестовый пакет.",
+                metadata={
+                    "package_score": Decimal(str(score)),
+                    "total_chargeable_days": Decimal("14.00"),
+                    "remaining_after_package": Decimal("0.00"),
+                    "package_closes_need": True,
+                    "auto_place_target_days": Decimal("14.00"),
+                },
+            )
+
+        first_high = package(self.employee, january_start, 80)
+        first_lower = package(self.employee, march_start, 52)
+        second_high = package(second_employee, january_start, 95)
+        second_low = package(second_employee, february_start, 14)
+
+        def fake_packages(context_arg, employee, *, package_limit=4):
+            if employee.id == self.employee.id:
+                return [first_high, first_lower], first_high
+            january_taken = any(
+                placement.start_date <= january_start <= placement.end_date
+                for placement in context_arg.placements
+            )
+            if january_taken:
+                return [second_low], second_low
+            return [second_high], second_high
+
+        def fake_register(context_arg, selected_package):
+            for candidate in selected_package.candidates:
+                context_arg.placements.append(
+                    DraftPlacement(candidate.employee.id, candidate.start_date, candidate.end_date, None)
+                )
+
+        with patch(
+            "apps.leave.services.schedule_drafts.auto_place._auto_candidate_packages_for_employee",
+            side_effect=fake_packages,
+        ), patch(
+            "apps.leave.services.schedule_drafts.auto_place._register_virtual_candidate_package",
+            side_effect=fake_register,
+        ), patch(
+            "apps.leave.services.schedule_drafts.auto_place._manual_package_quality_score",
+            side_effect=lambda item: item.metadata["package_score"],
+        ):
+            state = _optimized_auto_place_group_state(context, [self.employee, second_employee])
+
+        self.assertIsNotNone(state)
+        selected_starts = [
+            selection["selected_package"].candidates[0].start_date
+            for selection in state.selections
+        ]
+        self.assertEqual(selected_starts, [march_start, january_start])
+
     def test_auto_target_day_options_include_extended_lengths(self):
         self.assertEqual(
             _auto_target_day_options(Decimal("58.00")),
@@ -218,7 +342,7 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         self.assertEqual(first_option["periods"][0]["end_date"], backup_end.isoformat())
         self.assertFalse(VacationScheduleCandidate.objects.filter(schedule=schedule).exists())
 
-        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee)
+        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee, use_package_selection=True)
 
         self.assertGreater(result["placed_count"], 0)
         self.assertTrue(
@@ -237,6 +361,13 @@ class ScheduleDraftAutoTests(LeaveTestCase):
             decision=VacationScheduleCandidate.DECISION_SELECTED,
         ).get()
         self.assertTrue(selected_backup.features["auto_place_preference_seed"])
+        self.assertTrue(
+            VacationScheduleCandidatePackage.objects.filter(
+                schedule=schedule,
+                employee=self.employee,
+                decision=VacationScheduleCandidatePackage.DECISION_SELECTED,
+            ).exists()
+        )
 
     def test_hr_auto_places_remaining_schedule_draft_items(self):
         year = self._year()
@@ -257,6 +388,8 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         draft_response = self.client.get(reverse("schedule_draft_detail", args=[year]))
         self.assertContains(draft_response, "Добрать незакрытые дни", status_code=200)
         self.assertContains(draft_response, "data-draft-auto-open")
+        self.assertContains(draft_response, "data-auto-plan-days")
+        self.assertNotContains(draft_response, "data-auto-preview-url")
         self.assertContains(draft_response, "schedule-draft-auto-modal")
         self.assertContains(draft_response, "data-draft-manual-open")
         self.assertNotContains(draft_response, "data-draft-suggestions-open")
@@ -418,7 +551,7 @@ class ScheduleDraftAutoTests(LeaveTestCase):
             created_by=self.hr_employee,
         )
 
-        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee)
+        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee, use_package_selection=True)
 
         items = list(VacationScheduleItem.objects.filter(schedule=schedule, employee=self.employee))
         self.assertGreater(result["placed_count"], 0)
@@ -446,7 +579,7 @@ class ScheduleDraftAutoTests(LeaveTestCase):
             created_by=self.hr_employee,
         )
 
-        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee)
+        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee, use_package_selection=True)
 
         items = list(VacationScheduleItem.objects.filter(schedule=schedule, employee=self.employee))
         total_chargeable_days = sum((item.chargeable_days for item in items), Decimal("0.00"))
@@ -494,7 +627,7 @@ class ScheduleDraftAutoTests(LeaveTestCase):
             risk_level=VacationScheduleItem.RISK_LOW,
         )
 
-        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee)
+        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee, use_package_selection=True)
 
         self.assertEqual(result["placed_count"], 1)
         self.assertEqual(VacationScheduleItem.objects.filter(schedule=schedule, employee=self.employee).count(), 1)
@@ -522,7 +655,7 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         schedule = VacationSchedule.objects.get(year=year)
         before_count = VacationScheduleItem.objects.filter(schedule=schedule, employee=self.employee).count()
 
-        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee)
+        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee, use_package_selection=True)
 
         self.assertEqual(result["placed_count"], 0)
         self.assertEqual(VacationScheduleItem.objects.filter(schedule=schedule, employee=self.employee).count(), before_count)
@@ -548,7 +681,7 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         self.finish_preference_collection(year)
         self.client.force_login(self.hr_employee.user)
         self.client.post(reverse("schedule_draft_create", args=[year]))
-        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee)
+        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee, use_package_selection=True)
 
         self.assertEqual(result["placed_count"], 0)
         response = self.client.get(reverse("schedule_draft_detail", args=[year]))

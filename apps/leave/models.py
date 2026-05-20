@@ -1046,6 +1046,58 @@ class VacationScheduleAutoPlaceJob(models.Model):
         return f"Автодобор {self.year}: {self.get_status_display()}"
 
 
+class VacationNeuralTrainingJob(models.Model):
+    STATUS_QUEUED = "queued"
+    STATUS_RUNNING = "running"
+    STATUS_SUCCEEDED = "succeeded"
+    STATUS_FAILED = "failed"
+
+    STATUS_CHOICES = [
+        (STATUS_QUEUED, "В очереди"),
+        (STATUS_RUNNING, "Выполняется"),
+        (STATUS_SUCCEEDED, "Завершено"),
+        (STATUS_FAILED, "Ошибка"),
+    ]
+
+    token = models.CharField(max_length=96, unique=True, verbose_name="Токен статуса")
+    year = models.PositiveIntegerField(verbose_name="Год графика")
+    started_by = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="vacation_neural_training_jobs",
+        verbose_name="Запустил",
+    )
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_QUEUED, verbose_name="Статус")
+    progress_percent = models.PositiveSmallIntegerField(default=0, verbose_name="Прогресс")
+    stage_label = models.CharField(max_length=160, blank=True, default="", verbose_name="Этап")
+    message = models.TextField(blank=True, default="", verbose_name="Сообщение")
+    error_message = models.TextField(blank=True, default="", verbose_name="Ошибка")
+    candidate_version = models.CharField(max_length=80, default="vacation-candidate-mlp-v2", verbose_name="Версия v2")
+    package_version = models.CharField(max_length=80, default="vacation-package-ranker-v3", verbose_name="Версия v3")
+    metrics_payload = models.JSONField(blank=True, default=dict, verbose_name="Метрики обучения")
+    source_fingerprint = models.CharField(max_length=64, blank=True, default="", verbose_name="Отпечаток данных")
+    process_id = models.PositiveIntegerField(null=True, blank=True, verbose_name="PID процесса")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+    started_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата запуска")
+    finished_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата завершения")
+
+    class Meta:
+        db_table = "leave_vacation_neural_training_job"
+        verbose_name = "Фоновое обучение нейромодуля"
+        verbose_name_plural = "Фоновые обучения нейромодуля"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["year", "status"], name="leave_neural_year_status_idx"),
+            models.Index(fields=["token"], name="leave_neural_token_idx"),
+        ]
+
+    def __str__(self):
+        return f"Обучение нейромодуля {self.year}: {self.get_status_display()}"
+
+
 class VacationEntitlementPeriod(models.Model):
     employee = models.ForeignKey(
         to="employees.Employees",

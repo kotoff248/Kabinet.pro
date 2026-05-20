@@ -42,7 +42,12 @@
                 <button type="button"
                         class="app-modal__button app-modal__button--primary"
                         data-draft-auto-open
-                        data-auto-preview-url="{{ draft_auto_place_preview_url }}">
+                        data-auto-manual-count="{{ draft_summary.manual }}"
+                        data-auto-plan-days="{{ draft_summary.remaining_plan_days_label }}"
+                        data-auto-blocking-count="{{ draft_summary.blocking }}"
+                        data-auto-blocking-days="{{ draft_summary.blocking_days_label }}"
+                        data-auto-conflicts-count="{{ draft_summary.conflicts }}"
+                        data-auto-high-risk-count="{{ draft_summary.high_risk }}">
                         <span class="material-icons-sharp" aria-hidden="true">auto_fix_high</span>
                         Добрать незакрытые дни
                 </button>
@@ -479,7 +484,7 @@
         {% include 'includes/shared/app_modal.html' with modal_id=row.urgent_closure.modal_id title='Закрыть срочный остаток' subtitle='Выберите период, который уйдет руководителю и сотруднику на согласование.' body_template='includes/schedule_draft/schedule_draft_urgent_closure_modal_body.html' %}
     {% endif %}
 {% endfor %}
-{% include 'includes/shared/app_modal.html' with modal_id='schedule-draft-auto-modal' title='Добрать незакрытые дни' subtitle='Сначала проверьте, что система собирается добавить в черновик.' body_template='includes/schedule_draft/schedule_draft_auto_modal_body.html' dialog_classes='app-modal__dialog--drawer' %}
+{% include 'includes/shared/app_modal.html' with modal_id='schedule-draft-auto-modal' title='Добрать незакрытые дни' subtitle='Запустите фоновый подбор. Прогресс будет виден на странице черновика.' body_template='includes/schedule_draft/schedule_draft_auto_modal_body.html' dialog_classes='app-modal__dialog--drawer' %}
 {% include 'includes/shared/app_modal.html' with modal_id='schedule-draft-manual-modal' title='Распределить отпуск' subtitle='Выберите период и проверьте дни, остаток и риск перед размещением.' body_template='includes/schedule_draft/schedule_draft_manual_modal_body.html' %}
 {% endif %}
 {% if can_manage_draft and draft_rework_mode %}
@@ -488,5 +493,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/schedule/schedule-draft.js' %}?v=20260516-search-caret" defer></script>
+<script src="{% static 'js/schedule/schedule-draft.js' %}?v=20260518-auto-confirm" defer></script>
 {% endblock %}

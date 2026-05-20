@@ -1,0 +1,105 @@
+{
+  "class_balance": {
+    "blocked": 495,
+    "rejected_package": 208,
+    "selected_package_agree": 432,
+    "selected_package_needs_change": 3,
+    "selected_package_reject": 60
+  },
+  "examples_count": 1198,
+  "feature_schema_version": 1,
+  "input_names": [
+    "auto_source",
+    "backup_preference",
+    "closes_need",
+    "coverage_complete",
+    "coverage_fit",
+    "coverage_over_plan",
+    "deadline_fit",
+    "deadline_pressure",
+    "extends_existing",
+    "load_pressure",
+    "long_part_ok",
+    "longest_period_fit",
+    "low_score_pressure",
+    "manual_source",
+    "passed_hard_rules",
+    "period_confidence",
+    "period_count_fit",
+    "period_score_avg",
+    "period_score_min",
+    "preference_any",
+    "preference_ratio",
+    "primary_preference",
+    "quality_prior",
+    "risk_conflict",
+    "risk_pressure",
+    "risk_safety",
+    "schema_match",
+    "shape_quality",
+    "short_period_pressure",
+    "single_period",
+    "staff_safety",
+    "staff_shortage",
+    "three_or_more_periods",
+    "two_periods"
+  ],
+  "kind": "package_tabular_mlp",
+  "metrics": {
+    "test": {
+      "avoid_accuracy": 0.735751,
+      "count": 193,
+      "prefer_accuracy": 0.73057,
+      "score_accuracy_0_5": 0.797927,
+      "score_mae": 0.083993,
+      "score_rmse": 0.116366
+    },
+    "train": {
+      "avoid_accuracy": 0.788599,
+      "count": 842,
+      "prefer_accuracy": 0.792162,
+      "score_accuracy_0_5": 0.840855,
+      "score_mae": 0.073314,
+      "score_rmse": 0.101987
+    },
+    "training_loss": {
+      "best": 0.492738,
+      "first": 0.685456,
+      "last": 0.492738
+    },
+    "val": {
+      "avoid_accuracy": 0.809816,
+      "count": 163,
+      "prefer_accuracy": 0.822086,
+      "score_accuracy_0_5": 0.846626,
+      "score_mae": 0.070402,
+      "score_rmse": 0.10034
+    }
+  },
+  "split_counts": {
+    "test": 193,
+    "train": 842,
+    "val": 163
+  },
+  "target_heads": [
+    "score",
+    "confidence",
+    "prefer",
+    "avoid"
+  ],
+  "training": {
+    "epochs": 180,
+    "lr": 0.01,
+    "min_examples": 20,
+    "seed": 42
+  },
+  "version": "vacation-package-ranker-v3",
+  "years": [
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+  ]
+}

@@ -30,6 +30,82 @@
 </section>
 {% endif %}
 
+{% if package_report %}
+<section class="schedule-draft-review__section schedule-draft-package-report">
+    <div class="schedule-draft-review__section-head">
+        <div>
+            <span>Пакет отпуска</span>
+            <h3>Почему выбран этот пакет</h3>
+        </div>
+        <strong class="schedule-draft-package-report__score">
+            {% if package_report.score_label %}{{ package_report.score_label }}{% else %}Без оценки{% endif %}
+        </strong>
+    </div>
+    <div class="schedule-draft-package-report__stats">
+        {% for stat in package_report.stats %}
+        <article>
+            <span>{{ stat.label }}</span>
+            <strong>{{ stat.value }}</strong>
+        </article>
+        {% endfor %}
+    </div>
+    {% if package_report.explanation %}
+    <div class="schedule-draft-package-report__explanation">
+        <span class="material-icons-sharp" aria-hidden="true">psychology_alt</span>
+        <p>{{ package_report.explanation }}</p>
+    </div>
+    {% endif %}
+    <div class="schedule-draft-package-report__periods">
+        {% for period in package_report.periods %}
+        <article class="schedule-draft-package-period schedule-draft-package-period--{{ period.risk_tone }}">
+            <div>
+                <strong>{{ period.period_label }}</strong>
+                <span>{{ period.chargeable_days_label }} · {{ period.hard_rules_label }}</span>
+            </div>
+            <small>{{ period.risk_label }} · {{ period.risk_score }}%</small>
+            {% if period.block_reason %}
+            <p>{{ period.block_reason }}</p>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </div>
+    <div class="schedule-draft-package-report__factors">
+        {% for factor in package_report.factors %}
+        <span>{{ factor }}</span>
+        {% endfor %}
+    </div>
+    <div class="schedule-draft-package-report__alternatives">
+        <div class="schedule-draft-package-report__alternatives-head">
+            <span>Альтернативы</span>
+            <small>{{ package_report.comparison_note }}</small>
+        </div>
+        {% if package_report.alternatives %}
+        <div class="schedule-draft-package-report__alternative-list">
+            {% for alternative in package_report.alternatives %}
+            <article class="schedule-draft-package-alternative schedule-draft-package-alternative--{{ alternative.risk_tone }}">
+                <div>
+                    <strong>{{ alternative.total_chargeable_days_label }}</strong>
+                    <span>
+                        {% for period in alternative.periods %}
+                            {{ period.period_label }}{% if not forloop.last %} + {% endif %}
+                        {% endfor %}
+                    </span>
+                    {% if alternative.explanation %}
+                    <p>{{ alternative.explanation }}</p>
+                    {% endif %}
+                </div>
+                <small>
+                    {% if alternative.score_label %}{{ alternative.score_label }}{% else %}без оценки{% endif %}
+                    · {{ alternative.risk_label }} {{ alternative.risk_score }}%
+                </small>
+            </article>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+
 <section class="schedule-draft-review__section">
     <div class="schedule-draft-review__section-head">
         <div>

@@ -22,6 +22,7 @@ from .models import (
     VacationScheduleEnterpriseApproval,
     VacationScheduleGenerationRun,
     VacationScheduleItem,
+    VacationNeuralTrainingJob,
     VacationUrgentClosureRequest,
 )
 
@@ -31,6 +32,7 @@ admin.site.register(VacationRequestHistory)
 admin.site.register(VacationPlanningCycle)
 admin.site.register(VacationSchedule)
 admin.site.register(VacationScheduleAutoPlaceJob)
+admin.site.register(VacationNeuralTrainingJob)
 admin.site.register(VacationScheduleGenerationRun)
 admin.site.register(VacationScheduleCandidate)
 admin.site.register(VacationScheduleCandidateFeedback)

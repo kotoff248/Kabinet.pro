@@ -52,6 +52,14 @@ if not ALLOWED_HOSTS:
         raise RuntimeError("Set DJANGO_ALLOWED_HOSTS when DJANGO_DEBUG=false.")
     ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
 
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+if env_bool("DJANGO_TRUST_X_FORWARDED_PROTO", False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 SECURE_SSL_REDIRECT = not DEBUG and env_bool("DJANGO_SECURE_SSL_REDIRECT", False)
@@ -143,4 +151,9 @@ VACATION_CANDIDATE_SCORER_VERSION = os.getenv(
     "vacation-candidate-mlp-v1",
 )
 VACATION_CANDIDATE_MODEL_DIR = BASE_DIR / "apps" / "leave" / "ml" / "artifacts"
+VACATION_PACKAGE_RANKER_VERSION = os.getenv(
+    "VACATION_PACKAGE_RANKER_VERSION",
+    "vacation-package-ranker-v3",
+)
+VACATION_PACKAGE_MODEL_DIR = VACATION_CANDIDATE_MODEL_DIR
 

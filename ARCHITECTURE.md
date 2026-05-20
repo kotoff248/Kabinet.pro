@@ -131,5 +131,5 @@ Updated: 2026-05-18
   относится только к черновику.
 - Новые frontend partials сразу класть в подходящую подпапку `templates/includes`.
 - Новые CSS/JS файлы класть в существующие смысловые папки.
-- `AGENTS.md` держать кратким; подробные планы и итоги писать в
-  `WORK_SUMMARY.md`, `NEURAL_MODULE_PLAN.md` или этот файл.
+- Подробные планы и итоги писать в `WORK_SUMMARY.md`, `NEURAL_MODULE_PLAN.md`
+  или этот файл.

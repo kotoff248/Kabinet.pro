@@ -7,7 +7,6 @@
     let urgentPreviewRequestId = 0;
     let autoPlacePollTimer = null;
     let pageAutoPlacePollTimer = null;
-    const autoPreviewCache = new Map();
     const manualSuggestionCache = new Map();
     const urgentOptionsCache = new Map();
     const SEARCH_DEBOUNCE_MS = 320;
@@ -82,6 +81,62 @@
         }
     }
 
+    function cleanModalText(value) {
+        return (value || "").trim().replace(/\s+/g, " ");
+    }
+
+    function hasMeaningfulPeriod(value) {
+        const text = cleanModalText(value).toLowerCase();
+        return Boolean(text && text !== "—" && text !== "-" && text !== "не указан" && text !== "не указана");
+    }
+
+    function parseJsonList(value) {
+        if (Array.isArray(value)) {
+            return value;
+        }
+        if (!value) {
+            return [];
+        }
+        try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            return [];
+        }
+    }
+
+    function normalizeStaffingChips(value) {
+        return parseJsonList(value).map(function (chip) {
+            if (typeof chip === "string") {
+                return {
+                    label: chip,
+                    tone: "neutral",
+                };
+            }
+            return {
+                label: chip && chip.label ? chip.label : "",
+                tone: chip && chip.tone ? chip.tone : "neutral",
+            };
+        }).filter(function (chip) {
+            return chip.label;
+        }).slice(0, 3);
+    }
+
+    function renderStaffingChips(container, chips) {
+        if (!container) {
+            return;
+        }
+        const normalizedChips = normalizeStaffingChips(chips);
+        container.hidden = !normalizedChips.length;
+        container.replaceChildren();
+        normalizedChips.forEach(function (chip) {
+            const node = document.createElement("span");
+            node.className = "schedule-draft-staffing-chip schedule-draft-staffing-chip--" + (chip.tone || "neutral");
+            node.textContent = chip.label;
+            container.appendChild(node);
+        });
+    }
+
     function getForm() {
         return document.getElementById("schedule-draft-placement-form");
     }
@@ -120,6 +175,13 @@
         }
         panel.classList.remove("is-idle", "is-loading", "is-ready", "is-warning", "is-error");
         panel.classList.add("is-" + state);
+    }
+
+    function markManualDatesChanged() {
+        const form = getForm();
+        if (form) {
+            form.dataset.manualEdited = "true";
+        }
     }
 
     function setHint(message, state) {
@@ -318,6 +380,7 @@
     function resetPreview() {
         const form = getForm();
         const risk = document.getElementById("draft-placement-risk");
+        const packageReport = document.getElementById("draft-placement-package-report");
         const periodsList = document.getElementById("draft-placement-preview-periods");
         abortPreviewRequest();
         setPreviewState("idle");
@@ -333,6 +396,11 @@
         if (risk) {
             risk.hidden = true;
         }
+        if (packageReport) {
+            packageReport.hidden = true;
+            packageReport.classList.remove("is-high", "is-conflict");
+        }
+        renderStaffingChips(document.getElementById("draft-placement-package-staffing"), []);
         if (form) {
             form.dataset.previewCanSubmit = "false";
         }
@@ -711,6 +779,82 @@
         setText(document.getElementById("draft-placement-risk-action"), payload.risk_recommended_action || "");
         risk.classList.toggle("is-conflict", Boolean(payload.risk_is_conflict));
         risk.classList.toggle("is-high", payload.risk_label === "Высокий");
+    }
+
+    function updatePackageReport(payload) {
+        const panel = document.getElementById("draft-placement-package-report");
+        if (!panel) {
+            return;
+        }
+        const explanation = payload.package_explanation || "";
+        const scoreLabel = payload.package_score_label || "";
+        const recommendation = payload.package_recommendation_label || "";
+        const confidence = payload.package_confidence_label ? "уверенность " + payload.package_confidence_label : "";
+        const model = payload.package_model_version ? "модель " + payload.package_model_version : "";
+        const meta = [recommendation, confidence, model].filter(Boolean).join(" · ");
+        const staffingChips = normalizeStaffingChips(payload.staffing_chips || []);
+        const hasContent = Boolean(explanation || scoreLabel || meta || staffingChips.length);
+        panel.hidden = !hasContent;
+        if (!hasContent) {
+            return;
+        }
+        setText(document.getElementById("draft-placement-package-score"), scoreLabel ? "Оценка " + scoreLabel : (recommendation || "Оценен"));
+        setText(document.getElementById("draft-placement-package-explanation"), explanation);
+        setText(document.getElementById("draft-placement-package-meta"), meta);
+        renderStaffingChips(document.getElementById("draft-placement-package-staffing"), staffingChips);
+        panel.classList.toggle("is-high", payload.package_recommendation === "avoid");
+        panel.classList.toggle("is-conflict", payload.package_recommendation === "blocked");
+    }
+
+    function updatePackageReportFromSuggestion(button) {
+        if (!button) {
+            return;
+        }
+        updatePackageReport({
+            package_explanation: button.dataset.packageExplanation || "",
+            package_score_label: button.dataset.packageScoreLabel || "",
+            package_confidence_label: button.dataset.packageConfidenceLabel || "",
+            package_model_version: button.dataset.packageModelVersion || "",
+            package_recommendation: button.dataset.packageRecommendation || "",
+            package_recommendation_label: button.dataset.packageRecommendationLabel || "",
+            staffing_chips: button.dataset.staffingChips || "[]",
+        });
+    }
+
+    function updatePlacementSummary(trigger) {
+        const needed = cleanModalText(trigger ? trigger.dataset.manualNeeded : "");
+        const placed = cleanModalText(trigger ? trigger.dataset.manualPlaced : "");
+        const target = cleanModalText(trigger ? trigger.dataset.manualTarget : "");
+        const status = cleanModalText(trigger ? trigger.dataset.manualStatus : "");
+        const primary = cleanModalText(trigger ? trigger.dataset.manualPrimary : "");
+        const backup = cleanModalText(trigger ? trigger.dataset.manualBackup : "");
+        const reason = cleanModalText(trigger ? trigger.dataset.manualReason : "");
+        const detail = cleanModalText(trigger ? trigger.dataset.manualDetail : "");
+
+        setText(document.getElementById("draft-placement-summary"), needed || "Нужно выбрать даты");
+        setText(
+            document.getElementById("draft-placement-summary-detail"),
+            [placed ? "уже поставлено " + placed : "", target ? "цель " + target : "", status].filter(Boolean).join(" · "),
+        );
+
+        const preferenceParts = [];
+        if (hasMeaningfulPeriod(primary)) {
+            preferenceParts.push("Основной: " + primary);
+        }
+        if (hasMeaningfulPeriod(backup)) {
+            preferenceParts.push("Запасной: " + backup);
+        }
+        setText(
+            document.getElementById("draft-placement-preferences-title"),
+            preferenceParts.length ? "Есть пожелания" : "Пожеланий нет",
+        );
+        setText(
+            document.getElementById("draft-placement-preferences-detail"),
+            preferenceParts.length ? preferenceParts.join(" · ") : "HR выбирает даты вручную.",
+        );
+
+        const reasonText = [reason, detail].filter(Boolean).join(" ");
+        setText(document.getElementById("draft-placement-reason"), reasonText ? "Причина: " + reasonText : "Причина: не указана.");
     }
 
     function setUrgentSubmitEnabled(form, isEnabled) {
@@ -1139,19 +1283,19 @@
         setPreviewValue("draft-placement-chargeable-days", payload.chargeable_days);
         setPreviewValue("draft-placement-remaining-days", payload.remaining_after_placement);
         setPreviewValue("draft-placement-merged-days", Array.isArray(payload.periods) ? payload.periods.length : null);
-        setText(
-            document.getElementById("draft-placement-merged-period"),
-            Array.isArray(payload.periods) && payload.periods.length
-                ? payload.periods.length + " период(а)"
-                : (payload.will_merge ? payload.merged_period_label : "Без объединения"),
-        );
-        renderPreviewPeriods(payload.periods || []);
-        updateRisk(payload);
-
         const isWarning = Boolean(payload.risk_is_conflict)
             || payload.risk_label === "Высокий"
             || Boolean(payload.short_gap_warning)
             || Boolean(payload.will_merge);
+        setText(
+            document.getElementById("draft-placement-merged-period"),
+            payload.can_submit
+                ? (isWarning ? "Можно, но с риском" : "Подходит")
+                : "Нужна правка",
+        );
+        renderPreviewPeriods(payload.periods || []);
+        updateRisk(payload);
+        updatePackageReport(payload);
 
         if (payload.can_submit) {
             setPreviewState(isWarning ? "warning" : "ready");
@@ -1340,6 +1484,13 @@
                 end_date: period.end_date || "",
             };
         }));
+        button.dataset.packageExplanation = option.package_explanation || option.explanation || option.message || "";
+        button.dataset.packageScoreLabel = option.score_label || option.package_score_label || "";
+        button.dataset.packageConfidenceLabel = option.confidence_label || option.package_confidence_label || "";
+        button.dataset.packageModelVersion = option.model_version || option.package_model_version || "";
+        button.dataset.packageRecommendation = option.recommendation || option.package_recommendation || "";
+        button.dataset.packageRecommendationLabel = option.recommendation_label || option.package_recommendation_label || "";
+        button.dataset.staffingChips = JSON.stringify(normalizeStaffingChips(option.staffing_chips || []));
 
         const main = document.createElement("span");
         main.className = "schedule-draft-suggestion__main";
@@ -1348,7 +1499,8 @@
             ? option.kind_label + " · " + (option.chargeable_days_label || "")
             : (option.period_label || "Период");
         const meta = document.createElement("small");
-        meta.textContent = option.explanation || option.message || option.period_label || "";
+        const whyText = option.package_explanation || option.explanation || option.message || option.period_label || "";
+        meta.textContent = (Number(option.rank || 0) === 1 && whyText ? "Почему выбран: " : "") + whyText;
         main.append(title, meta);
 
         const score = document.createElement("span");
@@ -1360,10 +1512,17 @@
         risk.textContent = (option.risk_label || "Низкий") + " · " + (option.risk_score || 0) + "%";
 
         button.append(main, score, risk);
+        const staffingChips = normalizeStaffingChips(option.staffing_chips || []);
+        if (staffingChips.length) {
+            const staffing = document.createElement("span");
+            staffing.className = "schedule-draft-suggestion__staffing";
+            renderStaffingChips(staffing, staffingChips);
+            button.appendChild(staffing);
+        }
         if (Number(option.rank || 0) === 1) {
             const badge = document.createElement("span");
             badge.className = "schedule-draft-suggestion__badge schedule-draft-suggestion__badge--best";
-            badge.textContent = "Лучший вариант";
+            badge.textContent = "Рекомендуемый вариант";
             button.appendChild(badge);
         }
         if (option.preference_match_label) {
@@ -1383,6 +1542,33 @@
             button.appendChild(chips);
         }
         return button;
+    }
+
+    function setSelectedSuggestion(button) {
+        const list = document.getElementById("draft-placement-suggestions-list");
+        if (list) {
+            list.querySelectorAll(".schedule-draft-suggestion.is-selected").forEach(function (item) {
+                item.classList.remove("is-selected");
+                item.removeAttribute("aria-pressed");
+            });
+        }
+        if (button) {
+            button.classList.add("is-selected");
+            button.setAttribute("aria-pressed", "true");
+        }
+    }
+
+    function autoApplyBestSuggestion(list) {
+        const form = getForm();
+        if (!form || !list || form.dataset.manualEdited === "true" || form.dataset.autoSuggestionApplied === "true") {
+            return;
+        }
+        const best = list.querySelector(".schedule-draft-suggestion:not(:disabled)");
+        if (!best) {
+            return;
+        }
+        form.dataset.autoSuggestionApplied = "true";
+        applySuggestion(best, { auto: true });
     }
 
     function renderManualSuggestions(panel, list, payload, trigger) {
@@ -1405,6 +1591,7 @@
         options.forEach(function (option) {
             list.appendChild(renderSuggestionOption(option));
         });
+        autoApplyBestSuggestion(list);
         if (payload.has_more_options) {
             const more = document.createElement("button");
             more.type = "button";
@@ -1495,7 +1682,7 @@
         panel.hidden = false;
     }
 
-    function applySuggestion(button) {
+    function applySuggestion(button, options) {
         const form = getForm();
         if (!form || !button || button.disabled) {
             return;
@@ -1509,6 +1696,11 @@
         if (!periods.length) {
             return;
         }
+        setSelectedSuggestion(button);
+        if (!options || !options.auto) {
+            form.dataset.autoSuggestionApplied = "true";
+        }
+        form.dataset.manualEdited = "false";
         const list = document.getElementById("draft-placement-periods-list");
         if (list) {
             list.replaceChildren();
@@ -1518,6 +1710,7 @@
         });
         updatePeriodRemoveButtons();
         syncPeriodsJson();
+        updatePackageReportFromSuggestion(button);
         requestPreview();
     }
 
@@ -1541,6 +1734,8 @@
         form.dataset.datePickerExcludeScheduleItem = "";
         form.dataset.maxPeriods = trigger.dataset.manualMaxPeriods || String(DEFAULT_MAX_MANUAL_PERIODS);
         form.dataset.previewCanSubmit = "false";
+        form.dataset.manualEdited = "false";
+        form.dataset.autoSuggestionApplied = "false";
         form.reset();
         const nextField = document.getElementById("draft-placement-next-url");
         if (nextField) {
@@ -1557,12 +1752,9 @@
         setText(document.getElementById("draft-placement-backup"), trigger.dataset.manualBackup || "");
         setText(document.getElementById("draft-placement-placed"), trigger.dataset.manualPlaced || "");
         setText(document.getElementById("draft-placement-target"), trigger.dataset.manualTarget || "");
+        updatePlacementSummary(trigger);
         setText(document.getElementById("draft-placement-periods-title"), trigger.dataset.manualPeriodsTitle || "До 3 периодов за одно размещение");
         setText(getSubmitButton(), trigger.dataset.manualSubmitLabel || "Поставить в черновик");
-        setText(
-            document.getElementById("draft-placement-reason"),
-            [trigger.dataset.manualReason, trigger.dataset.manualDetail].filter(Boolean).join(" "),
-        );
         renderCurrentPackagePanel(trigger);
         resetPreview();
         resetSuggestionsPanel();
@@ -2163,26 +2355,84 @@
             });
     }
 
-    function getAutoPreviewUrl(trigger) {
-        return trigger ? trigger.dataset.autoPreviewUrl || "" : "";
+    function getAutoConfirmNumber(trigger, key) {
+        if (!trigger || !key) {
+            return 0;
+        }
+        const value = Number.parseInt(trigger.dataset[key] || "0", 10);
+        return Number.isFinite(value) ? value : 0;
     }
 
-    function prefetchAutoPreview(trigger) {
-        const url = getAutoPreviewUrl(trigger);
-        if (!url) {
+    function renderAutoPlaceConfirmation(trigger) {
+        const modal = document.getElementById("schedule-draft-auto-modal");
+        const content = modal ? modal.querySelector("[data-draft-auto-preview-content]") : null;
+        const submit = modal ? modal.querySelector("[data-draft-auto-submit]") : null;
+        if (!content) {
             return;
         }
-        getCachedJson(autoPreviewCache, url).catch(function () {
-            // Silent prefetch: the modal will show a normal error if the user opens it.
+
+        const manualCount = getAutoConfirmNumber(trigger, "autoManualCount");
+        const blockingCount = getAutoConfirmNumber(trigger, "autoBlockingCount");
+        const conflictsCount = getAutoConfirmNumber(trigger, "autoConflictsCount");
+        const highRiskCount = getAutoConfirmNumber(trigger, "autoHighRiskCount");
+        const planDays = trigger && trigger.dataset.autoPlanDays ? trigger.dataset.autoPlanDays : "0 д.";
+        const blockingDays = trigger && trigger.dataset.autoBlockingDays ? trigger.dataset.autoBlockingDays : "0 д.";
+
+        content.replaceChildren();
+
+        const intro = document.createElement("div");
+        intro.className = "schedule-draft-auto-confirm";
+        const icon = document.createElement("div");
+        icon.className = "schedule-draft-auto-confirm__icon";
+        const iconGlyph = document.createElement("span");
+        iconGlyph.className = "material-icons-sharp";
+        iconGlyph.setAttribute("aria-hidden", "true");
+        iconGlyph.textContent = "auto_fix_high";
+        icon.appendChild(iconGlyph);
+        const copy = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = "Запустить фоновый добор";
+        const description = document.createElement("p");
+        description.textContent = "Система подберёт лучшие варианты в фоне, проверит правила состава и обновит черновик. Прогресс будет виден на странице.";
+        copy.append(title, description);
+        intro.append(icon, copy);
+        content.appendChild(intro);
+
+        const summary = document.createElement("div");
+        summary.className = "schedule-draft-auto-preview__summary";
+        [
+            ["Ручных строк", manualCount],
+            ["К добору", planDays],
+            ["Срочные блокеры", blockingCount ? blockingCount + " · " + blockingDays : "0"],
+            ["Высокий риск", highRiskCount],
+            ["Конфликты", conflictsCount],
+        ].forEach(function (item) {
+            const card = document.createElement("article");
+            const label = document.createElement("span");
+            label.textContent = item[0];
+            const value = document.createElement("strong");
+            value.textContent = String(item[1]);
+            card.append(label, value);
+            summary.appendChild(card);
         });
+        content.appendChild(summary);
+
+        const note = document.createElement("p");
+        note.className = "schedule-draft-auto-preview__note";
+        note.textContent = blockingCount
+            ? "Срочные остатки с кнопкой «Закрыть в 2026» останутся ручными задачами. Добор закроет только те дни, которые можно безопасно поставить в график этого года."
+            : "После запуска модалку можно закрыть: прогресс будет отображаться прямо на странице черновика.";
+        content.appendChild(note);
+
+        if (submit) {
+            submit.disabled = manualCount <= 0;
+        }
     }
 
     function loadAutoPreview(trigger) {
         const modal = document.getElementById("schedule-draft-auto-modal");
         const content = modal ? modal.querySelector("[data-draft-auto-preview-content]") : null;
-        const submit = modal ? modal.querySelector("[data-draft-auto-submit]") : null;
-        const url = getAutoPreviewUrl(trigger);
-        if (!modal || !content || !url) {
+        if (!modal || !content) {
             return;
         }
         clearAutoPlacePoll();
@@ -2190,38 +2440,10 @@
         if (form) {
             form.dataset.autoPlaceRunning = "false";
         }
-        if (submit) {
-            submit.disabled = true;
-        }
-
-        const cachedPayload = getCachedPayload(autoPreviewCache, url);
-        if (cachedPayload) {
-            renderAutoPreview(cachedPayload);
-            if (window.appModal && typeof window.appModal.open === "function") {
-                window.appModal.open(modal);
-            }
-            return;
-        }
-
-        setModalState(
-            content,
-            isCachedLoading(autoPreviewCache, url)
-                ? "Завершаю подготовку предпросмотра действия «Добрать незакрытые дни»."
-                : "Загружаю предпросмотр действия «Добрать незакрытые дни».",
-            "hourglass_top",
-        );
+        renderAutoPlaceConfirmation(trigger);
         if (window.appModal && typeof window.appModal.open === "function") {
             window.appModal.open(modal);
         }
-
-        getCachedJson(autoPreviewCache, url)
-            .then(renderAutoPreview)
-            .catch(function (error) {
-                if (submit) {
-                    submit.disabled = true;
-                }
-                setModalState(content, error.message || "Не удалось загрузить предпросмотр.", "error");
-            });
     }
 
     document.addEventListener("submit", function (event) {
@@ -2284,6 +2506,7 @@
             return;
         }
         event.preventDefault();
+        markManualDatesChanged();
         createPeriodRow({}, { focusStart: true });
         requestPreview();
     });
@@ -2297,6 +2520,7 @@
         const row = removeButton.closest("[data-draft-period-row]");
         if (row && getPeriodRows().length > 1) {
             event.preventDefault();
+            markManualDatesChanged();
             row.remove();
             updatePeriodRemoveButtons();
             syncPeriodsJson();
@@ -2341,7 +2565,6 @@
         const target = event.target instanceof Element ? event.target : null;
         const autoTrigger = target ? target.closest("[data-draft-auto-open]") : null;
         if (autoTrigger) {
-            prefetchAutoPreview(autoTrigger);
             return;
         }
         const manualTrigger = target ? target.closest("[data-draft-manual-open]") : null;
@@ -2373,7 +2596,7 @@
             return;
         }
         event.preventDefault();
-        applySuggestion(suggestion);
+        applySuggestion(suggestion, { user: true });
     });
 
     document.addEventListener("click", function (event) {
@@ -2410,10 +2633,6 @@
 
     document.addEventListener("focusin", function (event) {
         const target = event.target instanceof Element ? event.target : null;
-        const autoTrigger = target ? target.closest("[data-draft-auto-open]") : null;
-        if (autoTrigger) {
-            prefetchAutoPreview(autoTrigger);
-        }
         const manualTrigger = target ? target.closest("[data-draft-manual-open]") : null;
         if (manualTrigger) {
             prefetchManualSuggestions(manualTrigger);
@@ -2427,6 +2646,7 @@
     document.addEventListener("input", function (event) {
         const target = event.target instanceof Element ? event.target : null;
         if (target && target.matches("#schedule-draft-placement-form input[type='date']")) {
+            markManualDatesChanged();
             syncDateInputVisualState(target);
             requestPreview();
         }
@@ -2443,6 +2663,7 @@
     document.addEventListener("change", function (event) {
         const target = event.target instanceof Element ? event.target : null;
         if (target && target.matches("#schedule-draft-placement-form input[type='date']")) {
+            markManualDatesChanged();
             syncDateInputVisualState(target);
             requestPreview();
         }

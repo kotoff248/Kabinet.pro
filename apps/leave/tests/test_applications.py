@@ -49,6 +49,7 @@ class ApplicationsBoardTests(LeaveTestCase):
         self.assertEqual(payload["vacations"][0]["employee_secondary_label"], self.employee.department.name)
         self.assertEqual(payload["vacations"][0]["period_label"], "01.11.2026 - 03.11.2026")
         self.assertEqual(payload["vacations"][0]["reason_preview"], "Нужно закрыть учебную сессию.")
+        self.assertIsNone(payload["vacations"][0]["module_badge"])
         self.assertIn("period_label", payload["vacations"][0])
         self.assertIn("vacations_html", payload)
         self.assertIn("change_requests_html", payload)
@@ -63,7 +64,69 @@ class ApplicationsBoardTests(LeaveTestCase):
         self.assertNotIn("ноября", payload["vacations_html"])
         self.assertNotIn('<span class="application-card__label">Сотрудник</span>', payload["vacations_html"])
         self.assertNotIn("<span>Профиль</span>", payload["vacations_html"])
+        self.assertNotIn("application-card__module-badge", payload["vacations_html"])
         self.assertIn('role="link"', payload["vacations_html"])
+
+    def test_applications_request_card_shows_submission_module_badge(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-11-01",
+            end_date="2026-11-03",
+            vacation_type="study",
+            status=VacationRequest.STATUS_PENDING,
+            ai_score="82.00",
+            ai_recommendation="avoid",
+            ai_explanation="Модуль советует проверить соседние даты.",
+        )
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(
+            reverse("applications"),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        badge = payload["vacations"][0]["module_badge"]
+        self.assertEqual(payload["vacations"][0]["id"], request_obj.id)
+        self.assertEqual(badge["score_label"], "82%")
+        self.assertEqual(badge["recommendation_label"], "лучше проверить")
+        self.assertEqual(badge["variant"], "medium")
+        self.assertEqual(badge["source_label"], "На момент подачи")
+        self.assertIn("Модуль 82% · лучше проверить", payload["vacations_html"])
+        self.assertIn("application-card__module-badge--medium", payload["vacations_html"])
+
+    def test_applications_request_card_prefers_decision_module_badge_for_reviewed_request(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-12-01",
+            end_date="2026-12-03",
+            vacation_type="study",
+            status=VacationRequest.STATUS_APPROVED,
+            ai_score="10.00",
+            ai_recommendation="prefer",
+            ai_explanation="Старая оценка на момент подачи.",
+            decision_ai_score="92.00",
+            decision_ai_recommendation="blocked",
+            decision_ai_explanation="На момент решения есть блокирующие правила.",
+        )
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(
+            reverse("applications"),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        badge = payload["vacations"][0]["module_badge"]
+        self.assertEqual(payload["vacations"][0]["id"], request_obj.id)
+        self.assertEqual(badge["score_label"], "92%")
+        self.assertEqual(badge["recommendation_label"], "есть ограничения")
+        self.assertEqual(badge["variant"], "risk")
+        self.assertEqual(badge["source_label"], "На момент решения")
+        self.assertIn("Модуль 92% · есть ограничения", payload["vacations_html"])
+        self.assertNotIn("Модуль 10%", payload["vacations_html"])
 
     def test_applications_search_filters_requests_and_transfers_by_employee_name(self):
         request_obj = VacationRequest.objects.create(

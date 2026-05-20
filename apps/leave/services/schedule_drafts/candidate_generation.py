@@ -199,6 +199,14 @@ def _build_draft_generation_context(year, schedule):
         preference_pair_by_employee=preference_pair_by_employee,
         preference_state_by_employee=preference_state_by_employee,
     )
+    planning_static_by_employee = {
+        employee_id: {
+            "available_days": planning_need["available_days"],
+            "plan_available_days": planning_need["plan_available_days"],
+            "entitlement_rows": planning_need["entitlement_rows"],
+        }
+        for employee_id, planning_need in planning_need_by_employee.items()
+    }
     return DraftGenerationContext(
         year=year,
         schedule=schedule,
@@ -208,10 +216,31 @@ def _build_draft_generation_context(year, schedule):
         preference_state_by_employee=preference_state_by_employee,
         placements=_current_placements_from_items(draft_items),
         planning_need_by_employee=planning_need_by_employee,
+        planning_static_by_employee=planning_static_by_employee,
     )
 
 
 def _current_employee_planning_need(context, employee):
+    static = getattr(context, "planning_static_by_employee", {}).get(employee.id)
+    if static:
+        draft_items = context.draft_items_by_employee.get(employee.id, [])
+        preference_pair = context.preference_pair_by_employee.get(employee.id)
+        preference_state = context.preference_state_by_employee.get(employee.id)
+        return _build_employee_schedule_planning_need_from_rows(
+            employee,
+            context.year,
+            draft_items,
+            static["available_days"],
+            static["plan_available_days"],
+            static["entitlement_rows"],
+            requested_preference_days=_requested_preference_days_for_plan(
+                preference_pair,
+                preference_state,
+                draft_items,
+            ),
+            remainder_policy=_preference_remainder_policy(preference_pair, preference_state),
+            preference_state=preference_state,
+        )
     return build_employee_schedule_planning_need(
         employee,
         context.year,
@@ -308,6 +337,8 @@ def _assess_generation_candidate_hard_rules(
     max_chargeable_days=None,
     exclude_schedule_item_id=None,
     exclude_schedule_item_ids=None,
+    assessment_cache=None,
+    risk_context_cache=None,
 ):
     assessment = assess_schedule_draft_candidate(
         candidate.employee,
@@ -318,6 +349,8 @@ def _assess_generation_candidate_hard_rules(
         max_chargeable_days=max_chargeable_days,
         exclude_schedule_item_id=exclude_schedule_item_id,
         exclude_schedule_item_ids=exclude_schedule_item_ids,
+        assessment_cache=assessment_cache,
+        risk_context_cache=risk_context_cache,
     )
     return _apply_hard_rule_assessment(candidate, assessment)
 
@@ -337,6 +370,8 @@ def _build_preference_generation_candidates(context, employee):
             context.year,
             context.placements,
             exclude_schedule_item_ids=context.excluded_schedule_item_ids,
+            assessment_cache=context.assessment_cache,
+            risk_context_cache=context.risk_context_cache,
         )
     return candidates
 
@@ -354,6 +389,8 @@ def _select_first_passed_generation_candidate(candidates):
 
 
 def _apply_candidate_scoring(candidate):
+    if "scoring_score" in candidate.metadata and "scoring_confidence" in candidate.metadata:
+        return candidate
     features = _generation_candidate_features(candidate)
     scoring = score_candidate_features(features, passed_hard_rules=_candidate_passed_hard_rules(candidate))
     candidate.metadata.update(
@@ -822,6 +859,8 @@ def _build_auto_generation_candidates(context, employee, current_items, planning
                 max_chargeable_days=max_chargeable_days,
                 limit=AUTO_DRAFT_MAX_CANDIDATES_PER_STRATEGY,
                 exclude_schedule_item_ids=context.excluded_schedule_item_ids,
+                assessment_cache=context.assessment_cache,
+                risk_context_cache=context.risk_context_cache,
             )
         )
         candidates.extend(
@@ -847,6 +886,8 @@ def _build_auto_generation_candidates(context, employee, current_items, planning
                 max_chargeable_days=max_chargeable_days,
                 limit=AUTO_DRAFT_MAX_CANDIDATES_PER_STRATEGY,
                 exclude_schedule_item_ids=context.excluded_schedule_item_ids,
+                assessment_cache=context.assessment_cache,
+                risk_context_cache=context.risk_context_cache,
             )
         )
         candidates.extend(

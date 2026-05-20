@@ -3,11 +3,19 @@
 
     const POLL_INTERVAL_MS = 1500;
     let pollTimer = null;
+    let neuralPollTimer = null;
 
     function clearPollTimer() {
         if (pollTimer) {
             window.clearTimeout(pollTimer);
             pollTimer = null;
+        }
+    }
+
+    function clearNeuralPollTimer() {
+        if (neuralPollTimer) {
+            window.clearTimeout(neuralPollTimer);
+            neuralPollTimer = null;
         }
     }
 
@@ -142,11 +150,186 @@
         schedulePoll(job, statusUrl, 250);
     }
 
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", initPlanningAutoJob, { once: true });
-    } else {
-        initPlanningAutoJob();
+    function csrfTokenFromForm(form) {
+        const input = form ? form.querySelector("input[name='csrfmiddlewaretoken']") : null;
+        return input ? input.value : "";
     }
 
-    document.addEventListener("app:navigation", initPlanningAutoJob);
+    function updateNeuralClass(card, status) {
+        card.classList.remove(
+            "schedule-planning-neural-card--ok",
+            "schedule-planning-neural-card--warning",
+            "schedule-planning-neural-card--muted",
+            "schedule-planning-neural-card--info",
+            "schedule-planning-neural-card--queued",
+            "schedule-planning-neural-card--running",
+            "schedule-planning-neural-card--succeeded",
+            "schedule-planning-neural-card--failed",
+        );
+        if (status) {
+            card.classList.add("schedule-planning-neural-card--" + status);
+        }
+        card.dataset.status = status || "";
+    }
+
+    function renderNeuralJob(card, payload) {
+        const status = payload.status || "running";
+        const percent = clampPercent(payload.progress_percent);
+        updateNeuralClass(card, status);
+        setText(card.querySelector("[data-neural-training-status-label]"), payload.stage_label || payload.message || status);
+        setText(
+            card.querySelector("[data-neural-training-message]"),
+            payload.error_message || payload.message || "Переобучаю нейромодуль.",
+        );
+        const bar = card.querySelector("[data-neural-training-bar]");
+        if (bar) {
+            bar.style.width = percent + "%";
+        }
+        const metrics = payload.metrics_payload || {};
+        const source = metrics.source || {};
+        const candidate = metrics.candidate || {};
+        const packageMetrics = metrics.package || {};
+        if (source.years) {
+            setText(card.querySelector("[data-neural-training-years]"), source.years.join(", "));
+        }
+        if (candidate.examples_count !== undefined) {
+            setText(card.querySelector("[data-neural-training-candidate-count]"), candidate.examples_count);
+        }
+        if (packageMetrics.examples_count !== undefined) {
+            setText(card.querySelector("[data-neural-training-package-count]"), packageMetrics.examples_count);
+        }
+        const formButton = card.querySelector("[data-neural-training-form] button");
+        if (formButton) {
+            formButton.disabled = status === "queued" || status === "running";
+        }
+    }
+
+    function scheduleNeuralPoll(card, statusUrl, delayMs) {
+        clearNeuralPollTimer();
+        neuralPollTimer = window.setTimeout(function () {
+            fetchStatus(statusUrl)
+                .then(function (payload) {
+                    renderNeuralJob(card, payload);
+                    if (payload.status === "succeeded") {
+                        setText(card.querySelector("[data-neural-training-message]"), "Готово. Обновляю статус модели.");
+                        clearNeuralPollTimer();
+                        reloadPlanningPage();
+                        return;
+                    }
+                    if (payload.status === "failed") {
+                        clearNeuralPollTimer();
+                        return;
+                    }
+                    scheduleNeuralPoll(card, statusUrl, POLL_INTERVAL_MS);
+                })
+                .catch(function (error) {
+                    renderNeuralJob(card, {
+                        status: "failed",
+                        progress_percent: 0,
+                        stage_label: "Ошибка статуса",
+                        error_message: error.message || "Не удалось получить статус обучения.",
+                    });
+                    clearNeuralPollTimer();
+                });
+        }, delayMs);
+    }
+
+    function startNeuralTraining(card, form) {
+        const button = form.querySelector("button");
+        if (button) {
+            button.disabled = true;
+        }
+        renderNeuralJob(card, {
+            status: "queued",
+            progress_percent: 0,
+            stage_label: "Запускаю обучение",
+            message: "Создаю фоновую задачу переобучения.",
+        });
+        fetch(form.action, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+                "Accept": "application/json",
+                "X-Requested-With": "XMLHttpRequest",
+                "X-CSRFToken": csrfTokenFromForm(form),
+            },
+        })
+            .then(function (response) {
+                return response.json().then(function (payload) {
+                    if (!response.ok || payload.ok === false) {
+                        throw new Error(payload.message || payload.error_message || "Не удалось запустить обучение.");
+                    }
+                    return payload;
+                });
+            })
+            .then(function (payload) {
+                renderNeuralJob(card, payload);
+                if (payload.status_url) {
+                    card.dataset.statusUrl = payload.status_url;
+                    scheduleNeuralPoll(card, payload.status_url, 500);
+                }
+            })
+            .catch(function (error) {
+                renderNeuralJob(card, {
+                    status: "failed",
+                    progress_percent: 0,
+                    stage_label: "Ошибка запуска",
+                    error_message: error.message || "Не удалось запустить обучение.",
+                });
+                if (button) {
+                    button.disabled = false;
+                }
+            });
+    }
+
+    function initNeuralTraining() {
+        const previousController = window.__schedulePlanningNeuralTrainingController;
+        if (previousController) {
+            previousController.abort();
+            window.__schedulePlanningNeuralTrainingController = null;
+        }
+        clearNeuralPollTimer();
+
+        const root = document.querySelector("[data-page='schedule-planning']");
+        const card = root ? root.querySelector("[data-neural-training]") : null;
+        if (!card) {
+            return;
+        }
+
+        const controller = new AbortController();
+        window.__schedulePlanningNeuralTrainingController = controller;
+        controller.signal.addEventListener("abort", clearNeuralPollTimer, { once: true });
+
+        const form = card.querySelector("[data-neural-training-form]");
+        if (form) {
+            form.addEventListener("submit", function (event) {
+                event.preventDefault();
+                if (form.querySelector("button:disabled")) {
+                    return;
+                }
+                startNeuralTraining(card, form);
+            });
+        }
+
+        const statusUrl = card.dataset.statusUrl || "";
+        const status = card.dataset.status || "";
+        if (statusUrl && (status === "queued" || status === "running")) {
+            scheduleNeuralPoll(card, statusUrl, 250);
+        }
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", function () {
+            initPlanningAutoJob();
+            initNeuralTraining();
+        }, { once: true });
+    } else {
+        initPlanningAutoJob();
+        initNeuralTraining();
+    }
+
+    document.addEventListener("app:navigation", function () {
+        initPlanningAutoJob();
+        initNeuralTraining();
+    });
 })();

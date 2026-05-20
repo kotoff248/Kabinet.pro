@@ -700,6 +700,51 @@
     white-space: normal;
 }
 
+.application-card__module-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    width: fit-content;
+    max-width: 100%;
+    min-height: 1.45rem;
+    margin-top: 0.38rem;
+    padding: 0.22rem 0.48rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.55rem;
+    color: rgba(255, 255, 255, 0.94);
+    font-size: 0.72rem;
+    font-weight: 760;
+    line-height: 1.2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.application-card__module-badge .material-icons-sharp {
+    flex: 0 0 auto;
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
+.application-card__module-badge--planned {
+    background: rgba(67, 198, 139, 0.16);
+    border-color: rgba(91, 226, 163, 0.28);
+}
+
+.application-card__module-badge--info {
+    background: rgba(83, 160, 255, 0.16);
+    border-color: rgba(115, 181, 255, 0.28);
+}
+
+.application-card__module-badge--medium {
+    background: rgba(245, 184, 77, 0.17);
+    border-color: rgba(255, 209, 116, 0.3);
+}
+
+.application-card__module-badge--risk {
+    background: rgba(255, 111, 111, 0.16);
+    border-color: rgba(255, 143, 143, 0.3);
+}
+
 .application-card__actions {
     grid-area: actions;
     display: flex;

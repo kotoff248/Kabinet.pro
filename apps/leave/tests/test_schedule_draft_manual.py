@@ -37,6 +37,7 @@ from apps.leave.services.schedule_drafts.candidate_generation import (
     _build_draft_generation_context,
     _build_preference_generation_candidates,
 )
+from apps.leave.services.schedule_drafts.constants import MANUAL_DRAFT_SUGGESTION_CACHE_SCHEMA_VERSION
 from apps.leave.services.schedule_drafts.manual import place_manual_schedule_draft_items
 from apps.leave.services.schedule_drafts.manual_suggestions import (
     _manual_package_payload,
@@ -52,6 +53,161 @@ from apps.leave.tests.base import LeaveTestCase
 
 
 class ScheduleDraftManualTests(LeaveTestCase):
+    def test_manual_suggestions_default_request_shows_ten_best_options(self):
+        year = self._year()
+        self.client.force_login(self.hr_employee.user)
+        mocked_payload = {
+            "suggestion_schema_version": MANUAL_DRAFT_SUGGESTION_CACHE_SCHEMA_VERSION,
+            "employee_id": self.employee.id,
+            "employee_name": self.employee.full_name,
+            "needed_label": "52 д.",
+            "status_label": "Нужно добить",
+            "target_days_label": "52 д.",
+            "placed_days_label": "0 д.",
+            "planning_year": year,
+            "date_min": date(year, 1, 1).isoformat(),
+            "date_max": date(year, 12, 31).isoformat(),
+            "preference_option": None,
+            "visible_limit": 10,
+            "options": [],
+            "total_candidates": 0,
+            "safe_candidates": 0,
+            "shown_candidates": 0,
+            "has_more_options": False,
+        }
+
+        with patch(
+            "apps.leave.views.schedule_draft.build_schedule_draft_manual_suggestions",
+            return_value=mocked_payload,
+        ) as mocked_suggestions:
+            response = self.client.get(reverse("schedule_draft_manual_suggestions", args=[year, self.employee.id]))
+
+        self.assertEqual(response.status_code, 200)
+        mocked_suggestions.assert_called_once_with(year=year, employee_id=self.employee.id, limit=10)
+
+    def test_manual_package_payload_includes_compact_staffing_summary(self):
+        year = self._year()
+        candidate = DraftGenerationCandidate(
+            employee=self.employee,
+            start_date=date(year, 11, 1),
+            end_date=date(year, 12, 8),
+            kind=VacationScheduleCandidate.KIND_AUTO,
+            source=VacationScheduleItem.SOURCE_GENERATED,
+            comment="Предложение модуля.",
+            assessment={
+                "can_place": True,
+                "chargeable_days": Decimal("37.00"),
+                "risk_payload": {
+                    "risk_score": 42,
+                    "risk_level": VacationScheduleItem.RISK_MEDIUM,
+                    "department_load_level": 3,
+                    "overlapping_absences_count": 2,
+                    "remaining_staff_count": 12,
+                    "min_staff_required": 10,
+                    "risk_explanation": {"is_conflict": False},
+                },
+            },
+            metadata={
+                "passed_hard_rules": True,
+                "chargeable_days": Decimal("37.00"),
+                "risk_score": 42,
+                "risk_level": VacationScheduleItem.RISK_MEDIUM,
+                "scoring_score": Decimal("67.10"),
+                "scoring_confidence": Decimal("86.63"),
+                "scoring_recommendation": "normal",
+            },
+        )
+        package = DraftGenerationCandidatePackage(
+            employee=self.employee,
+            candidates=[candidate],
+            source=VacationScheduleItem.SOURCE_GENERATED,
+            explanation="Пакет закрывает нужный объем дней.",
+            metadata={"package_quality_score": Decimal("67.10")},
+        )
+
+        payload = _manual_package_payload(package, rank=1)
+
+        self.assertEqual(payload["staffing_summary"]["absent_total"], 3)
+        self.assertEqual(payload["staffing_summary"]["remaining_staff"], 12)
+        self.assertEqual(payload["staffing_summary"]["required_staff"], 10)
+        self.assertEqual(payload["staffing_summary"]["staff_margin"], 2)
+        self.assertEqual(
+            [chip["label"] for chip in payload["staffing_chips"]],
+            ["Отсутствуют 3", "Останется 12 / мин. 10", "Запас +2"],
+        )
+
+    def test_manual_package_payload_skips_staffing_summary_without_staffing_data(self):
+        year = self._year()
+        candidate = DraftGenerationCandidate(
+            employee=self.employee,
+            start_date=date(year, 9, 1),
+            end_date=date(year, 9, 14),
+            kind=VacationScheduleCandidate.KIND_AUTO,
+            source=VacationScheduleItem.SOURCE_GENERATED,
+            comment="Предложение модуля.",
+            assessment={"can_place": True, "chargeable_days": Decimal("14.00")},
+            metadata={
+                "passed_hard_rules": True,
+                "chargeable_days": Decimal("14.00"),
+                "risk_score": 0,
+                "risk_level": VacationScheduleItem.RISK_LOW,
+                "scoring_score": Decimal("80.00"),
+                "scoring_confidence": Decimal("90.00"),
+                "scoring_recommendation": "prefer",
+            },
+        )
+        package = DraftGenerationCandidatePackage(
+            employee=self.employee,
+            candidates=[candidate],
+            source=VacationScheduleItem.SOURCE_GENERATED,
+            explanation="Пакет безопасен.",
+            metadata={"package_quality_score": Decimal("80.00")},
+        )
+
+        payload = _manual_package_payload(package, rank=1)
+
+        self.assertEqual(payload["staffing_summary"], {})
+        self.assertEqual(payload["staffing_chips"], [])
+
+    def test_manual_suggestions_rebuild_old_schema_cache(self):
+        year = self._year()
+        self.activate_only(self.employee)
+        self._set_filled_preferences(
+            self.employee,
+            primary_start=date(year, 6, 1),
+            primary_end=date(year, 6, 14),
+            backup_start=date(year, 9, 1),
+            backup_end=date(year, 9, 14),
+        )
+        schedule = self.create_minimal_draft(year=year)
+        self.create_employee_draft_item(
+            self.employee,
+            schedule=schedule,
+            start_date=date(year, 6, 1),
+            end_date=date(year, 6, 14),
+        )
+        schedule.manual_suggestion_cache_version = 7
+        schedule.manual_suggestion_cache_rebuilt_at = timezone.now()
+        schedule.save(update_fields=["manual_suggestion_cache_version", "manual_suggestion_cache_rebuilt_at"])
+        VacationScheduleManualSuggestionCache.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            version=7,
+            payload={
+                "suggestion_schema_version": MANUAL_DRAFT_SUGGESTION_CACHE_SCHEMA_VERSION - 1,
+                "options": [],
+            },
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("schedule_draft_manual_suggestions", args=[year, self.employee.id]))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["suggestion_schema_version"], MANUAL_DRAFT_SUGGESTION_CACHE_SCHEMA_VERSION)
+        cache = VacationScheduleManualSuggestionCache.objects.get(schedule=schedule, employee=self.employee)
+        self.assertEqual(cache.payload["suggestion_schema_version"], MANUAL_DRAFT_SUGGESTION_CACHE_SCHEMA_VERSION)
+
     def test_manual_suggestions_preview_does_not_persist_records(self):
         year = self._year()
         self.activate_only(self.employee)

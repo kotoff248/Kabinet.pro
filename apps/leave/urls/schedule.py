@@ -16,6 +16,16 @@ urlpatterns = [
         name="schedule_planning_start_next",
     ),
     path(
+        "calendar/planning/<int:year>/ml-training/start/",
+        schedule_planning.start_schedule_neural_training,
+        name="schedule_neural_training_start",
+    ),
+    path(
+        "calendar/planning/<int:year>/ml-training/<int:job_id>/status/",
+        schedule_planning.schedule_neural_training_status,
+        name="schedule_neural_training_status",
+    ),
+    path(
         "calendar/planning/<int:year>/department-review/start/",
         schedule_reviews.start_schedule_department_review,
         name="schedule_department_review_start",

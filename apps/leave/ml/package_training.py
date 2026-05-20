@@ -12,47 +12,47 @@ from django.utils import timezone
 
 from apps.leave.models import (
     VacationSchedule,
-    VacationScheduleCandidate,
     VacationScheduleCandidateFeedback,
     VacationScheduleCandidatePackage,
 )
 
-from .runtime import (
-    NEURAL_CANDIDATE_SCORER_KIND,
-    build_candidate_mlp_inputs,
-    candidate_model_filename,
+from .package_runtime import (
+    NEURAL_PACKAGE_RANKER_KIND,
+    build_package_ranker_inputs,
+    package_model_filename,
 )
 from .training_sources import build_training_source_summary
+from .package_scoring import build_record_package_features
 
 
-TARGET_HEADS = ("score", "confidence", "prefer", "avoid")
-HIDDEN_NODE_NAMES = (
+PACKAGE_TARGET_HEADS = ("score", "confidence", "prefer", "avoid")
+PACKAGE_HIDDEN_NODE_NAMES = (
+    "coverage_quality",
+    "period_shape",
     "preference_alignment",
-    "coverage_balance",
-    "deadline_closure",
     "staffing_safety",
-    "department_pressure",
-    "calendar_quality",
-    "manager_caution",
-    "auto_fit",
+    "risk_control",
+    "deadline_closure",
+    "source_fit",
+    "package_prior",
 )
 
 
-class CandidateTrainingError(Exception):
+class PackageTrainingError(Exception):
     pass
 
 
-class CandidateTrainingDataError(CandidateTrainingError):
+class PackageTrainingDataError(PackageTrainingError):
     pass
 
 
-class CandidateTrainingDependencyError(CandidateTrainingError):
+class PackageTrainingDependencyError(PackageTrainingError):
     pass
 
 
 @dataclass(frozen=True)
-class CandidateTrainingExample:
-    candidate_id: int
+class PackageTrainingExample:
+    package_id: int
     employee_id: int
     year: int
     decision: str
@@ -60,12 +60,11 @@ class CandidateTrainingExample:
     inputs: dict
     targets: dict
     feedback_decisions: tuple
-    package_decisions: tuple
 
 
 @dataclass(frozen=True)
-class CandidateTrainingDataset:
-    examples: list[CandidateTrainingExample]
+class PackageTrainingDataset:
+    examples: list[PackageTrainingExample]
     input_names: tuple[str, ...]
     class_balance: dict
 
@@ -75,7 +74,7 @@ class CandidateTrainingDataset:
 
 
 @dataclass(frozen=True)
-class CandidateTrainingResult:
+class PackageTrainingResult:
     model_path: Path
     metrics_path: Path
     examples_count: int
@@ -85,11 +84,11 @@ class CandidateTrainingResult:
     metrics_artifact: dict
 
 
-def collect_candidate_training_dataset(*, current_year=None, max_schedule_year=None):
+def collect_package_training_dataset(*, current_year=None, max_schedule_year=None):
     max_schedule_year = int(max_schedule_year or current_year or timezone.localdate().year)
     queryset = (
-        VacationScheduleCandidate.objects.select_related("schedule", "employee")
-        .prefetch_related("feedback_entries", "package_periods__candidate_package")
+        VacationScheduleCandidatePackage.objects.select_related("schedule", "employee")
+        .prefetch_related("periods__candidate__feedback_entries")
         .filter(
             schedule__year__lte=max_schedule_year,
             schedule__status__in=[
@@ -97,9 +96,9 @@ def collect_candidate_training_dataset(*, current_year=None, max_schedule_year=N
                 VacationSchedule.STATUS_APPROVED,
             ],
             decision__in=[
-                VacationScheduleCandidate.DECISION_SELECTED,
-                VacationScheduleCandidate.DECISION_REJECTED,
-                VacationScheduleCandidate.DECISION_BLOCKED,
+                VacationScheduleCandidatePackage.DECISION_SELECTED,
+                VacationScheduleCandidatePackage.DECISION_REJECTED,
+                VacationScheduleCandidatePackage.DECISION_BLOCKED,
             ],
         )
         .order_by("schedule__year", "employee_id", "id")
@@ -107,126 +106,118 @@ def collect_candidate_training_dataset(*, current_year=None, max_schedule_year=N
 
     examples = []
     input_names = None
-    for candidate in queryset:
-        features = candidate.features if isinstance(candidate.features, dict) else {}
-        if int(features.get("feature_schema_version") or 0) != 1:
-            continue
-        if _candidate_has_no_trainable_period(candidate, features):
+    for package in queryset:
+        if package.total_chargeable_days <= 0 and package.decision != VacationScheduleCandidatePackage.DECISION_BLOCKED:
             continue
 
-        label_bucket, targets = build_candidate_training_targets(candidate)
-        inputs = build_candidate_mlp_inputs(
-            features,
-            passed_hard_rules=bool(candidate.passed_hard_rules),
-        )
+        features = build_record_package_features(package)
+        if int(features.get("feature_schema_version") or 0) != 1:
+            continue
+
+        label_bucket, targets = build_package_training_targets(package, features=features)
+        inputs = build_package_ranker_inputs(features, passed_hard_rules=bool(package.passed_hard_rules))
         if input_names is None:
             input_names = tuple(sorted(inputs))
 
         examples.append(
-            CandidateTrainingExample(
-                candidate_id=candidate.id,
-                employee_id=candidate.employee_id,
-                year=candidate.schedule.year,
-                decision=candidate.decision,
+            PackageTrainingExample(
+                package_id=package.id,
+                employee_id=package.employee_id,
+                year=package.schedule.year,
+                decision=package.decision,
                 label_bucket=label_bucket,
                 inputs={name: float(inputs.get(name, 0.0)) for name in input_names},
                 targets=targets,
-                feedback_decisions=_feedback_decisions(candidate),
-                package_decisions=_package_decisions(candidate),
+                feedback_decisions=_package_feedback_decisions(package),
             )
         )
 
-    return CandidateTrainingDataset(
+    return PackageTrainingDataset(
         examples=examples,
         input_names=input_names or tuple(),
         class_balance=dict(Counter(example.label_bucket for example in examples)),
     )
 
 
-def _candidate_has_no_trainable_period(candidate, features):
-    chargeable_days = candidate.chargeable_days or _float_feature(features, "period_chargeable_days")
-    return float(chargeable_days or 0) <= 0
+def build_package_training_targets(package, *, features=None):
+    features = features or build_record_package_features(package)
+    quality_score = _package_quality_target(features)
+    feedback_decisions = set(_package_feedback_decisions(package))
 
-
-def build_candidate_training_targets(candidate):
-    decision = candidate.decision
-    feedback_decisions = set(_feedback_decisions(candidate))
-    features = candidate.features if isinstance(candidate.features, dict) else {}
-    historical_outcome = features.get("historical_outcome") or ""
-    package_decisions = set(_package_decisions(candidate))
-    quality_score = _candidate_quality_target(features)
-
-    if (
-        decision == VacationScheduleCandidate.DECISION_BLOCKED
-        or not candidate.passed_hard_rules
-        or VacationScheduleCandidatePackage.DECISION_BLOCKED in package_decisions
-    ):
+    if package.decision == VacationScheduleCandidatePackage.DECISION_BLOCKED or not package.passed_hard_rules:
         return "blocked", _target(score=0.00, confidence=0.96, prefer=0.00, avoid=1.00)
 
-    if decision == VacationScheduleCandidate.DECISION_REJECTED:
-        if _is_passed_preference_candidate(features):
-            score = _clamp(quality_score - 0.03, 0.58, 0.86)
-            return "rejected_preference", _target(
+    if package.decision == VacationScheduleCandidatePackage.DECISION_REJECTED:
+        score = _clamp(quality_score - 0.26, 0.18, 0.60)
+        if features.get("has_preference_period"):
+            score = _clamp(score + 0.08, 0.24, 0.66)
+            return "rejected_preference_package", _target(
                 score=score,
-                confidence=0.76,
-                prefer=_clamp(score + 0.02, 0.45, 0.86),
-                avoid=0.30,
+                confidence=0.74,
+                prefer=_clamp(score - 0.04, 0.12, 0.62),
+                avoid=0.70,
             )
-        else:
-            score = _clamp(quality_score - 0.32, 0.16, 0.56)
-            avoid = 0.82
-        return "rejected", _target(score=score, confidence=0.76, prefer=max(score - 0.16, 0.08), avoid=avoid)
+        return "rejected_package", _target(
+            score=score,
+            confidence=0.76,
+            prefer=max(score - 0.15, 0.06),
+            avoid=0.82,
+        )
 
-    if decision != VacationScheduleCandidate.DECISION_SELECTED:
+    if package.decision != VacationScheduleCandidatePackage.DECISION_SELECTED:
         score = _clamp(quality_score - 0.18, 0.24, 0.58)
-        return "ignored", _target(score=score, confidence=0.55, prefer=max(score - 0.18, 0.12), avoid=0.58)
+        return "ignored_package", _target(score=score, confidence=0.55, prefer=max(score - 0.18, 0.10), avoid=0.58)
 
-    if (
-        VacationScheduleCandidateFeedback.DECISION_REJECT in feedback_decisions
-        or historical_outcome == "later_transferred"
-    ):
-        score = _clamp(quality_score - 0.36, 0.18, 0.46)
-        return "selected_reject", _target(score=score, confidence=0.84, prefer=max(score - 0.22, 0.04), avoid=0.86)
+    if VacationScheduleCandidateFeedback.DECISION_REJECT in feedback_decisions:
+        score = _clamp(quality_score - 0.34, 0.18, 0.48)
+        return "selected_package_reject", _target(score=score, confidence=0.84, prefer=max(score - 0.22, 0.04), avoid=0.86)
 
-    if (
-        VacationScheduleCandidateFeedback.DECISION_NEEDS_CHANGE in feedback_decisions
-        or historical_outcome == "approved_high_risk"
-    ):
-        score = _clamp(quality_score - 0.18, 0.42, 0.66)
-        return "selected_needs_change", _target(score=score, confidence=0.72, prefer=max(score - 0.10, 0.25), avoid=0.52)
+    if VacationScheduleCandidateFeedback.DECISION_NEEDS_CHANGE in feedback_decisions:
+        score = _clamp(quality_score - 0.17, 0.43, 0.68)
+        return "selected_package_needs_change", _target(
+            score=score,
+            confidence=0.74,
+            prefer=max(score - 0.10, 0.25),
+            avoid=0.52,
+        )
 
-    score = _clamp(quality_score, 0.50, 0.92)
-    return "selected_agree", _target(score=score, confidence=0.88, prefer=_clamp(score + 0.06, 0.58, 0.96), avoid=0.05)
+    score = _clamp(quality_score, 0.58, 0.94)
+    return "selected_package_agree", _target(
+        score=score,
+        confidence=0.90,
+        prefer=_clamp(score + 0.06, 0.60, 0.97),
+        avoid=0.05,
+    )
 
 
-def train_candidate_mlp_model(
+def train_package_ranker_model(
     *,
-    output_version="vacation-candidate-mlp-v2",
+    output_version="vacation-package-ranker-v3",
     output_dir=None,
     epochs=250,
     lr=0.01,
     seed=42,
-    min_examples=30,
+    min_examples=20,
     current_year=None,
     max_schedule_year=None,
 ):
     max_schedule_year = int(max_schedule_year or current_year or timezone.localdate().year)
-    dataset = collect_candidate_training_dataset(max_schedule_year=max_schedule_year)
+    dataset = collect_package_training_dataset(max_schedule_year=max_schedule_year)
     if not dataset.examples:
-        raise CandidateTrainingDataError(
-            "Исторические ML-следы не найдены. Сначала запустите "
-            "seed_vacation_requests --confirm-reset, а потом повторите обучение."
+        raise PackageTrainingDataError(
+            "Исторические пакеты кандидатов не найдены. Сначала запустите seed_vacation_requests "
+            "--confirm-reset, а потом повторите обучение."
         )
     if len(dataset.examples) < int(min_examples):
-        raise CandidateTrainingDataError(
-            f"Недостаточно исторических примеров для обучения: {len(dataset.examples)} "
-            f"из {int(min_examples)}. Добавьте seed-историю или снизьте --min-examples."
+        raise PackageTrainingDataError(
+            f"Недостаточно исторических пакетов для обучения: {len(dataset.examples)} из {int(min_examples)}. "
+            "Добавьте seed-историю или снизьте --min-examples."
         )
 
     torch = _import_torch()
     _seed_training(torch, int(seed))
 
-    split = split_training_examples(dataset.examples, seed=seed)
+    split = split_package_training_examples(dataset.examples, seed=seed)
     model, training_loss = _train_torch_model(
         torch,
         split["train"],
@@ -240,7 +231,7 @@ def train_candidate_mlp_model(
     }
     metrics["training_loss"] = training_loss
 
-    model_artifact = export_torch_model_to_json(
+    model_artifact = export_package_torch_model_to_json(
         model,
         input_names=dataset.input_names,
         output_version=output_version,
@@ -250,7 +241,7 @@ def train_candidate_mlp_model(
     source_summary = build_training_source_summary(max_schedule_year=max_schedule_year)
     metrics_artifact = {
         "version": output_version,
-        "kind": NEURAL_CANDIDATE_SCORER_KIND,
+        "kind": NEURAL_PACKAGE_RANKER_KIND,
         "feature_schema_version": 1,
         "trained_at": timezone.now().isoformat(),
         "examples_count": len(dataset.examples),
@@ -260,7 +251,7 @@ def train_candidate_mlp_model(
         "source_fingerprint": source_summary["source_fingerprint"],
         "split_counts": {name: len(examples) for name, examples in split.items()},
         "input_names": list(dataset.input_names),
-        "target_heads": list(TARGET_HEADS),
+        "target_heads": list(PACKAGE_TARGET_HEADS),
         "training": {
             "epochs": int(epochs),
             "lr": float(lr),
@@ -270,14 +261,21 @@ def train_candidate_mlp_model(
         "metrics": metrics,
     }
 
-    output_dir = Path(output_dir or getattr(settings, "VACATION_CANDIDATE_MODEL_DIR"))
+    output_dir = Path(
+        output_dir
+        or getattr(
+            settings,
+            "VACATION_PACKAGE_MODEL_DIR",
+            getattr(settings, "VACATION_CANDIDATE_MODEL_DIR"),
+        )
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
-    model_path = output_dir / candidate_model_filename(output_version)
-    metrics_path = output_dir / candidate_model_filename(f"{output_version}-metrics")
+    model_path = output_dir / package_model_filename(output_version)
+    metrics_path = output_dir / package_model_filename(f"{output_version}-metrics")
     _write_json_atomic(model_path, model_artifact)
     _write_json_atomic(metrics_path, metrics_artifact)
 
-    return CandidateTrainingResult(
+    return PackageTrainingResult(
         model_path=model_path,
         metrics_path=metrics_path,
         examples_count=len(dataset.examples),
@@ -288,10 +286,10 @@ def train_candidate_mlp_model(
     )
 
 
-def split_training_examples(examples, *, seed=42):
+def split_package_training_examples(examples, *, seed=42):
     groups = {"train": [], "val": [], "test": []}
     for example in examples:
-        key = f"{seed}:{example.year}:{example.employee_id}:{example.candidate_id}"
+        key = f"{seed}:{example.year}:{example.employee_id}:{example.package_id}"
         bucket = int(hashlib.sha1(key.encode("utf-8")).hexdigest(), 16) % 100
         if bucket < 70:
             groups["train"].append(example)
@@ -308,14 +306,14 @@ def split_training_examples(examples, *, seed=42):
     return groups
 
 
-def export_torch_model_to_json(model, *, input_names, output_version, examples_count, class_balance):
+def export_package_torch_model_to_json(model, *, input_names, output_version, examples_count, class_balance):
     hidden_weight = model.hidden.weight.detach().cpu().tolist()
     hidden_bias = model.hidden.bias.detach().cpu().tolist()
     output_weight = model.output.weight.detach().cpu().tolist()
     output_bias = model.output.bias.detach().cpu().tolist()
 
     hidden_layer = []
-    for hidden_index, node_name in enumerate(HIDDEN_NODE_NAMES):
+    for hidden_index, node_name in enumerate(PACKAGE_HIDDEN_NODE_NAMES):
         hidden_layer.append(
             {
                 "name": node_name,
@@ -328,24 +326,24 @@ def export_torch_model_to_json(model, *, input_names, output_version, examples_c
         )
 
     heads = {}
-    for head_index, head_name in enumerate(TARGET_HEADS):
+    for head_index, head_name in enumerate(PACKAGE_TARGET_HEADS):
         heads[head_name] = {
             "bias": _round_weight(output_bias[head_index]),
             "weights": {
                 hidden_name: _round_weight(output_weight[head_index][hidden_index])
-                for hidden_index, hidden_name in enumerate(HIDDEN_NODE_NAMES)
+                for hidden_index, hidden_name in enumerate(PACKAGE_HIDDEN_NODE_NAMES)
             },
         }
 
     return {
         "version": output_version,
-        "kind": NEURAL_CANDIDATE_SCORER_KIND,
+        "kind": NEURAL_PACKAGE_RANKER_KIND,
         "feature_schema_version": 1,
-        "description": "Trained tabular MLP scorer for vacation schedule candidate ranking.",
+        "description": "Trained tabular MLP ranker for full vacation schedule packages.",
         "hidden_activation": "tanh",
         "output_activation": "sigmoid",
         "input_names": list(input_names),
-        "target_heads": list(TARGET_HEADS),
+        "target_heads": list(PACKAGE_TARGET_HEADS),
         "training_summary": {
             "examples_count": int(examples_count),
             "class_balance": class_balance,
@@ -364,82 +362,44 @@ def _target(*, score, confidence, prefer, avoid):
     }
 
 
-def _candidate_quality_target(features):
-    features = features if isinstance(features, dict) else {}
-    priority = features.get("preference_priority") or ""
-    exact_preference = _bool_feature(features, "preference_exact_period_match")
-    has_preference = _bool_feature(features, "preference_has_preference")
-    chargeable_days = _float_feature(features, "period_chargeable_days")
-    calendar_days = _float_feature(features, "period_calendar_days")
-    coverage_ratio = _float_feature(features, "planning_candidate_coverage_ratio")
-    risk_score = _float_feature(features, "risk_score")
-    load_level = _float_feature(features, "risk_department_load_level", 1.0)
-    staff_margin = _float_feature(features, "risk_staff_margin")
-    preference_period_ok = (
-        exact_preference
-        and priority in {"primary", "backup"}
-        and (calendar_days >= 14.0 or chargeable_days >= 13.0)
-    )
+def _package_quality_target(features):
+    score = 0.64
+    score += _clamp(_float_feature(features, "package_coverage_ratio"), 0.0, 1.0) * 0.10
+    score += _clamp(_float_feature(features, "avg_period_score") / 100.0, 0.0, 1.0) * 0.16
+    score += _clamp(_float_feature(features, "min_period_score") / 100.0, 0.0, 1.0) * 0.14
 
-    score = 0.78
-    if exact_preference and priority == "primary":
-        score += 0.14
-    elif exact_preference and priority == "backup":
-        score += 0.08
-    elif exact_preference:
-        score += 0.03
-    elif has_preference:
-        score += 0.02
-    else:
-        score -= 0.02
-
-    if preference_period_ok:
-        score += 0.08
-    elif chargeable_days >= 21:
+    if features.get("package_closes_need"):
+        score += 0.07
+    if features.get("has_primary_preference_period"):
+        score += 0.06
+    elif features.get("has_backup_preference_period"):
         score += 0.04
-    elif chargeable_days >= 13:
+    elif features.get("has_preference_period"):
         score += 0.02
-    else:
-        score -= 0.06
-
-    if coverage_ratio >= 0.90:
-        score += 0.05
-    elif 0.20 <= coverage_ratio < 0.75 and preference_period_ok:
-        score += 0.03
-    elif coverage_ratio <= 0.0:
-        score -= 0.08
-
-    if _bool_feature(features, "planning_ends_by_nearest_deadline"):
+    if features.get("has_required_continuous_part"):
         score += 0.04
-    if _bool_feature(features, "risk_is_conflict"):
+    if _float_feature(features, "periods_count", 1) == 1:
+        score += 0.03
+
+    score -= _clamp(_float_feature(features, "max_risk_score") / 100.0, 0.0, 1.0) * 0.18
+    score -= _clamp(_float_feature(features, "short_periods_count") / 3.0, 0.0, 1.0) * 0.05
+    if _float_feature(features, "min_staff_margin") <= 0:
+        score -= 0.12
+    if features.get("has_risk_conflict"):
         score -= 0.36
-
-    score += min(max(staff_margin, 0.0), 4.0) * 0.010
-    if staff_margin <= 0:
-        score -= 0.16
-    elif staff_margin == 1:
-        score -= 0.04
-
-    score -= _clamp(risk_score / 100.0, 0.0, 1.0) * 0.22
-    score -= max(load_level - 1.0, 0.0) * 0.040
-
-    outcome = features.get("historical_outcome") or ""
-    if outcome == "transfer_replacement":
-        score += 0.03
-    elif outcome == "manual_approved":
-        score -= 0.02
-
     return _clamp(score, 0.0, 1.0)
 
 
-def _is_passed_preference_candidate(features):
-    kind = features.get("candidate_kind") or ""
-    priority = features.get("preference_priority") or ""
-    return (
-        kind in {"primary_preference", "backup_preference"}
-        or priority in {"primary", "backup"}
-        or bool(features.get("preference_exact_period_match"))
-    )
+def _package_feedback_decisions(package):
+    decisions = set()
+    for period in list(package.periods.all()):
+        candidate = getattr(period, "candidate", None)
+        if candidate is None:
+            continue
+        for feedback in list(candidate.feedback_entries.all()):
+            if feedback.decision:
+                decisions.add(feedback.decision)
+    return tuple(sorted(decisions))
 
 
 def _float_feature(features, key, default=0.0):
@@ -449,52 +409,15 @@ def _float_feature(features, key, default=0.0):
         return float(default)
 
 
-def _bool_feature(features, key):
-    return 1.0 if bool(features.get(key)) else 0.0
-
-
 def _clamp(value, lower=0.0, upper=1.0):
     return max(lower, min(upper, float(value)))
-
-
-def _feedback_decisions(candidate):
-    return tuple(
-        sorted(
-            {
-                feedback.decision
-                for feedback in list(candidate.feedback_entries.all())
-                if feedback.decision
-            }
-        )
-    )
-
-
-def _package_decisions(candidate):
-    return tuple(
-        sorted(
-            {
-                period.candidate_package.decision
-                for period in list(candidate.package_periods.all())
-                if period.candidate_package_id and period.candidate_package.decision
-            }
-        )
-    )
-
-
-def _move_one_example_to_empty_split(groups, target_name):
-    donor_name = max(
-        (name for name in groups if name != target_name),
-        key=lambda name: len(groups[name]),
-    )
-    if len(groups[donor_name]) > 1:
-        groups[target_name].append(groups[donor_name].pop(0))
 
 
 def _import_torch():
     try:
         import torch
     except ImportError as exc:
-        raise CandidateTrainingDependencyError(
+        raise PackageTrainingDependencyError(
             "PyTorch не установлен. Установите зависимости командой "
             ".\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt "
             "и повторите обучение."
@@ -511,9 +434,9 @@ def _seed_training(torch, seed):
 
 def _train_torch_model(torch, train_examples, *, input_names, epochs, lr):
     if not train_examples:
-        raise CandidateTrainingDataError("В train split не попало ни одного примера.")
+        raise PackageTrainingDataError("В train split не попало ни одного примера.")
 
-    model = _build_torch_model(torch, input_dim=len(input_names), hidden_dim=len(HIDDEN_NODE_NAMES))
+    model = _build_torch_model(torch, input_dim=len(input_names), hidden_dim=len(PACKAGE_HIDDEN_NODE_NAMES))
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.0005)
     loss_fn = torch.nn.BCEWithLogitsLoss(reduction="none")
     inputs = _examples_tensor(torch, train_examples, input_names=input_names)
@@ -538,16 +461,16 @@ def _train_torch_model(torch, train_examples, *, input_names, epochs, lr):
 
 
 def _build_torch_model(torch, *, input_dim, hidden_dim):
-    class CandidateMLP(torch.nn.Module):
+    class PackageMLP(torch.nn.Module):
         def __init__(self):
             super().__init__()
             self.hidden = torch.nn.Linear(input_dim, hidden_dim)
-            self.output = torch.nn.Linear(hidden_dim, len(TARGET_HEADS))
+            self.output = torch.nn.Linear(hidden_dim, len(PACKAGE_TARGET_HEADS))
 
         def forward(self, inputs):
             return self.output(torch.tanh(self.hidden(inputs)))
 
-    return CandidateMLP()
+    return PackageMLP()
 
 
 def _evaluate_torch_model(torch, model, examples, *, input_names):
@@ -565,7 +488,7 @@ def _evaluate_torch_model(torch, model, examples, *, input_names):
         logits = model(_examples_tensor(torch, examples, input_names=input_names))
         predictions = torch.sigmoid(logits).detach().cpu().tolist()
 
-    target_rows = [[float(example.targets[head]) for head in TARGET_HEADS] for example in examples]
+    target_rows = [[float(example.targets[head]) for head in PACKAGE_TARGET_HEADS] for example in examples]
     score_errors = [abs(prediction[0] - target[0]) for prediction, target in zip(predictions, target_rows)]
     score_sq_errors = [(prediction[0] - target[0]) ** 2 for prediction, target in zip(predictions, target_rows)]
     score_accuracy = [
@@ -600,25 +523,34 @@ def _examples_tensor(torch, examples, *, input_names):
 
 def _targets_tensor(torch, examples):
     return torch.tensor(
-        [[float(example.targets[head]) for head in TARGET_HEADS] for example in examples],
+        [[float(example.targets[head]) for head in PACKAGE_TARGET_HEADS] for example in examples],
         dtype=torch.float32,
     )
 
 
 def _sample_weights_tensor(torch, examples):
     weights = {
-        "blocked": 0.35,
-        "rejected": 1.30,
-        "rejected_preference": 4.00,
-        "ignored": 1.00,
-        "selected_agree": 2.60,
-        "selected_needs_change": 3.20,
-        "selected_reject": 3.00,
+        "blocked": 0.45,
+        "rejected_package": 1.35,
+        "rejected_preference_package": 2.50,
+        "ignored_package": 1.00,
+        "selected_package_agree": 2.80,
+        "selected_package_needs_change": 3.20,
+        "selected_package_reject": 3.10,
     }
     return torch.tensor(
         [float(weights.get(example.label_bucket, 1.0)) for example in examples],
         dtype=torch.float32,
     )
+
+
+def _move_one_example_to_empty_split(groups, target_name):
+    donor_name = max(
+        (name for name in groups if name != target_name),
+        key=lambda name: len(groups[name]),
+    )
+    if len(groups[donor_name]) > 1:
+        groups[target_name].append(groups[donor_name].pop(0))
 
 
 def _round_weight(value):

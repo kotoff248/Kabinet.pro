@@ -27,12 +27,25 @@ from apps.leave.ml.runtime import (
     reset_candidate_mlp_model_cache,
 )
 from apps.leave.ml.scoring import score_candidate_features
+from apps.leave.ml.package_runtime import (
+    DEFAULT_NEURAL_PACKAGE_RANKER_VERSION,
+    package_model_filename,
+    reset_package_ranker_model_cache,
+)
+from apps.leave.ml.package_scoring import score_generation_package
+from apps.leave.ml.package_training import (
+    PACKAGE_HIDDEN_NODE_NAMES,
+    PACKAGE_TARGET_HEADS,
+    build_package_training_targets,
+    collect_package_training_dataset,
+)
 from apps.leave.ml.training import (
     HIDDEN_NODE_NAMES,
     TARGET_HEADS,
     build_candidate_training_targets,
     collect_candidate_training_dataset,
 )
+from apps.leave.services.schedule_drafts.types import DraftGenerationCandidate, DraftGenerationCandidatePackage
 from apps.leave.tests.base import LeaveTestCase
 
 
@@ -58,6 +71,7 @@ class CandidateTrainingTests(LeaveTestCase):
 
     def tearDown(self):
         reset_candidate_mlp_model_cache()
+        reset_package_ranker_model_cache()
         super().tearDown()
 
     @override_settings(VACATION_CANDIDATE_SCORER_VERSION="vacation-candidate-mlp-v1")
@@ -110,6 +124,67 @@ class CandidateTrainingTests(LeaveTestCase):
         self.assertEqual(dataset.examples[0].inputs["has_risk_payload"], 1.0)
         self.assertGreater(dataset.examples[0].inputs["staff_margin_positive"], 0.0)
         self.assertEqual(dataset.class_balance, {"selected_agree": 1})
+
+    def test_dataset_can_include_approved_planning_year(self):
+        historical = self._create_candidate(
+            decision=VacationScheduleCandidate.DECISION_SELECTED,
+            feedback_decision=VacationScheduleCandidateFeedback.DECISION_AGREE,
+            index=1,
+        )
+        planning_year = self.training_year + 2
+        planning_schedule = VacationSchedule.objects.create(
+            year=planning_year,
+            status=VacationSchedule.STATUS_APPROVED,
+            created_by=self.hr_employee,
+            approved_by=self.enterprise_head,
+            approved_at=timezone.now(),
+        )
+        planning_run = VacationScheduleGenerationRun.objects.create(
+            schedule=planning_schedule,
+            year=planning_year,
+            mode=VacationScheduleGenerationRun.MODE_HYBRID,
+            status=VacationScheduleGenerationRun.STATUS_COMPLETED,
+            actor=self.hr_employee,
+        )
+        start_date = date(planning_year, 6, 1)
+        planning_candidate = VacationScheduleCandidate.objects.create(
+            generation_run=planning_run,
+            schedule=planning_schedule,
+            employee=self.employee,
+            start_date=start_date,
+            end_date=start_date + timedelta(days=6),
+            chargeable_days=7,
+            kind=VacationScheduleCandidate.KIND_AUTO,
+            passed_hard_rules=True,
+            features=self._features(start_date, start_date + timedelta(days=6)),
+            decision=VacationScheduleCandidate.DECISION_SELECTED,
+        )
+        planning_item = VacationScheduleItem.objects.create(
+            schedule=planning_schedule,
+            employee=self.employee,
+            start_date=start_date,
+            end_date=start_date + timedelta(days=6),
+            vacation_type="paid",
+            chargeable_days=7,
+            status=VacationScheduleItem.STATUS_APPROVED,
+            selected_candidate=planning_candidate,
+            generation_run=planning_run,
+        )
+        VacationScheduleCandidateFeedback.objects.create(
+            schedule_item=planning_item,
+            candidate=planning_candidate,
+            generation_run=planning_run,
+            reviewer=self.enterprise_head,
+            reviewer_role=VacationScheduleCandidateFeedback.ROLE_ENTERPRISE_HEAD,
+            decision=VacationScheduleCandidateFeedback.DECISION_AGREE,
+        )
+
+        current_year_dataset = collect_candidate_training_dataset(current_year=self.training_year)
+        planning_dataset = collect_candidate_training_dataset(max_schedule_year=planning_year)
+
+        self.assertEqual([example.candidate_id for example in current_year_dataset.examples], [historical.id])
+        self.assertIn(planning_candidate.id, [example.candidate_id for example in planning_dataset.examples])
+        self.assertIn(planning_year, planning_dataset.years)
 
     def test_training_labels_distinguish_feedback_and_decisions(self):
         agree = self._create_candidate(
@@ -340,6 +415,177 @@ class CandidateTrainingTests(LeaveTestCase):
         self.assertEqual(metrics["examples_count"], 12)
         self.assertIn("train", metrics["metrics"])
 
+    def test_package_dataset_and_labels_use_historical_packages(self):
+        selected = self._create_candidate(
+            decision=VacationScheduleCandidate.DECISION_SELECTED,
+            feedback_decision=VacationScheduleCandidateFeedback.DECISION_AGREE,
+            package_decision=VacationScheduleCandidatePackage.DECISION_SELECTED,
+            index=1,
+        )
+        rejected = self._create_candidate(
+            decision=VacationScheduleCandidate.DECISION_REJECTED,
+            package_decision=VacationScheduleCandidatePackage.DECISION_REJECTED,
+            index=2,
+        )
+        blocked = self._create_candidate(
+            decision=VacationScheduleCandidate.DECISION_BLOCKED,
+            passed_hard_rules=False,
+            package_decision=VacationScheduleCandidatePackage.DECISION_BLOCKED,
+            index=3,
+        )
+
+        dataset = collect_package_training_dataset(current_year=self.training_year)
+        package_labels = {
+            example.package_id: example.label_bucket
+            for example in dataset.examples
+        }
+        selected_package = selected.package_periods.get().candidate_package
+        rejected_package = rejected.package_periods.get().candidate_package
+        blocked_package = blocked.package_periods.get().candidate_package
+
+        self.assertEqual(package_labels[selected_package.id], "selected_package_agree")
+        self.assertEqual(package_labels[rejected_package.id], "rejected_package")
+        self.assertEqual(package_labels[blocked_package.id], "blocked")
+        self.assertIn("coverage_fit", dataset.input_names)
+        self.assertIn("period_score_avg", dataset.input_names)
+
+        label, targets = build_package_training_targets(selected_package)
+        self.assertEqual(label, "selected_package_agree")
+        self.assertGreater(targets["score"], 0.5)
+
+    def test_v3_package_json_loads_through_package_scorer(self):
+        year = self.training_year
+        package = DraftGenerationCandidatePackage(
+            employee=self.employee,
+            candidates=[
+                DraftGenerationCandidate(
+                    employee=self.employee,
+                    start_date=date(year, 6, 1),
+                    end_date=date(year, 6, 14),
+                    kind=VacationScheduleCandidate.KIND_AUTO,
+                    source=VacationScheduleItem.SOURCE_GENERATED,
+                    comment="Тестовый пакет.",
+                    metadata={
+                        "passed_hard_rules": True,
+                        "chargeable_days": Decimal("14.00"),
+                        "open_required_days": Decimal("14.00"),
+                        "risk_score": 14,
+                        "risk_level": VacationScheduleItem.RISK_LOW,
+                        "scoring_score": Decimal("84.00"),
+                        "scoring_confidence": Decimal("88.00"),
+                    },
+                )
+            ],
+            source=VacationScheduleItem.SOURCE_GENERATED,
+            explanation="Тестовый пакет.",
+            metadata={
+                "total_chargeable_days": Decimal("14.00"),
+                "remaining_after_package": Decimal("0.00"),
+                "package_closes_need": True,
+            },
+        )
+
+        with self._temporary_model_dir() as tmp_dir:
+            self._write_simple_package_model(tmp_dir, "vacation-package-ranker-v3-test")
+            with override_settings(
+                VACATION_PACKAGE_MODEL_DIR=tmp_dir,
+                VACATION_PACKAGE_RANKER_VERSION="vacation-package-ranker-v3-test",
+            ):
+                reset_package_ranker_model_cache()
+
+                result = score_generation_package(package)
+
+        self.assertEqual(result.model_version, "vacation-package-ranker-v3-test")
+        self.assertGreaterEqual(result.score, 0)
+        self.assertGreaterEqual(result.confidence, 0)
+        self.assertIn(result.recommendation, {"prefer", "normal", "avoid"})
+        self.assertEqual(package.metadata["package_model_version"], "vacation-package-ranker-v3-test")
+
+    def test_package_ranker_falls_back_when_v3_is_missing(self):
+        year = self.training_year
+        package = DraftGenerationCandidatePackage(
+            employee=self.employee,
+            candidates=[
+                DraftGenerationCandidate(
+                    employee=self.employee,
+                    start_date=date(year, 9, 1),
+                    end_date=date(year, 9, 14),
+                    kind=VacationScheduleCandidate.KIND_AUTO,
+                    source=VacationScheduleItem.SOURCE_GENERATED,
+                    comment="Тестовый пакет.",
+                    metadata={
+                        "passed_hard_rules": True,
+                        "chargeable_days": Decimal("14.00"),
+                        "risk_score": 10,
+                        "risk_level": VacationScheduleItem.RISK_LOW,
+                        "scoring_score": Decimal("82.00"),
+                        "scoring_confidence": Decimal("86.00"),
+                    },
+                )
+            ],
+            source=VacationScheduleItem.SOURCE_GENERATED,
+            explanation="Тестовый пакет.",
+            metadata={"total_chargeable_days": Decimal("14.00"), "package_closes_need": True},
+        )
+
+        with override_settings(VACATION_PACKAGE_RANKER_VERSION="vacation-package-ranker-v3-missing"):
+            reset_package_ranker_model_cache()
+
+            result = score_generation_package(package)
+
+        self.assertIn(DEFAULT_NEURAL_PACKAGE_RANKER_VERSION, result.model_version)
+        self.assertEqual(result.scorer_kind, "package_baseline_fallback")
+        self.assertGreater(result.score, Decimal("0.00"))
+
+    def test_package_training_command_writes_v3_json_and_metrics(self):
+        if importlib.util.find_spec("torch") is None:
+            self.skipTest("PyTorch is not installed in the current virtual environment.")
+
+        for index in range(10):
+            if index % 3 == 0:
+                self._create_candidate(
+                    decision=VacationScheduleCandidate.DECISION_SELECTED,
+                    feedback_decision=VacationScheduleCandidateFeedback.DECISION_AGREE,
+                    package_decision=VacationScheduleCandidatePackage.DECISION_SELECTED,
+                    index=index,
+                )
+            elif index % 3 == 1:
+                self._create_candidate(
+                    decision=VacationScheduleCandidate.DECISION_REJECTED,
+                    package_decision=VacationScheduleCandidatePackage.DECISION_REJECTED,
+                    index=index,
+                )
+            else:
+                self._create_candidate(
+                    decision=VacationScheduleCandidate.DECISION_BLOCKED,
+                    passed_hard_rules=False,
+                    package_decision=VacationScheduleCandidatePackage.DECISION_BLOCKED,
+                    index=index,
+                )
+
+        with self._temporary_model_dir() as tmp_dir:
+            call_command(
+                "train_vacation_package_model",
+                output_version="vacation-package-ranker-v3-test",
+                output_dir=tmp_dir,
+                epochs=2,
+                lr=0.01,
+                seed=7,
+                min_examples=5,
+                stdout=StringIO(),
+            )
+            model_file = Path(tmp_dir) / package_model_filename("vacation-package-ranker-v3-test")
+            metrics_file = Path(tmp_dir) / package_model_filename("vacation-package-ranker-v3-test-metrics")
+
+            model = json.loads(model_file.read_text(encoding="utf-8"))
+            metrics = json.loads(metrics_file.read_text(encoding="utf-8"))
+
+        self.assertEqual(model["version"], "vacation-package-ranker-v3-test")
+        self.assertEqual(model["kind"], "package_tabular_mlp")
+        self.assertIn("score", model["heads"])
+        self.assertEqual(metrics["examples_count"], 10)
+        self.assertIn("train", metrics["metrics"])
+
     def _create_candidate(
         self,
         *,
@@ -540,6 +786,33 @@ class CandidateTrainingTests(LeaveTestCase):
             },
         }
         path = Path(directory) / candidate_model_filename(version)
+        path.write_text(json.dumps(artifact, ensure_ascii=False), encoding="utf-8")
+
+    def _write_simple_package_model(self, directory, version):
+        artifact = {
+            "version": version,
+            "kind": "package_tabular_mlp",
+            "feature_schema_version": 1,
+            "description": "Test v3 package model.",
+            "hidden_activation": "tanh",
+            "output_activation": "sigmoid",
+            "hidden_layer": [
+                {
+                    "name": name,
+                    "bias": 0.1 if name == "coverage_quality" else 0.0,
+                    "weights": {"coverage_fit": 0.8, "risk_pressure": -0.2},
+                }
+                for name in PACKAGE_HIDDEN_NODE_NAMES
+            ],
+            "heads": {
+                head: {
+                    "bias": 0.1,
+                    "weights": {name: 0.2 for name in PACKAGE_HIDDEN_NODE_NAMES},
+                }
+                for head in PACKAGE_TARGET_HEADS
+            },
+        }
+        path = Path(directory) / package_model_filename(version)
         path.write_text(json.dumps(artifact, ensure_ascii=False), encoding="utf-8")
 
 

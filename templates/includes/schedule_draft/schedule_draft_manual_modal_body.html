@@ -6,7 +6,7 @@
     <input type="hidden" name="next" id="draft-placement-next-url" value="{{ current_path }}">
     <input type="hidden" name="periods_json" id="draft-placement-periods-json" value="">
 
-    <article class="schedule-draft-placement-form__employee">
+    <article class="schedule-draft-placement-form__employee schedule-draft-placement-form__employee--compact">
         <div>
             <span>Сотрудник</span>
             <strong id="draft-placement-employee">—</strong>
@@ -19,22 +19,16 @@
         </div>
     </article>
 
-    <section class="schedule-draft-placement-form__context" aria-label="Контекст размещения">
-        <article>
-            <span>Основной период</span>
-            <strong id="draft-placement-primary">—</strong>
+    <section class="schedule-draft-placement-form__context schedule-draft-placement-form__context--compact" aria-label="Контекст размещения">
+        <article class="schedule-draft-placement-form__summary-card">
+            <span>Сводка</span>
+            <strong id="draft-placement-summary">—</strong>
+            <small id="draft-placement-summary-detail">—</small>
         </article>
-        <article>
-            <span>Запасной период</span>
-            <strong id="draft-placement-backup">—</strong>
-        </article>
-        <article>
-            <span>Уже поставлено</span>
-            <strong id="draft-placement-placed">—</strong>
-        </article>
-        <article>
-            <span>Плановая цель</span>
-            <strong id="draft-placement-target">—</strong>
+        <article class="schedule-draft-placement-form__preference-card">
+            <span>Пожелания</span>
+            <strong id="draft-placement-preferences-title">—</strong>
+            <small id="draft-placement-preferences-detail">—</small>
         </article>
     </section>
 
@@ -45,7 +39,7 @@
              aria-label="Расчёт дней">
     </section>
 
-    <p class="schedule-draft-placement-form__reason" id="draft-placement-reason">—</p>
+    <p class="schedule-draft-placement-form__reason" id="draft-placement-reason">Причина: —</p>
 
     <section class="schedule-draft-rework-package-status"
              id="draft-placement-current-package-panel"
@@ -75,7 +69,7 @@
         <div class="schedule-draft-suggestions__head">
             <div>
                 <span>Предложения модуля</span>
-                <strong id="draft-placement-suggestions-title">Подходящие периоды</strong>
+                <strong id="draft-placement-suggestions-title">Рекомендуемые варианты</strong>
             </div>
             <small id="draft-placement-suggestions-status">—</small>
         </div>
@@ -87,6 +81,7 @@
             <div>
                 <span>Периоды отпуска</span>
                 <strong id="draft-placement-periods-title">До 3 периодов за одно размещение</strong>
+                <small>Выберите вариант модуля или укажите даты вручную.</small>
             </div>
             <button type="button"
                     class="app-modal__button app-modal__button--secondary schedule-draft-period-editor__add"
@@ -113,7 +108,7 @@
                 <small>останется распределить</small>
             </article>
             <article class="schedule-transfer-preview__card schedule-transfer-preview__card--accent">
-                <span>Проверка пакета</span>
+                <span>Итог проверки</span>
                 <strong id="draft-placement-merged-period">Выберите даты</strong>
                 <small><span id="draft-placement-merged-days">—</span> период(а)</small>
             </article>
@@ -126,6 +121,15 @@
             </div>
             <p id="draft-placement-risk-reason"></p>
             <p id="draft-placement-risk-action"></p>
+        </article>
+        <article class="schedule-transfer-preview__risk schedule-draft-package-preview" id="draft-placement-package-report" hidden>
+            <div class="schedule-transfer-preview__risk-head">
+                <span>Оценка выбранного пакета</span>
+                <strong id="draft-placement-package-score">Без оценки</strong>
+            </div>
+            <p id="draft-placement-package-explanation"></p>
+            <div class="schedule-draft-package-preview__staffing" id="draft-placement-package-staffing" hidden></div>
+            <p id="draft-placement-package-meta"></p>
         </article>
     </section>
 

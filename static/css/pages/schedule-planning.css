@@ -699,6 +699,47 @@ main:has(.schedule-planning-page){
     border-color: rgba(255, 94, 132, 0.24);
 }
 
+.schedule-planning-review-row__ml{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.62rem 0.7rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.schedule-planning-review-row__ml--ok{
+    border-color: rgba(121, 216, 90, 0.2);
+    background: rgba(121, 216, 90, 0.065);
+}
+
+.schedule-planning-review-row__ml--warning{
+    border-color: rgba(255, 199, 89, 0.22);
+    background: rgba(255, 199, 89, 0.07);
+}
+
+.schedule-planning-review-row__ml--danger{
+    border-color: rgba(255, 116, 91, 0.24);
+    background: rgba(255, 116, 91, 0.075);
+}
+
+.schedule-planning-review-row__ml div{
+    min-width: 0;
+}
+
+.schedule-planning-review-row__ml strong{
+    font-size: 0.86rem;
+}
+
+.schedule-planning-review-row__ml small{
+    color: rgba(205, 218, 236, 0.72);
+    font-size: 0.72rem;
+    font-weight: 760;
+    text-align: right;
+}
+
 .schedule-planning-review-actions{
     display: grid;
     grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
@@ -769,6 +810,90 @@ main:has(.schedule-planning-page){
     background: rgba(255, 255, 255, 0.035);
 }
 
+.schedule-planning-ml-summary{
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.9rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background: rgba(94, 219, 255, 0.06);
+    border: 1px solid rgba(94, 219, 255, 0.16);
+}
+
+.schedule-planning-ml-summary--ok{
+    background: rgba(121, 216, 90, 0.06);
+    border-color: rgba(121, 216, 90, 0.2);
+}
+
+.schedule-planning-ml-summary--warning{
+    background: rgba(255, 199, 89, 0.07);
+    border-color: rgba(255, 199, 89, 0.22);
+}
+
+.schedule-planning-ml-summary--danger{
+    background: rgba(255, 116, 91, 0.075);
+    border-color: rgba(255, 116, 91, 0.24);
+}
+
+.schedule-planning-ml-summary__head{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.schedule-planning-ml-summary__head span,
+.schedule-planning-ml-summary__grid span{
+    color: rgba(205, 218, 236, 0.7);
+    font-size: 0.72rem;
+    font-weight: 820;
+}
+
+.schedule-planning-ml-summary__head h4{
+    margin: 0.12rem 0 0;
+    color: #ffffff;
+    font-size: 1rem;
+}
+
+.schedule-planning-ml-summary__head strong{
+    flex: 0 0 auto;
+    padding: 0.24rem 0.56rem;
+    border-radius: var(--ui-radius-badge);
+    color: #dff7ff;
+    background: rgba(255, 255, 255, 0.065);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 0.78rem;
+}
+
+.schedule-planning-ml-summary__grid{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 0.55rem;
+}
+
+.schedule-planning-ml-summary__grid article{
+    display: grid;
+    gap: 0.2rem;
+    min-width: 0;
+    padding: 0.68rem 0.72rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.schedule-planning-ml-summary__grid strong{
+    color: #ffffff;
+    font-size: 0.92rem;
+    overflow-wrap: anywhere;
+}
+
+.schedule-planning-ml-summary p{
+    margin: 0;
+    color: rgba(205, 218, 236, 0.75);
+    font-size: 0.78rem;
+    font-weight: 740;
+    line-height: 1.42;
+}
+
 .schedule-planning-final-rework-list{
     display: grid;
     gap: 0.65rem;
@@ -813,6 +938,97 @@ main:has(.schedule-planning-page){
 
 .schedule-planning-final-rework-row .app-modal__button{
     width: 100%;
+}
+
+.schedule-planning-neural-card{
+    display: grid;
+    gap: 0.85rem;
+    padding: 0.95rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background: linear-gradient(135deg, rgba(18, 39, 58, 0.78), rgba(17, 21, 32, 0.82));
+    border: 1px solid rgba(56, 200, 255, 0.20);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.schedule-planning-neural-card--ok{
+    border-color: rgba(113, 229, 96, 0.26);
+}
+
+.schedule-planning-neural-card--warning{
+    border-color: rgba(255, 198, 74, 0.28);
+}
+
+.schedule-planning-neural-card__head{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.schedule-planning-neural-card h4{
+    margin: 0.12rem 0 0;
+    color: #ffffff;
+    font-size: 1rem;
+    line-height: 1.2;
+}
+
+.schedule-planning-neural-card p{
+    margin: 0;
+    color: rgba(205, 218, 236, 0.78);
+    font-size: 0.84rem;
+    font-weight: 720;
+    line-height: 1.45;
+}
+
+.schedule-planning-neural-card__track{
+    overflow: hidden;
+    height: 0.46rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.schedule-planning-neural-card__track span{
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, rgb(56, 200, 255), rgb(117, 228, 104));
+    transition: width 0.25s ease;
+}
+
+.schedule-planning-neural-card__stats{
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.65rem;
+}
+
+.schedule-planning-neural-card__stats div{
+    display: grid;
+    gap: 0.18rem;
+    min-width: 0;
+    padding: 0.68rem 0.75rem;
+    border-radius: var(--ui-radius-card);
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.schedule-planning-neural-card__stats span{
+    color: rgba(205, 218, 236, 0.68);
+    font-size: 0.72rem;
+    font-weight: 820;
+    text-transform: uppercase;
+}
+
+.schedule-planning-neural-card__stats strong{
+    color: #ffffff;
+    font-size: 0.95rem;
+    line-height: 1.2;
+}
+
+.schedule-planning-neural-card form{
+    display: flex;
+    justify-content: flex-start;
+    margin: 0;
 }
 
 .schedule-planning-review-actions .app-modal__button{
@@ -885,9 +1101,12 @@ main:has(.schedule-planning-page){
     .schedule-planning-roadmap,
     .schedule-planning-metrics,
     .schedule-planning-final-grid,
+    .schedule-planning-neural-card__head,
+    .schedule-planning-neural-card__stats,
     .schedule-planning-auto-job__stats,
     .schedule-planning-review-row,
     .schedule-planning-review-row__top,
+    .schedule-planning-review-row__ml,
     .schedule-planning-return-form{
         grid-template-columns: 1fr;
     }
@@ -911,9 +1130,11 @@ main:has(.schedule-planning-page){
     }
 
     .schedule-planning-review-row__side,
+    .schedule-planning-review-row__ml small,
     .schedule-planning-review-actions{
         width: 100%;
         justify-items: stretch;
+        text-align: left;
     }
 }
 
