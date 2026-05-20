@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from urllib.parse import parse_qs, urlsplit
 
 from django.urls import reverse
 from django.utils import timezone
@@ -686,6 +687,65 @@ class EmployeeProfileTests(EmployeeTestCase):
             response,
             f'href="{reverse("vacation_detail", args=[request_obj.id])}?from=profile',
         )
+
+    def test_employee_profile_schedule_item_calendar_url_focuses_period(self):
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 7, 3),
+            end_date=date(2027, 7, 10),
+            vacation_type="paid",
+            chargeable_days=8,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employee_profile", args=[self.employee.id]))
+        entry = next(
+            row
+            for row in response.context["planned_vacations"]["entries"]
+            if row["id"] == f"schedule-{schedule_item.id}"
+        )
+        query = parse_qs(urlsplit(entry["calendar_url"]).query)
+
+        self.assertEqual(query["view"], ["month"])
+        self.assertEqual(query["year"], ["2027"])
+        self.assertEqual(query["month"], ["7"])
+        self.assertEqual(query["employee"], [str(self.employee.id)])
+        self.assertEqual(query["calendar_focus_employee"], [str(self.employee.id)])
+        self.assertEqual(query["calendar_focus_start"], ["2027-07-03"])
+        self.assertEqual(query["calendar_focus_end"], ["2027-07-10"])
+
+    def test_employee_profile_approved_request_calendar_url_focuses_period(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2027, 8, 4),
+            end_date=date(2027, 8, 6),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_APPROVED,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employee_profile", args=[self.employee.id]))
+        entry = next(
+            row
+            for row in response.context["planned_vacations"]["entries"]
+            if row["id"] == f"request-{request_obj.id}"
+        )
+        query = parse_qs(urlsplit(entry["calendar_url"]).query)
+
+        self.assertEqual(query["view"], ["month"])
+        self.assertEqual(query["year"], ["2027"])
+        self.assertEqual(query["month"], ["8"])
+        self.assertEqual(query["employee"], [str(self.employee.id)])
+        self.assertEqual(query["calendar_focus_employee"], [str(self.employee.id)])
+        self.assertEqual(query["calendar_focus_start"], ["2027-08-04"])
+        self.assertEqual(query["calendar_focus_end"], ["2027-08-06"])
 
     def test_employee_profile_schedule_item_created_from_transfer_links_to_transfer_detail(self):
         schedule = VacationSchedule.objects.create(

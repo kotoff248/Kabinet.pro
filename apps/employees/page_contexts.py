@@ -332,14 +332,21 @@ def _vacation_stage_meta(start_date, end_date, today=None):
     }
 
 
-def _serialize_profile_schedule_item(item, current_employee=None, today=None):
-    period_years = _get_period_years(item.start_date, item.end_date)
+def _build_profile_calendar_url(employee_id, start_date, end_date):
     calendar_query = urlencode({
         "view": "month",
-        "year": item.start_date.year,
-        "month": item.start_date.month,
-        "employee": item.employee_id,
+        "year": start_date.year,
+        "month": start_date.month,
+        "employee": employee_id,
+        "calendar_focus_employee": employee_id,
+        "calendar_focus_start": start_date.isoformat(),
+        "calendar_focus_end": end_date.isoformat(),
     })
+    return f'{reverse("calendar")}?{calendar_query}'
+
+
+def _serialize_profile_schedule_item(item, current_employee=None, today=None):
+    period_years = _get_period_years(item.start_date, item.end_date)
     stage_meta = _vacation_stage_meta(item.start_date, item.end_date, today=today)
     detail_reference = get_schedule_item_detail_reference(item)
     prefetched_change_requests = getattr(item, "_prefetched_objects_cache", {}).get("change_requests")
@@ -378,7 +385,7 @@ def _serialize_profile_schedule_item(item, current_employee=None, today=None):
         "stage_label": stage_meta["stage_label"],
         "stage_icon": stage_meta["stage_icon"],
         "days": get_requested_days(item.start_date, item.end_date),
-        "calendar_url": f'{reverse("calendar")}?{calendar_query}',
+        "calendar_url": _build_profile_calendar_url(item.employee_id, item.start_date, item.end_date),
         "detail_url": detail_reference["detail_url"],
         "detail_label": detail_reference["detail_label"],
         "start_date": item.start_date,
@@ -391,12 +398,6 @@ def _serialize_profile_schedule_item(item, current_employee=None, today=None):
 
 def _serialize_profile_approved_request(request_obj, today=None):
     period_years = _get_period_years(request_obj.start_date, request_obj.end_date)
-    calendar_query = urlencode({
-        "view": "month",
-        "year": request_obj.start_date.year,
-        "month": request_obj.start_date.month,
-        "employee": request_obj.employee_id,
-    })
     stage_meta = _vacation_stage_meta(request_obj.start_date, request_obj.end_date, today=today)
     return {
         "id": f"request-{request_obj.id}",
@@ -411,7 +412,11 @@ def _serialize_profile_approved_request(request_obj, today=None):
         "stage_label": stage_meta["stage_label"],
         "stage_icon": stage_meta["stage_icon"],
         "days": get_requested_days(request_obj.start_date, request_obj.end_date),
-        "calendar_url": f'{reverse("calendar")}?{calendar_query}',
+        "calendar_url": _build_profile_calendar_url(
+            request_obj.employee_id,
+            request_obj.start_date,
+            request_obj.end_date,
+        ),
         "detail_url": reverse("vacation_detail", args=[request_obj.id]),
         "detail_label": "Открыть заявку",
         "start_date": request_obj.start_date,

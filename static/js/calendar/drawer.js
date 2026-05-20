@@ -10,6 +10,7 @@
         let currentUpcomingAnchor = null;
         let currentDetailEmployeeId = null;
         const detailRequests = new Map();
+        const calendarRowSelector = ".timeline-row[data-employee-id], .year-row[data-employee-id]";
 
         function stripModalParams(url) {
             url.searchParams.delete("calendar_modal");
@@ -236,6 +237,81 @@
             return String(value).replace(/"/g, '\\"');
         }
 
+        function getCalendarRowSelector(employeeId) {
+            const escapedEmployeeId = escapeSelectorValue(employeeId);
+            return '.timeline-row[data-employee-id="' + escapedEmployeeId + '"], '
+                + '.year-row[data-employee-id="' + escapedEmployeeId + '"]';
+        }
+
+        function getDirectCollapseBody(section) {
+            if (!section) {
+                return null;
+            }
+
+            return Array.from(section.children).find(function (child) {
+                return child.hasAttribute("data-calendar-collapse-body");
+            }) || null;
+        }
+
+        function getCollapseKey(section) {
+            if (!section) {
+                return "";
+            }
+
+            const level = section.dataset.calendarCollapseLevel || "group";
+            const id = section.dataset.calendarCollapseId || "0";
+            const name = section.dataset.calendarCollapseName || "";
+            return level + ":" + id + ":" + name;
+        }
+
+        function forgetCollapsedSection(section) {
+            try {
+                const storageKey = context.calendarCollapseStorageKey || "calendar:collapse-state";
+                const rawValue = sessionStorage.getItem(storageKey);
+                const parsedValue = JSON.parse(rawValue || "[]");
+                if (!Array.isArray(parsedValue)) {
+                    return;
+                }
+
+                const collapseKey = getCollapseKey(section);
+                const nextValue = parsedValue.filter(function (storedKey) {
+                    return storedKey !== collapseKey;
+                });
+                sessionStorage.setItem(storageKey, JSON.stringify(nextValue));
+            } catch (error) {
+                return;
+            }
+        }
+
+        function expandCollapsedAncestorsForFocus(row) {
+            const sections = [];
+            let node = row ? row.parentElement : null;
+            while (node) {
+                if (node.matches && node.matches("[data-calendar-collapse-section]")) {
+                    sections.unshift(node);
+                }
+                node = node.parentElement;
+            }
+
+            sections.forEach(function (section) {
+                if (!section.classList.contains("is-collapsed")) {
+                    return;
+                }
+
+                const toggle = section.querySelector("[data-calendar-collapse-toggle]");
+                const body = getDirectCollapseBody(section);
+                section.classList.remove("is-collapsed");
+                if (toggle) {
+                    toggle.setAttribute("aria-expanded", "true");
+                    toggle.setAttribute("title", "Свернуть");
+                }
+                if (body) {
+                    body.setAttribute("aria-hidden", "false");
+                }
+                forgetCollapsedSection(section);
+            });
+        }
+
         function setTooltip(node, title, text, variant) {
             if (!node) {
                 return;
@@ -268,10 +344,12 @@
                 return;
             }
 
-            const row = document.querySelector('[data-employee-id="' + escapeSelectorValue(employeeId) + '"]');
+            const row = document.querySelector(getCalendarRowSelector(employeeId));
             if (!row) {
                 return;
             }
+
+            expandCollapsedAncestorsForFocus(row);
 
             if (focusOptions.closeDetail !== false) {
                 closeDetailModal();
@@ -880,7 +958,10 @@
                 return false;
             }
 
-            scheduleFocusAnchorInCalendar(focusAnchor, { behavior: "auto" });
+            scheduleFocusAnchorInCalendar(focusAnchor, {
+                behavior: "auto",
+                highlightDuration: 7000,
+            });
 
             stripModalParams(url);
             window.history.replaceState({}, "", url.pathname + url.search + url.hash);
@@ -888,7 +969,7 @@
         }
 
         function bindRows() {
-            context.rows = Array.from(document.querySelectorAll("[data-employee-id]"));
+            context.rows = Array.from(document.querySelectorAll(calendarRowSelector));
             context.rows.forEach(function (row) {
                 row.addEventListener("click", function (event) {
                     if (event.target.closest("a, button")) {
