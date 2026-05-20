@@ -91,16 +91,22 @@ def get_russian_holiday_dates(start_date, end_date):
     return holiday_dates
 
 def get_russian_holiday_iso_dates(years):
+    normalized_years = tuple(sorted({int(year) for year in years}))
+    return list(_get_russian_holiday_iso_dates_for_years(normalized_years))
+
+@lru_cache(maxsize=None)
+def _get_russian_holiday_iso_dates_for_years(years):
     holiday_dates = set()
     for year in years:
         holiday_dates.update(_get_russian_holiday_dates_for_year(year))
-    return sorted(current_date.isoformat() for current_date in holiday_dates)
+    return tuple(sorted(current_date.isoformat() for current_date in holiday_dates))
 
 @lru_cache(maxsize=None)
 def _get_russian_holiday_dates_for_year(year):
     holiday_calendar = holidays.country_holidays("RU", years=[year])
     return frozenset(holiday_calendar.keys())
 
+@lru_cache(maxsize=8192)
 def get_chargeable_leave_days(start_date, end_date, vacation_type):
     if vacation_type not in BALANCE_AFFECTING_TYPES:
         return 0

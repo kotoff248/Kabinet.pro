@@ -357,7 +357,7 @@ class CalendarTests(LeaveTestCase):
         self.assertNotIn("calendar-board-card", payload["board_html"])
         self.assertNotIn('id="calendar-filters-form"', payload["board_html"])
         self.assertNotIn("calendar-summary-grid", payload["board_html"])
-        self.assertIn(str(self.employee.id), payload["calendar_details"])
+        self.assertEqual(payload["calendar_details"], {})
         self.assertIn("timeline-employee-card__role", payload["board_html"])
         self.assertIn("timeline-employee-card__role--employee", payload["board_html"])
         self.assertNotIn("timeline-employee-card__profile-link", payload["board_html"])
@@ -371,7 +371,26 @@ class CalendarTests(LeaveTestCase):
         self.assertNotIn(self.employee.position, payload["board_html"])
         self.assertIn(reverse("employee_profile", args=[self.employee.id]), payload["board_html"])
         self.assertEqual(payload["period_label"], "График отпусков на 2026 год")
-        self.assertIn("7", payload["calendar_month_details"])
+        self.assertEqual(payload["calendar_month_details"], {})
+
+        detail_response = self.client.get(
+            reverse("calendar"),
+            {"view": "year", "year": 2026, "calendar_detail_employee": self.employee.id},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(
+            detail_response.json()["calendar_detail"]["employee_name"],
+            self.employee.full_name,
+        )
+
+        month_detail_response = self.client.get(
+            reverse("calendar"),
+            {"view": "year", "year": 2026, "calendar_detail_month": 7},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(month_detail_response.status_code, 200)
+        self.assertEqual(month_detail_response.json()["calendar_month_detail"]["month_number"], 7)
 
         month_response = self.client.get(
             reverse("calendar"),
@@ -1850,7 +1869,7 @@ class CalendarTests(LeaveTestCase):
         self.assertIn(self.employee.full_name, payload["board_html"])
         self.assertIn(coworker.full_name, payload["board_html"])
         self.assertNotIn(self.outsider.full_name, payload["board_html"])
-        self.assertEqual(set(payload["calendar_details"]), {str(self.employee.id), str(coworker.id)})
+        self.assertEqual(payload["calendar_details"], {})
 
     def test_calendar_ajax_returns_grouped_board_for_group_filter(self):
         self.client.force_login(self.hr_employee.user)
@@ -1882,7 +1901,7 @@ class CalendarTests(LeaveTestCase):
         self.assertIn(self.employee.full_name, payload["board_html"])
         self.assertNotIn(self.department_head.full_name, payload["board_html"])
         self.assertNotIn(self.outsider.full_name, payload["board_html"])
-        self.assertEqual(set(payload["calendar_details"]), {str(self.employee.id)})
+        self.assertEqual(payload["calendar_details"], {})
 
     def test_calendar_conflict_detects_production_group_shortage(self):
         DepartmentStaffingRule.objects.create(

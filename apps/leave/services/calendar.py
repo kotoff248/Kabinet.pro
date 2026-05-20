@@ -320,6 +320,8 @@ def _get_staffing_issue_meta(employees, employee_entries, period_start, period_e
 
     conflict_meta = defaultdict(lambda: {"summaries": [], "dates": set(), "events": [], "event_keys": set()})
     substitution_risk_meta = defaultdict(lambda: {"summaries": [], "dates": set(), "events": [], "event_keys": set()})
+    department_staffing_evaluation_cache = {}
+    enterprise_leadership_evaluation_cache = {}
 
     def add_conflict(employee_ids, current_date, reason, event):
         for employee_id in employee_ids:
@@ -341,13 +343,22 @@ def _get_staffing_issue_meta(employees, employee_entries, period_start, period_e
             workload_by_department_month,
             staffing_rules,
         )
-        staffing_evaluation = evaluate_department_staffing_state(
-            staffing_contexts[department_id],
-            absent_employee_ids,
-            min_staff_required=min_staff_required,
-            max_absent=max_absent,
-            include_limit_warnings=False,
+        evaluation_key = (
+            department_id,
+            tuple(sorted(absent_employee_ids)),
+            int(min_staff_required or 0),
+            int(max_absent or 0),
         )
+        staffing_evaluation = department_staffing_evaluation_cache.get(evaluation_key)
+        if staffing_evaluation is None:
+            staffing_evaluation = evaluate_department_staffing_state(
+                staffing_contexts[department_id],
+                absent_employee_ids,
+                min_staff_required=min_staff_required,
+                max_absent=max_absent,
+                include_limit_warnings=False,
+            )
+            department_staffing_evaluation_cache[evaluation_key] = staffing_evaluation
         for issue in staffing_evaluation["issues"]:
             affected_employee_ids = issue.get("affected_employee_ids") or absent_employee_ids
             reason = _format_staffing_issue_reason(current_date, issue, today=today)
@@ -359,12 +370,16 @@ def _get_staffing_issue_meta(employees, employee_entries, period_start, period_e
 
     enterprise_head_ids, enterprise_deputy_ids = get_enterprise_leadership_employee_ids(period_end)
     for current_date, absent_employee_ids in absent_by_day.items():
-        enterprise_evaluation = evaluate_enterprise_leadership_state(
-            absent_employee_ids,
-            period_end,
-            enterprise_head_ids=enterprise_head_ids,
-            enterprise_deputy_ids=enterprise_deputy_ids,
-        )
+        evaluation_key = tuple(sorted(absent_employee_ids))
+        enterprise_evaluation = enterprise_leadership_evaluation_cache.get(evaluation_key)
+        if enterprise_evaluation is None:
+            enterprise_evaluation = evaluate_enterprise_leadership_state(
+                absent_employee_ids,
+                period_end,
+                enterprise_head_ids=enterprise_head_ids,
+                enterprise_deputy_ids=enterprise_deputy_ids,
+            )
+            enterprise_leadership_evaluation_cache[evaluation_key] = enterprise_evaluation
         for issue in enterprise_evaluation["issues"]:
             affected_employee_ids = issue.get("affected_employee_ids") or absent_employee_ids
             add_conflict(

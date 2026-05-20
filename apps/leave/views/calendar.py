@@ -500,13 +500,17 @@ def graphics(request):
     detail_employee_id = request.GET.get("calendar_detail_employee")
     detail_month = request.GET.get("calendar_detail_month")
     initial_month = request.GET.get("calendar_month") if request.GET.get("calendar_modal") == "month_summary" else None
+    should_build_month_detail = bool(detail_month or initial_month)
+    detail_employee_ids = None
+    if is_calendar_xhr and not should_build_month_detail:
+        detail_employee_ids = [detail_employee_id] if detail_employee_id else []
     context.update(
         build_calendar_page_context(
             current_user,
             request.GET,
-            include_month_details=is_calendar_xhr and not detail_employee_id and not detail_month,
+            include_month_details=False,
             month_detail_numbers=[detail_month or initial_month] if (detail_month or initial_month) else None,
-            detail_employee_ids=[detail_employee_id] if detail_employee_id else None,
+            detail_employee_ids=detail_employee_ids,
         )
     )
     if request.GET.get("from") == "schedule_planning" and can_access_schedule_planning(current_user):
@@ -532,14 +536,14 @@ def graphics(request):
             )
 
         return JsonResponse(
-            {
-                "board_html": render_to_string("includes/calendar/board_content.html", context, request=request),
-                "period_label": calendar_period_label,
-                "period_description": calendar_period_description,
-                "calendar_details": calendar_details,
-                "calendar_month_details": calendar_month_details,
-            }
-        )
+                {
+                    "board_html": render_to_string("includes/calendar/board_content.html", context, request=request),
+                    "period_label": calendar_period_label,
+                    "period_description": calendar_period_description,
+                    "calendar_details": {},
+                    "calendar_month_details": {},
+                }
+            )
 
     calendar_details_payload = {}
     calendar_month_details_payload = {}
