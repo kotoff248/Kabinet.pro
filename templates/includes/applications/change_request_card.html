@@ -28,6 +28,18 @@
             <span class="application-card__label">Риск</span>
             <span class="application-card__value">{{ change_request.risk_label }} · {{ change_request.risk_score }}%</span>
             <span class="application-card__risk-reason">{{ change_request.risk_short_reason }}</span>
+            {% if change_request.module_badge %}
+            <span
+                class="application-card__module-badge application-card__module-badge--{{ change_request.module_badge.variant }}"
+                data-schedule-status-tooltip
+                data-schedule-status-variant="{{ change_request.module_badge.variant }}"
+                data-tooltip-title="Оценка модуля"
+                data-tooltip-text="{{ change_request.module_badge.tooltip_text }}"
+            >
+                <span class="material-icons-sharp" aria-hidden="true">model_training</span>
+                <span>Модуль {{ change_request.module_badge.score_label }} · {{ change_request.module_badge.recommendation_label }}</span>
+            </span>
+            {% endif %}
         </div>
     </div>
 

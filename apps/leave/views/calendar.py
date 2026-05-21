@@ -49,7 +49,7 @@ from apps.leave.services.risk import (
     calculate_vacation_request_risk,
 )
 from apps.leave.services.requests import create_vacation_request
-from apps.leave.ml.request_support import build_vacation_request_ai_support
+from apps.leave.ml.request_support import build_schedule_change_ai_support, build_vacation_request_ai_support
 from apps.leave.services.schedule_planning import can_access_schedule_planning
 from apps.leave.services.scopes import get_visible_employee_ids
 from apps.leave.services.validation import (
@@ -179,9 +179,25 @@ def _format_chargeable_days_delta(delta):
     return "Без изменения"
 
 
+def _empty_schedule_change_ai_payload(message="Выберите новые даты, чтобы получить подсказку нейромодуля."):
+    return {
+        "module_score": 0,
+        "module_score_label": "",
+        "module_confidence": 0,
+        "module_confidence_label": "",
+        "module_model_version": "",
+        "module_recommendation": "blocked",
+        "module_recommendation_label": "Выберите даты",
+        "module_action": "Подсказка не заменяет жесткие правила переноса.",
+        "module_explanation": message,
+        "module_scorer_kind": "",
+        "module_alternatives": [],
+    }
+
+
 def _empty_schedule_change_preview_payload(schedule_item, message):
     old_calendar_days = (schedule_item.end_date - schedule_item.start_date).days + 1
-    return {
+    payload = {
         "can_submit": False,
         "message": message,
         "old_calendar_days": old_calendar_days,
@@ -198,6 +214,8 @@ def _empty_schedule_change_preview_payload(schedule_item, message):
         "risk_recommended_action": "",
         "risk_is_conflict": False,
     }
+    payload.update(_empty_schedule_change_ai_payload(message))
+    return payload
 
 
 def _build_schedule_change_preview_payload(schedule_item, new_start_date, new_end_date):
@@ -211,12 +229,14 @@ def _build_schedule_change_preview_payload(schedule_item, new_start_date, new_en
     )
     chargeable_days_delta = _json_number(new_chargeable_days) - old_chargeable_days
     can_submit = True
+    block_reason_key = ""
     message = "Перенос можно отправить: даты, баланс и пересечения проверены."
 
     try:
         validate_schedule_change_request(schedule_item, new_start_date, new_end_date)
     except ValidationError as exc:
         can_submit = False
+        block_reason_key = "validation_error"
         message = _validation_error_message(exc)
 
     risk_payload = calculate_schedule_change_risk(schedule_item, new_start_date, new_end_date) if new_calendar_days else {
@@ -242,7 +262,16 @@ def _build_schedule_change_preview_payload(schedule_item, new_start_date, new_en
         elif risk_payload["risk_level"] == VacationRequest.RISK_HIGH:
             message = "Перенос можно отправить, но риск высокий."
 
-    return {
+    ai_support = build_schedule_change_ai_support(
+        schedule_item,
+        new_start_date,
+        new_end_date,
+        can_submit=can_submit,
+        risk_payload=risk_payload,
+        risk_explanation=risk_explanation,
+        block_reason_key=block_reason_key,
+    )
+    payload = {
         "can_submit": can_submit,
         "message": message,
         "old_calendar_days": old_calendar_days,
@@ -259,6 +288,8 @@ def _build_schedule_change_preview_payload(schedule_item, new_start_date, new_en
         "risk_recommended_action": risk_explanation.get("recommended_action", ""),
         "risk_is_conflict": risk_explanation.get("is_conflict", False),
     }
+    payload.update(_serialize_vacation_request_ai_support(ai_support))
+    return payload
 
 
 @employee_required

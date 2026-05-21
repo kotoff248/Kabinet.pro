@@ -35,6 +35,18 @@ RISK_LEVEL_FEATURE_WEIGHT = {
     VacationRequest.RISK_MEDIUM: 2,
     VacationRequest.RISK_HIGH: 3,
 }
+URGENT_CLOSURE_MODULE_BADGE_RECOMMENDATION_LABELS = {
+    "prefer": "удачный период",
+    "normal": "можно одобрять",
+    "avoid": "лучше проверить",
+    "blocked": "есть ограничения",
+}
+URGENT_CLOSURE_MODULE_BADGE_VARIANTS = {
+    "prefer": "planned",
+    "normal": "info",
+    "avoid": "medium",
+    "blocked": "risk",
+}
 
 
 def _format_days(value):
@@ -57,6 +69,11 @@ def _percent_label(value):
     value = _percent(value)
     text = f"{value:.2f}".replace(".", ",")
     return f"{text}%"
+
+
+def _percent_badge_label(value):
+    value = _percent(value)
+    return f"{int(value.quantize(Decimal('1'), rounding=ROUND_HALF_UP))}%"
 
 
 def _period_label(start_date, end_date):
@@ -559,17 +576,88 @@ def _validate_urgent_closure_period(employee, planning_year, required_days, dead
     return int(chargeable_days)
 
 
-def _risk_payload_for_closure(employee, start_date, end_date):
-    payload = calculate_vacation_request_risk(employee, start_date, end_date, "paid")
+def _risk_payload_from_urgent_closure_option(option):
     return {
-        "risk_score": payload["risk_score"],
-        "risk_level": payload["risk_level"],
-        "department_load_level": payload["department_load_level"],
-        "overlapping_absences_count": payload["overlapping_absences_count"],
-        "remaining_staff_count": payload["remaining_staff_count"],
-        "min_staff_required": payload["min_staff_required"],
-        "balance_after_closure": payload["balance_after_request"],
+        "risk_score": option["risk_score"],
+        "risk_level": option["risk_level"],
+        "department_load_level": option["department_load_level"],
+        "overlapping_absences_count": option["overlapping_absences_count"],
+        "remaining_staff_count": option["remaining_staff_count"],
+        "min_staff_required": option["min_staff_required"],
+        "balance_after_closure": option["balance_after_closure"],
     }
+
+
+def _urgent_closure_ai_model_fields(option, *, evaluated_at=None):
+    return {
+        "ai_score": option.get("module_score"),
+        "ai_confidence": option.get("module_confidence"),
+        "ai_model_version": option.get("module_model_version") or "",
+        "ai_recommendation": option.get("module_recommendation") or "",
+        "ai_explanation": option.get("module_explanation") or "",
+        "ai_scorer_kind": option.get("module_scorer_kind") or "",
+        "ai_evaluated_at": evaluated_at or timezone.now(),
+    }
+
+
+def _urgent_closure_decision_ai_model_fields(option, *, evaluated_at=None):
+    return {
+        "decision_ai_score": option.get("module_score"),
+        "decision_ai_confidence": option.get("module_confidence"),
+        "decision_ai_model_version": option.get("module_model_version") or "",
+        "decision_ai_recommendation": option.get("module_recommendation") or "",
+        "decision_ai_explanation": option.get("module_explanation") or "",
+        "decision_ai_scorer_kind": option.get("module_scorer_kind") or "",
+        "decision_ai_evaluated_at": evaluated_at or timezone.now(),
+    }
+
+
+def _current_urgent_closure_option(closure_request):
+    return _build_option_payload(
+        closure_request.employee,
+        closure_request.planning_year,
+        closure_request.proposed_start_date,
+        closure_request.proposed_end_date,
+        closure_request.required_days,
+        closure_request.deadline,
+    )
+
+
+def _urgent_closure_module_badge_payload(*, score, recommendation, explanation, source_label):
+    if score is None or score == "":
+        return None
+    score_label = _percent_badge_label(score)
+    recommendation = recommendation or "normal"
+    return {
+        "score_label": score_label,
+        "recommendation": recommendation,
+        "recommendation_label": URGENT_CLOSURE_MODULE_BADGE_RECOMMENDATION_LABELS.get(
+            recommendation,
+            URGENT_CLOSURE_MODULE_BADGE_RECOMMENDATION_LABELS["normal"],
+        ),
+        "variant": URGENT_CLOSURE_MODULE_BADGE_VARIANTS.get(
+            recommendation,
+            URGENT_CLOSURE_MODULE_BADGE_VARIANTS["normal"],
+        ),
+        "source_label": source_label,
+        "tooltip_text": explanation or f"Оценка модуля: {source_label.lower()}.",
+    }
+
+
+def _urgent_closure_module_badge(closure_request):
+    if closure_request.status in VacationUrgentClosureRequest.TERMINAL_STATUSES:
+        return _urgent_closure_module_badge_payload(
+            score=getattr(closure_request, "decision_ai_score", None),
+            recommendation=getattr(closure_request, "decision_ai_recommendation", ""),
+            explanation=getattr(closure_request, "decision_ai_explanation", ""),
+            source_label="На момент решения",
+        )
+    return _urgent_closure_module_badge_payload(
+        score=getattr(closure_request, "ai_score", None),
+        recommendation=getattr(closure_request, "ai_recommendation", ""),
+        explanation=getattr(closure_request, "ai_explanation", ""),
+        source_label="Текущий период",
+    )
 
 
 @transaction.atomic
@@ -592,7 +680,14 @@ def create_urgent_closure_request(
     if _active_urgent_closure_queryset().filter(employee=employee, planning_year=planning_year, deadline=deadline).exists():
         raise ValidationError("По этому срочному остатку уже есть активное согласование.")
 
-    _validate_urgent_closure_period(employee, planning_year, required_days, deadline, start_date, end_date)
+    option = build_urgent_closure_preview(
+        employee=employee,
+        planning_year=planning_year,
+        required_days=required_days,
+        deadline=deadline,
+        start_date=start_date,
+        end_date=end_date,
+    )
     closure_request = VacationUrgentClosureRequest.objects.create(
         employee=employee,
         planning_year=planning_year,
@@ -603,7 +698,8 @@ def create_urgent_closure_request(
         proposed_end_date=end_date,
         reason=reason,
         created_by=actor,
-        **_risk_payload_for_closure(employee, start_date, end_date),
+        **_risk_payload_from_urgent_closure_option(option),
+        **_urgent_closure_ai_model_fields(option),
     )
 
     from .notifications import notify_urgent_closure_created
@@ -681,18 +777,20 @@ def apply_urgent_closure_demo_responses(
 
 
 def _update_closure_period(closure_request, start_date, end_date):
-    _validate_urgent_closure_period(
-        closure_request.employee,
-        closure_request.planning_year,
-        closure_request.required_days,
-        closure_request.deadline,
-        start_date,
-        end_date,
+    option = build_urgent_closure_preview(
+        employee=closure_request.employee,
+        planning_year=closure_request.planning_year,
+        required_days=closure_request.required_days,
+        deadline=closure_request.deadline,
+        start_date=start_date,
+        end_date=end_date,
     )
-    risk_payload = _risk_payload_for_closure(closure_request.employee, start_date, end_date)
     closure_request.proposed_start_date = start_date
     closure_request.proposed_end_date = end_date
-    for field_name, value in risk_payload.items():
+    closure_request.closure_year = start_date.year
+    for field_name, value in _risk_payload_from_urgent_closure_option(option).items():
+        setattr(closure_request, field_name, value)
+    for field_name, value in _urgent_closure_ai_model_fields(option).items():
         setattr(closure_request, field_name, value)
 
 
@@ -726,10 +824,15 @@ def reject_urgent_closure(closure_request_id, *, actor, comment=""):
         or can_finalize_urgent_closure(actor, closure_request)
     ):
         raise ValidationError("У вас нет прав для отклонения этого согласования.")
+    rejected_at = timezone.now()
+    decision_option = _current_urgent_closure_option(closure_request)
+    decision_ai_fields = _urgent_closure_decision_ai_model_fields(decision_option, evaluated_at=rejected_at)
     closure_request.status = VacationUrgentClosureRequest.STATUS_REJECTED
     closure_request.rejected_by = actor
-    closure_request.rejected_at = timezone.now()
+    closure_request.rejected_at = rejected_at
     closure_request.rejection_comment = comment
+    for field_name, value in decision_ai_fields.items():
+        setattr(closure_request, field_name, value)
     closure_request.save()
 
     from .notifications import notify_urgent_closure_rejected
@@ -786,32 +889,31 @@ def finalize_urgent_closure(closure_request_id, *, actor, comment=""):
     closure_request = get_urgent_closure_requests_queryset().select_for_update(of=("self",)).get(pk=closure_request_id)
     if not can_finalize_urgent_closure(actor, closure_request):
         raise ValidationError("Финализировать закрытие срочного остатка может только HR.")
-    chargeable_days = _validate_urgent_closure_period(
-        closure_request.employee,
-        closure_request.planning_year,
-        closure_request.required_days,
-        closure_request.deadline,
-        closure_request.proposed_start_date,
-        closure_request.proposed_end_date,
+    decision_option = build_urgent_closure_preview(
+        employee=closure_request.employee,
+        planning_year=closure_request.planning_year,
+        required_days=closure_request.required_days,
+        deadline=closure_request.deadline,
+        start_date=closure_request.proposed_start_date,
+        end_date=closure_request.proposed_end_date,
     )
-    risk_payload = _risk_payload_for_closure(
-        closure_request.employee,
-        closure_request.proposed_start_date,
-        closure_request.proposed_end_date,
-    )
+    chargeable_days = int(decision_option["chargeable_days"])
+    risk_payload = _risk_payload_from_urgent_closure_option(decision_option)
+    finalized_at = timezone.now()
+    decision_ai_fields = _urgent_closure_decision_ai_model_fields(decision_option, evaluated_at=finalized_at)
     schedule, created = VacationSchedule.objects.get_or_create(
         year=closure_request.closure_year,
         defaults={
             "status": VacationSchedule.STATUS_APPROVED,
             "created_by": actor,
             "approved_by": actor,
-            "approved_at": timezone.now(),
+            "approved_at": finalized_at,
         },
     )
     if created is False and schedule.status == VacationSchedule.STATUS_DRAFT:
         schedule.status = VacationSchedule.STATUS_APPROVED
         schedule.approved_by = actor
-        schedule.approved_at = timezone.now()
+        schedule.approved_at = finalized_at
         schedule.save(update_fields=["status", "approved_by", "approved_at"])
 
     schedule_item = VacationScheduleItem.objects.create(
@@ -832,10 +934,12 @@ def finalize_urgent_closure(closure_request_id, *, actor, comment=""):
 
     closure_request.status = VacationUrgentClosureRequest.STATUS_COMPLETED
     closure_request.finalized_by = actor
-    closure_request.finalized_at = timezone.now()
+    closure_request.finalized_at = finalized_at
     closure_request.final_comment = comment
     closure_request.created_schedule_item = schedule_item
     for field_name, value in risk_payload.items():
+        setattr(closure_request, field_name, value)
+    for field_name, value in decision_ai_fields.items():
         setattr(closure_request, field_name, value)
     closure_request.save()
 
@@ -869,6 +973,7 @@ def enrich_urgent_closure_request(closure_request):
     closure_request.new_period_label = closure_request.period_label
     closure_request.origin_label = "Закрытие срочного остатка"
     closure_request.is_manager_initiated = True
+    closure_request.module_badge = _urgent_closure_module_badge(closure_request)
     closure_request.initiator_name = (
         closure_request.created_by.full_name
         if closure_request.created_by_id and closure_request.created_by
@@ -923,6 +1028,7 @@ def serialize_urgent_closure_request_row(closure_request):
         "risk_recommended_action": closure_request.risk_recommended_action,
         "risk_is_conflict": closure_request.risk_is_conflict,
         "reason_preview": closure_request.reason,
+        "module_badge": closure_request.module_badge,
         "can_approve": getattr(closure_request, "can_approve", False),
         "decision_locked": getattr(closure_request, "decision_locked", False),
         "detail_url": closure_request.detail_url,

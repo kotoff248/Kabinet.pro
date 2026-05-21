@@ -19,5 +19,10 @@ urlpatterns = [
         preferences.preference_collection_readiness,
         name="preference_collection_readiness",
     ),
+    path(
+        "preferences/<int:year>/ai-preview/",
+        preferences.vacation_preferences_ai_preview,
+        name="vacation_preferences_ai_preview",
+    ),
     path("preferences/<int:year>/", preferences.vacation_preferences, name="vacation_preferences"),
 ]

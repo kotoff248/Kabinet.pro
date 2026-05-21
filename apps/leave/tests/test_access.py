@@ -26,6 +26,15 @@ class LeaveAccessTests(LeaveTestCase):
         self.assertRedirects(applications_response, reverse("main"))
         self.assertRedirects(analytics_response, reverse("main"))
 
+    def test_hr_can_open_analytics(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("analytics"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Сводка модуля")
+        self.assertContains(response, 'data-sidebar-key="analytics"')
+
     def test_hr_can_view_all_applications_but_cannot_approve(self):
         request_obj = VacationRequest.objects.create(
             employee=self.employee,
@@ -486,6 +495,10 @@ class LeaveAccessTests(LeaveTestCase):
         response = self.client.get(reverse("vacation_detail", args=[request_obj.id]))
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [metric["label"] for metric in response.context["vacation_decision_context"]["metrics"]],
+            ["Состав", "Одновременно отсутствуют", "Нагрузка", "Замещение"],
+        )
         calendar_url = response.context["vacation_decision_context"]["calendar_url"]
         query = parse_qs(urlparse(calendar_url).query)
         self.assertEqual(query["view"], ["year"])
@@ -526,6 +539,10 @@ class LeaveAccessTests(LeaveTestCase):
         response = self.client.get(reverse("schedule_change_detail", args=[change_request.id]))
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [metric["label"] for metric in response.context["schedule_change_decision_context"]["metrics"]],
+            ["Состав", "Одновременно отсутствуют", "Нагрузка", "Замещение"],
+        )
         calendar_url = response.context["schedule_change_decision_context"]["calendar_url"]
         query = parse_qs(urlparse(calendar_url).query)
         self.assertEqual(query["view"], ["year"])

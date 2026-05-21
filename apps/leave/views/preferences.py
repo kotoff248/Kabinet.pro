@@ -2,6 +2,7 @@ from datetime import date
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.http import JsonResponse
 from django.shortcuts import (
     get_object_or_404,
     redirect,
@@ -24,6 +25,7 @@ from apps.leave.models import (
     VacationPreferenceCollection,
 )
 from apps.leave.forms import VacationPreferenceResponseForm
+from apps.leave.ml.preference_support import build_vacation_preference_ai_comparison
 from apps.leave.services.preferences import (
     employee_can_join_preference_collection,
     build_calendar_preference_collection_context,
@@ -68,6 +70,15 @@ def _parse_deadline(value):
     if deadline < date.today():
         raise ValidationError("Срок заполнения не может быть в прошлом.")
     return deadline
+
+
+def _parse_optional_date(value):
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
 
 
 @employee_required
@@ -197,6 +208,34 @@ def preference_collection_readiness(request, year):
         }
     )
     return render(request, "vacation_preference_readiness.html", context)
+
+
+@employee_required
+def vacation_preferences_ai_preview(request, year):
+    current_employee = get_current_employee(request)
+    if is_authorized_person_employee(current_employee):
+        return JsonResponse({"ok": False, "message": "Уполномоченное лицо не заполняет пожелания."}, status=403)
+    if request.method != "GET":
+        return JsonResponse({"ok": False, "message": "Оценка пожеланий доступна только GET-запросом."}, status=405)
+
+    collection = get_object_or_404(VacationPreferenceCollection, year=year)
+    if not employee_can_join_preference_collection(current_employee, year):
+        return JsonResponse({"ok": False, "message": "Для этого года пожелания по отпуску недоступны."}, status=403)
+
+    preference_context = get_employee_preference_page_context(current_employee, collection)
+    if not preference_context["editable"]:
+        return JsonResponse({"ok": False, "message": "Сбор пожеланий закрыт для редактирования."}, status=403)
+
+    payload = build_vacation_preference_ai_comparison(
+        current_employee,
+        year,
+        primary_start=_parse_optional_date(request.GET.get("primary_start_date")),
+        primary_end=_parse_optional_date(request.GET.get("primary_end_date")),
+        backup_start=_parse_optional_date(request.GET.get("backup_start_date")),
+        backup_end=_parse_optional_date(request.GET.get("backup_end_date")),
+        remainder_policy=request.GET.get("remainder_policy") or VacationPreference.REMAINDER_AUTO,
+    )
+    return JsonResponse(payload)
 
 
 @employee_required

@@ -54,7 +54,7 @@ from .metrics import sync_employee_vacation_metrics
 from .querysets import get_vacation_requests_queryset
 from .request_history import get_vacation_request_history
 from .requests import enrich_vacation_request, serialize_vacation_request_row
-from apps.leave.ml.request_support import build_vacation_request_ai_support
+from apps.leave.ml.request_support import build_schedule_change_ai_support, build_vacation_request_ai_support
 from .schedule_changes import (
     enrich_schedule_change_request,
     get_schedule_change_requests_queryset,
@@ -976,12 +976,17 @@ def _build_decision_rule_cards(risk_explanation):
     details = list(risk_explanation.get("details") or [])
     cards = []
     consumed_indexes = set()
+    metric_detail_kinds = {"department_load", "overlapping_absences"}
 
     for index, detail in enumerate(details):
         if index in consumed_indexes:
             continue
 
         kind = detail.get("kind")
+        if kind in metric_detail_kinds:
+            consumed_indexes.add(index)
+            continue
+
         paired_index = None
         is_group_shortage = kind == "group_shortage"
         is_department_shortage = kind == "department_staff_shortage"
@@ -1034,6 +1039,27 @@ def _build_decision_rule_cards(risk_explanation):
         )
 
     return cards
+
+
+def _decision_metric(label, value, hint, *, variant="info", tooltip_title="", tooltip_text=""):
+    return {
+        "label": label,
+        "value": value,
+        "hint": hint,
+        "variant": variant,
+        "tooltip_title": tooltip_title or label,
+        "tooltip_text": tooltip_text or hint,
+    }
+
+
+def _metric_variant_from_severity(severity, fallback="info"):
+    if severity == "conflict":
+        return "conflict"
+    if severity == "high":
+        return "risk"
+    if severity == "medium":
+        return "medium"
+    return fallback
 
 
 def _build_substitution_context(risk_explanation):
@@ -1107,24 +1133,73 @@ def _build_leave_decision_context(risk_explanation, *, period_start, period_end=
     overlapping_label = risk_explanation.get("overlapping_employee_label") or _format_employee_count(overlapping_count)
     substitution_context = _build_substitution_context(risk_explanation)
     variant = _get_decision_context_variant(risk_explanation)
-    primary_detail = next(
+    details = list(risk_explanation.get("details") or [])
+    staffing_detail = next(
         (
             detail
-            for detail in (risk_explanation.get("details") or [])
-            if detail.get("severity") in {"conflict", "high", "medium"}
+            for detail in details
+            if detail.get("kind")
+            in {
+                "department_staff_shortage",
+                "department_staff_minimum_reached",
+                "department_absence_limit",
+                "group_shortage",
+                "group_absence_limit",
+            }
         ),
         {},
     )
-    remaining_staff = int(primary_detail.get("remaining_staff") or risk_explanation.get("remaining_staff") or 0)
-    required_staff = int(primary_detail.get("required_staff") or risk_explanation.get("required_staff") or 0)
+    remaining_staff = int(staffing_detail.get("remaining_staff") or risk_explanation.get("remaining_staff") or 0)
+    required_staff = int(staffing_detail.get("required_staff") or risk_explanation.get("required_staff") or 0)
     department = risk_explanation.get("affected_department") or "Отдел не указан"
     affected_group = risk_explanation.get("affected_group") or ""
-    if primary_detail.get("affected_group"):
-        staffing_target = f"Группа: {primary_detail['affected_group']}"
-    elif primary_detail.get("affected_department"):
-        staffing_target = f"Отдел: {primary_detail['affected_department']}"
+    if staffing_detail.get("affected_group"):
+        staffing_target = f"Группа: {staffing_detail['affected_group']}"
+    elif staffing_detail.get("affected_department"):
+        staffing_target = f"Отдел: {staffing_detail['affected_department']}"
     else:
         staffing_target = f"Группа: {affected_group}" if affected_group else f"Отдел: {department}"
+    staffing_tooltip = "Показывает, сколько сотрудников останется в отделе или ключевой группе после учета этой заявки и уже известных отсутствий."
+    overlap_tooltip = "Сотрудники, которые уже отсутствуют в тот же период по утвержденному графику, заявкам или переносам."
+    workload_level = int(risk_explanation.get("department_load_level") or 1)
+    workload_tooltip = "Месячная нагрузка отдела уточняет базовые лимиты состава и усиливает риск в напряженные месяцы."
+    workload_variant = "risk" if workload_level >= 5 else ("medium" if workload_level >= 4 else "planned")
+    staffing_variant = _metric_variant_from_severity(staffing_detail.get("severity"), fallback="planned")
+    overlap_variant = "info" if overlapping_count else "planned"
+    metrics = [
+        _decision_metric(
+            "Состав",
+            staffing_target,
+            _format_staffing_ratio(remaining_staff, required_staff),
+            variant=staffing_variant,
+            tooltip_title="Правило состава",
+            tooltip_text=staffing_tooltip,
+        ),
+        _decision_metric(
+            "Одновременно отсутствуют",
+            _format_employee_count(overlapping_count) if overlapping_count else "Нет",
+            overlapping_label if overlapping_count else "Пересечений нет",
+            variant=overlap_variant,
+            tooltip_title="Кто уже отсутствует",
+            tooltip_text=overlap_tooltip,
+        ),
+        _decision_metric(
+            "Нагрузка",
+            _format_workload_label(workload_level),
+            "Уточняет лимиты периода",
+            variant=workload_variant,
+            tooltip_title="Нагрузка отдела",
+            tooltip_text=workload_tooltip,
+        ),
+        _decision_metric(
+            "Замещение",
+            substitution_context["value"],
+            substitution_context["hint"],
+            variant=substitution_context["variant"],
+            tooltip_title=substitution_context["label"],
+            tooltip_text=substitution_context["tooltip"],
+        ),
+    ]
 
     return {
         "variant": variant,
@@ -1134,13 +1209,14 @@ def _build_leave_decision_context(risk_explanation, *, period_start, period_end=
         "recommended_action": risk_explanation.get("recommended_action", ""),
         "staffing_target": staffing_target,
         "staffing_ratio": _format_staffing_ratio(remaining_staff, required_staff),
-        "staffing_tooltip": "Показывает, сколько сотрудников останется в отделе или ключевой группе после учета этой заявки и уже известных отсутствий.",
+        "staffing_tooltip": staffing_tooltip,
         "overlap_label": _format_employee_count(overlapping_count) if overlapping_count else "Нет",
         "overlap_people_label": overlapping_label if overlapping_count else "Пересечений нет",
-        "overlap_tooltip": "Сотрудники, которые уже отсутствуют в тот же период по утвержденному графику, заявкам или переносам.",
-        "workload_label": _format_workload_label(risk_explanation.get("department_load_level")),
-        "workload_tooltip": "Месячная нагрузка отдела уточняет базовые лимиты состава и усиливает риск в напряженные месяцы.",
+        "overlap_tooltip": overlap_tooltip,
+        "workload_label": _format_workload_label(workload_level),
+        "workload_tooltip": workload_tooltip,
         "substitution": substitution_context,
+        "metrics": metrics,
         "rule_cards": _build_decision_rule_cards(risk_explanation),
         "calendar_url": _build_calendar_period_url(
             period_start,
@@ -1506,6 +1582,13 @@ AI_SOURCE_LABELS = {
     "submitted": "На момент подачи",
     "submitted_fallback": "На момент подачи",
     "live_fallback": "Пересчитано сейчас",
+    "transfer_live": "На сейчас",
+    "transfer_created": "При создании переноса",
+    "transfer_created_fallback": "При создании переноса",
+    "transfer_decision": "На момент решения",
+    "transfer_decision_reconstructed": "На момент решения",
+    "urgent_active": "Текущий период",
+    "urgent_decision": "На момент решения",
 }
 
 AI_SOURCE_HINTS = {
@@ -1514,6 +1597,13 @@ AI_SOURCE_HINTS = {
     "submitted": "Оценка сохранена вместе с заявкой и показывает состояние на момент отправки.",
     "submitted_fallback": "У этой рассмотренной заявки нет снимка на момент решения, поэтому показан снимок подачи.",
     "live_fallback": "У старой заявки нет сохраненной оценки, поэтому показан текущий пересчет, а не исторический снимок.",
+    "transfer_live": "Оценка новых дат переноса пересчитана по текущему состоянию графика.",
+    "transfer_created": "Оценка сохранена вместе с переносом и показывает состояние на момент создания.",
+    "transfer_created_fallback": "Живой пересчет сейчас недоступен, поэтому показана оценка, сохраненная при создании переноса.",
+    "transfer_decision": "Оценка сохранена при одобрении или отклонении переноса.",
+    "transfer_decision_reconstructed": "Оценка восстановлена по сохраненным данным решения переноса.",
+    "urgent_active": "Оценка сохранена для текущих дат срочного закрытия остатка.",
+    "urgent_decision": "Оценка сохранена при финализации или отклонении срочного закрытия.",
 }
 
 
@@ -1662,11 +1752,197 @@ def _build_vacation_ai_decision(vacation):
     return _build_live_vacation_ai_decision(vacation, source="live_fallback")
 
 
+def _has_schedule_change_ai_snapshot(change_request):
+    return getattr(change_request, "ai_score", None) is not None
+
+
+def _has_schedule_change_decision_ai_snapshot(change_request):
+    return getattr(change_request, "decision_ai_score", None) is not None
+
+
+def _schedule_change_ai_secondary_label(change_request):
+    if not _has_schedule_change_ai_snapshot(change_request):
+        return ""
+    score_label = _ai_percent_label(change_request.ai_score)
+    return f"При создании {score_label}" if score_label else ""
+
+
+def _build_saved_schedule_change_ai_decision(change_request, *, source="transfer_created"):
+    if not _has_schedule_change_ai_snapshot(change_request):
+        return None
+    return _vacation_ai_decision_payload(
+        score=change_request.ai_score,
+        confidence=change_request.ai_confidence,
+        model_version=change_request.ai_model_version,
+        recommendation=change_request.ai_recommendation,
+        explanation=change_request.ai_explanation or "Модуль оценил новые даты переноса при создании запроса.",
+        scorer_kind=change_request.ai_scorer_kind,
+        source=source,
+    )
+
+
+def _build_decision_schedule_change_ai_decision(change_request):
+    if not _has_schedule_change_decision_ai_snapshot(change_request):
+        return None
+    return _vacation_ai_decision_payload(
+        score=change_request.decision_ai_score,
+        confidence=change_request.decision_ai_confidence,
+        model_version=change_request.decision_ai_model_version,
+        recommendation=change_request.decision_ai_recommendation,
+        explanation=change_request.decision_ai_explanation or "Модуль оценил новые даты переноса при решении.",
+        scorer_kind=change_request.decision_ai_scorer_kind,
+        source="transfer_decision",
+        secondary_label=_schedule_change_ai_secondary_label(change_request),
+    )
+
+
+def _build_live_schedule_change_ai_decision(change_request, *, source="transfer_live"):
+    try:
+        ai_support = build_schedule_change_ai_support(
+            change_request.schedule_item,
+            change_request.new_start_date,
+            change_request.new_end_date,
+            exclude_change_request_id=change_request.id,
+        )
+    except Exception:
+        return None
+
+    return _vacation_ai_decision_payload(
+        score=ai_support.get("module_score"),
+        confidence=ai_support.get("module_confidence"),
+        model_version=ai_support.get("module_model_version"),
+        recommendation=ai_support.get("module_recommendation"),
+        explanation=(
+            ai_support.get("module_explanation")
+            or ai_support.get("module_action")
+            or "Модуль оценил новые даты переноса по текущему графику."
+        ),
+        scorer_kind=ai_support.get("module_scorer_kind"),
+        source=source,
+        secondary_label=_schedule_change_ai_secondary_label(change_request),
+    )
+
+
+def _schedule_change_saved_risk_payload(change_request):
+    return {
+        "risk_score": change_request.risk_score,
+        "risk_level": change_request.risk_level,
+        "department_load_level": change_request.department_load_level,
+        "overlapping_absences_count": change_request.overlapping_absences_count,
+        "remaining_staff_count": change_request.remaining_staff_count,
+        "min_staff_required": change_request.min_staff_required,
+        "balance_after_change": change_request.balance_after_change,
+    }
+
+
+def _build_reconstructed_schedule_change_ai_decision(change_request):
+    try:
+        ai_support = build_schedule_change_ai_support(
+            change_request.schedule_item,
+            change_request.new_start_date,
+            change_request.new_end_date,
+            can_submit=True,
+            risk_payload=_schedule_change_saved_risk_payload(change_request),
+            exclude_change_request_id=change_request.id,
+        )
+    except Exception:
+        return None
+
+    return _vacation_ai_decision_payload(
+        score=ai_support.get("module_score"),
+        confidence=ai_support.get("module_confidence"),
+        model_version=ai_support.get("module_model_version"),
+        recommendation=ai_support.get("module_recommendation"),
+        explanation=(
+            ai_support.get("module_explanation")
+            or ai_support.get("module_action")
+            or "Модуль восстановил оценку по сохраненному риску переноса."
+        ),
+        scorer_kind=ai_support.get("module_scorer_kind"),
+        source="transfer_decision_reconstructed",
+        secondary_label=_schedule_change_ai_secondary_label(change_request),
+    )
+
+
+def _build_schedule_change_ai_decision(change_request):
+    if change_request.status == VacationScheduleChangeRequest.STATUS_PENDING:
+        live_snapshot = _build_live_schedule_change_ai_decision(change_request)
+        if live_snapshot:
+            return live_snapshot
+        return _build_saved_schedule_change_ai_decision(change_request, source="transfer_created_fallback")
+
+    decision_snapshot = _build_decision_schedule_change_ai_decision(change_request)
+    if decision_snapshot:
+        return decision_snapshot
+
+    reconstructed_snapshot = _build_reconstructed_schedule_change_ai_decision(change_request)
+    if reconstructed_snapshot:
+        return reconstructed_snapshot
+
+    return _build_saved_schedule_change_ai_decision(change_request, source="transfer_created_fallback")
+
+
+def _has_urgent_closure_ai_snapshot(closure_request):
+    return getattr(closure_request, "ai_score", None) is not None
+
+
+def _has_urgent_closure_decision_ai_snapshot(closure_request):
+    return getattr(closure_request, "decision_ai_score", None) is not None
+
+
+def _urgent_closure_ai_secondary_label(closure_request):
+    if not _has_urgent_closure_ai_snapshot(closure_request):
+        return ""
+    score_label = _ai_percent_label(closure_request.ai_score)
+    return f"До решения {score_label}" if score_label else ""
+
+
+def _build_active_urgent_closure_ai_decision(closure_request):
+    if not _has_urgent_closure_ai_snapshot(closure_request):
+        return None
+    return _vacation_ai_decision_payload(
+        score=closure_request.ai_score,
+        confidence=closure_request.ai_confidence,
+        model_version=closure_request.ai_model_version,
+        recommendation=closure_request.ai_recommendation,
+        explanation=closure_request.ai_explanation or "Модуль оценил текущий период срочного закрытия.",
+        scorer_kind=closure_request.ai_scorer_kind,
+        source="urgent_active",
+    )
+
+
+def _build_decision_urgent_closure_ai_decision(closure_request):
+    if not _has_urgent_closure_decision_ai_snapshot(closure_request):
+        return None
+    return _vacation_ai_decision_payload(
+        score=closure_request.decision_ai_score,
+        confidence=closure_request.decision_ai_confidence,
+        model_version=closure_request.decision_ai_model_version,
+        recommendation=closure_request.decision_ai_recommendation,
+        explanation=closure_request.decision_ai_explanation or "Модуль оценил срочное закрытие на момент решения.",
+        scorer_kind=closure_request.decision_ai_scorer_kind,
+        source="urgent_decision",
+        secondary_label=_urgent_closure_ai_secondary_label(closure_request),
+    )
+
+
+def _build_urgent_closure_ai_decision(closure_request):
+    if closure_request.status in VacationUrgentClosureRequest.TERMINAL_STATUSES:
+        decision_snapshot = _build_decision_urgent_closure_ai_decision(closure_request)
+        if decision_snapshot:
+            return decision_snapshot
+    return _build_active_urgent_closure_ai_decision(closure_request)
+
+
 def build_vacation_detail_context(vacation, current_employee, source="", query_params=None):
     saved_risk_snapshot = _build_saved_vacation_risk_snapshot(vacation)
-    enrich_vacation_request(vacation, include_live_risk_explanation=True)
+    use_live_risk = vacation.status == VacationRequest.STATUS_PENDING
+    enrich_vacation_request(vacation, include_live_risk_explanation=use_live_risk)
     live_risk_context = _build_live_vacation_risk_context(vacation.risk_explanation)
-    saved_risk_snapshot_changed = _risk_snapshot_has_changed(saved_risk_snapshot, live_risk_context)
+    saved_risk_snapshot_changed = (
+        use_live_risk
+        and _risk_snapshot_has_changed(saved_risk_snapshot, live_risk_context)
+    )
     saved_risk_snapshot_title = (
         "Риск изменился после подачи заявки"
         if vacation.status == VacationRequest.STATUS_PENDING
@@ -1775,9 +2051,13 @@ def build_vacation_detail_context(vacation, current_employee, source="", query_p
 
 def build_schedule_change_detail_context(change_request, current_employee, source="", query_params=None):
     saved_risk_snapshot = _build_saved_schedule_change_risk_snapshot(change_request)
-    enrich_schedule_change_request(change_request, include_live_risk_explanation=True)
+    use_live_risk = change_request.status == VacationScheduleChangeRequest.STATUS_PENDING
+    enrich_schedule_change_request(change_request, include_live_risk_explanation=use_live_risk)
     live_risk_context = _build_live_vacation_risk_context(change_request.risk_explanation)
-    saved_risk_snapshot_changed = _risk_snapshot_has_changed(saved_risk_snapshot, live_risk_context)
+    saved_risk_snapshot_changed = (
+        use_live_risk
+        and _risk_snapshot_has_changed(saved_risk_snapshot, live_risk_context)
+    )
     schedule_change_decision_context = _build_leave_decision_context(
         change_request.risk_explanation,
         period_start=change_request.new_start_date,
@@ -1833,6 +2113,8 @@ def build_schedule_change_detail_context(change_request, current_employee, sourc
             decision_state = "Решение недоступно для вашей роли."
             decision_state_icon = "lock"
 
+    schedule_change_ai_decision = _build_schedule_change_ai_decision(change_request)
+
     return {
         "change_request": change_request,
         "employee": change_request.employee,
@@ -1856,7 +2138,12 @@ def build_schedule_change_detail_context(change_request, current_employee, sourc
         "overlapping_absences_employee_label": live_risk_context["overlapping_absences_label"],
         "approval_route": _get_schedule_change_approval_route(change_request, current_employee, can_approve_change),
         "schedule_change_history": _get_schedule_change_history(change_request),
-        "system_recommendation_text": change_request.risk_recommended_action,
+        "schedule_change_ai_decision": schedule_change_ai_decision,
+        "system_recommendation_text": (
+            schedule_change_ai_decision["explanation"]
+            if schedule_change_ai_decision
+            else change_request.risk_recommended_action
+        ),
         "can_approve_schedule_change": can_approve_change,
         "schedule_change_approve_label": "Принять перенос" if change_request.is_manager_initiated else "Одобрить",
         "schedule_change_reject_label": "Отклонить предложение" if change_request.is_manager_initiated else "Отклонить",
@@ -1920,6 +2207,8 @@ def build_urgent_closure_detail_context(closure_request, current_employee, sourc
     if employee_profile_query:
         employee_profile_url = f"{employee_profile_url}?{urlencode(employee_profile_query)}"
 
+    urgent_closure_ai_decision = _build_urgent_closure_ai_decision(closure_request)
+
     return {
         "urgent_closure": closure_request,
         "employee": closure_request.employee,
@@ -1932,8 +2221,13 @@ def build_urgent_closure_detail_context(closure_request, current_employee, sourc
         "urgent_closure_decision_context": urgent_closure_decision_context,
         "approval_route": _get_urgent_closure_approval_route(closure_request, current_employee, can_act),
         "urgent_closure_history": _get_urgent_closure_history(closure_request),
-        "system_recommendation_text": closure_request.risk_recommended_action
-        or "Система предлагает закрыть только ту часть остатка, которую нельзя корректно поставить в график следующего года.",
+        "urgent_closure_ai_decision": urgent_closure_ai_decision,
+        "system_recommendation_text": (
+            urgent_closure_ai_decision["explanation"]
+            if urgent_closure_ai_decision
+            else closure_request.risk_recommended_action
+            or "Система предлагает закрыть только ту часть остатка, которую нельзя корректно поставить в график следующего года."
+        ),
         "can_manager_approve_urgent_closure": can_manager_approve,
         "can_employee_review_urgent_closure": can_employee_review,
         "can_hr_finalize_urgent_closure": can_hr_finalize,

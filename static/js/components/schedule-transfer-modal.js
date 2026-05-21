@@ -103,6 +103,7 @@
         if (risk) {
             risk.hidden = true;
         }
+        updateModulePreview(null);
         if (form) {
             form.dataset.previewCanSubmit = "false";
         }
@@ -133,6 +134,59 @@
         risk.classList.toggle("is-high", payload.risk_label === "Высокий");
     }
 
+    function moduleStatusVariant(recommendation) {
+        if (recommendation === "prefer") {
+            return "planned";
+        }
+        if (recommendation === "avoid") {
+            return "medium";
+        }
+        if (recommendation === "blocked") {
+            return "risk";
+        }
+        return "info";
+    }
+
+    function updateModulePreview(payload) {
+        const module = document.getElementById("transfer-preview-module");
+        const hasModule = Boolean(payload && payload.module_score_label);
+        const recommendation = hasModule ? payload.module_recommendation || "normal" : "";
+        if (module) {
+            module.classList.remove(
+                "schedule-transfer-preview__module--prefer",
+                "schedule-transfer-preview__module--normal",
+                "schedule-transfer-preview__module--avoid",
+                "schedule-transfer-preview__module--blocked"
+            );
+            if (recommendation) {
+                module.classList.add("schedule-transfer-preview__module--" + recommendation);
+            }
+            module.dataset.scheduleStatusVariant = moduleStatusVariant(recommendation);
+            module.dataset.tooltipText = hasModule
+                ? payload.module_action || payload.module_explanation || "Модуль оценил новые даты переноса."
+                : "Выберите новые даты, чтобы получить подсказку нейромодуля.";
+        }
+
+        setText(
+            document.getElementById("transfer-preview-module-label"),
+            hasModule
+                ? "Модуль " + payload.module_score_label + " · " + (payload.module_recommendation_label || "можно отправлять")
+                : "Выберите даты"
+        );
+        setText(
+            document.getElementById("transfer-preview-module-reason"),
+            hasModule
+                ? payload.module_explanation || "Модуль оценил новые даты переноса."
+                : "Модуль оценит новые даты после проверки переноса."
+        );
+        setText(
+            document.getElementById("transfer-preview-module-action"),
+            hasModule
+                ? payload.module_action || "Подсказка не заменяет жесткие правила переноса."
+                : "Подсказка не заменяет жесткие правила переноса."
+        );
+    }
+
     function applyPreviewPayload(payload) {
         const form = document.getElementById("schedule-transfer-form");
         if (!form) {
@@ -146,6 +200,7 @@
         setPreviewValue("transfer-preview-balance", payload.balance_after_change);
         setText(document.getElementById("transfer-preview-delta"), payload.chargeable_days_delta_label || "Без изменения");
         updateRiskPreview(payload);
+        updateModulePreview(payload);
 
         const isWarning = Boolean(payload.risk_is_conflict) || payload.risk_label === "Высокий";
         if (payload.can_submit) {
@@ -236,6 +291,7 @@
                 }
                 previewController = null;
                 setPreviewState("error");
+                updateModulePreview(null);
                 setHint("Не удалось проверить перенос. Проверьте соединение и попробуйте ещё раз.", "error");
                 if (form) {
                     form.dataset.previewCanSubmit = "false";

@@ -8,7 +8,7 @@ from apps.leave.models import VacationRequest, VacationScheduleCandidate, Vacati
 from apps.leave.ml.scoring import score_candidate_features
 from apps.leave.services.dates import format_period_label, get_chargeable_leave_days
 from apps.leave.services.risk import build_vacation_request_risk_explanation, calculate_vacation_request_risk
-from apps.leave.services.validation import validate_vacation_request_for_employee
+from apps.leave.services.validation import validate_schedule_change_request, validate_vacation_request_for_employee
 
 REQUEST_AI_FEATURE_SCHEMA_VERSION = 1
 REQUEST_AI_ALTERNATIVE_LIMIT = 2
@@ -32,6 +32,20 @@ RECOMMENDATION_ACTIONS = {
     "normal": "Период можно отправить, но руководитель всё равно проверит заявку.",
     "avoid": "Модуль советует посмотреть более спокойный период рядом.",
     "blocked": "Период не проходит жесткие правила, нейромодуль не может разрешить отправку.",
+}
+
+TRANSFER_RECOMMENDATION_LABELS = {
+    "prefer": "удачный перенос",
+    "normal": "можно отправлять",
+    "avoid": "лучше проверить",
+    "blocked": "есть ограничения",
+}
+
+TRANSFER_RECOMMENDATION_ACTIONS = {
+    "prefer": "Модуль считает новые даты удачными для графика.",
+    "normal": "Новые даты можно отправлять на согласование.",
+    "avoid": "Модуль советует внимательно проверить влияние переноса на отдел.",
+    "blocked": "Новые даты не проходят жесткие правила переноса.",
 }
 
 RECOMMENDATION_EXPLANATION_LABELS = {
@@ -124,6 +138,9 @@ def _risk_feature_payload(risk_payload, risk_explanation):
     remaining_staff = int(risk_payload.get("remaining_staff_count") or risk_explanation.get("remaining_staff") or 0)
     min_staff_required = int(risk_payload.get("min_staff_required") or risk_explanation.get("required_staff") or 0)
     risk_level = risk_payload.get("risk_level") or VacationRequest.RISK_LOW
+    balance_after = risk_payload.get("balance_after_request")
+    if balance_after is None:
+        balance_after = risk_payload.get("balance_after_change")
     return {
         "risk_score": int(risk_payload.get("risk_score") or 0),
         "risk_level": risk_level,
@@ -134,7 +151,7 @@ def _risk_feature_payload(risk_payload, risk_explanation):
         "risk_remaining_staff_count": remaining_staff,
         "risk_min_staff_required": min_staff_required,
         "risk_staff_margin": remaining_staff - min_staff_required,
-        "risk_balance_after_request": _feature_float(risk_payload.get("balance_after_request")),
+        "risk_balance_after_request": _feature_float(balance_after),
         "risk_substitution_used": bool(risk_explanation.get("substitution_used")),
         "risk_has_substitution_capacity": bool(risk_explanation.get("has_substitution_capacity")),
         "risk_details_count": len(details),
@@ -152,20 +169,27 @@ def _request_candidate_features(
     risk_payload,
     risk_explanation,
     block_reason_key="",
+    candidate_kind=VacationScheduleCandidate.KIND_MANUAL,
+    candidate_source=VacationScheduleItem.SOURCE_MANUAL,
+    planning_basis=None,
+    target_days=None,
 ):
     calendar_days = _calendar_days(start_date, end_date)
     chargeable_days = get_chargeable_leave_days(start_date, end_date, vacation_type) if calendar_days else 0
     scoring_days = chargeable_days if vacation_type == "paid" else calendar_days
-    target_days = max(scoring_days, 1)
+    target_days = max(_feature_float(target_days if target_days is not None else scoring_days), 1.0)
     months = _period_months(start_date, end_date)
     department_id = getattr(employee, "department_id", None) or 0
     position = getattr(employee, "employee_position", None)
     production_group_id = getattr(position, "production_group_id", None) or 0
     year = start_date.year if start_date else None
+    balance_after = risk_payload.get("balance_after_request")
+    if balance_after is None:
+        balance_after = risk_payload.get("balance_after_change")
     return {
         "feature_schema_version": REQUEST_AI_FEATURE_SCHEMA_VERSION,
-        "candidate_kind": VacationScheduleCandidate.KIND_MANUAL,
-        "candidate_source": VacationScheduleItem.SOURCE_MANUAL,
+        "candidate_kind": candidate_kind,
+        "candidate_source": candidate_source,
         "candidate_passed_hard_rules": bool(can_submit),
         "candidate_block_reason_key": block_reason_key,
         "employee_role": getattr(employee, "role", ""),
@@ -196,13 +220,13 @@ def _request_candidate_features(
         "planning_open_required_days": _feature_float(target_days),
         "planning_blocking_days": 0.0,
         "planning_deadline_blocking_days": 0.0,
-        "planning_annual_remaining_days": _feature_float(risk_payload.get("balance_after_request")),
+        "planning_annual_remaining_days": _feature_float(balance_after),
         "planning_mandatory_days": 0.0,
         "planning_requested_preference_days": 0.0,
         "planning_candidate_target_days": _feature_float(target_days),
         "planning_candidate_coverage_ratio": _feature_ratio(scoring_days, target_days),
         "planning_candidate_over_open_days": max(_feature_float(scoring_days) - _feature_float(target_days), 0.0),
-        "planning_basis": VACATION_TYPE_BASIS.get(vacation_type, "employee_request"),
+        "planning_basis": planning_basis or VACATION_TYPE_BASIS.get(vacation_type, "employee_request"),
         "planning_remainder_policy": "employee_selected_period",
         "planning_has_blocker": False,
         "planning_needs_manual_attention": False,
@@ -299,6 +323,10 @@ def _score_request_period(
     block_reason_key="",
     exclude_request_id=None,
     exclude_schedule_item_id=None,
+    candidate_kind=VacationScheduleCandidate.KIND_MANUAL,
+    candidate_source=VacationScheduleItem.SOURCE_MANUAL,
+    planning_basis=None,
+    target_days=None,
 ):
     if can_submit is None:
         try:
@@ -339,6 +367,10 @@ def _score_request_period(
         risk_payload=risk_payload,
         risk_explanation=risk_explanation,
         block_reason_key=block_reason_key,
+        candidate_kind=candidate_kind,
+        candidate_source=candidate_source,
+        planning_basis=planning_basis,
+        target_days=target_days,
     )
     scoring = score_candidate_features(features, passed_hard_rules=bool(can_submit))
     return {
@@ -448,6 +480,61 @@ def build_vacation_request_ai_support(
     return support
 
 
+def build_schedule_change_ai_support(
+    schedule_item,
+    new_start_date,
+    new_end_date,
+    *,
+    can_submit=None,
+    risk_payload=None,
+    risk_explanation=None,
+    block_reason_key="",
+    exclude_change_request_id=None,
+):
+    if can_submit is None:
+        try:
+            validate_schedule_change_request(
+                schedule_item,
+                new_start_date,
+                new_end_date,
+                exclude_change_request_id=exclude_change_request_id,
+            )
+            can_submit = True
+        except ValidationError:
+            can_submit = False
+            block_reason_key = block_reason_key or "validation_error"
+
+    support = _score_request_period(
+        schedule_item.employee,
+        new_start_date,
+        new_end_date,
+        schedule_item.vacation_type,
+        can_submit=can_submit,
+        risk_payload=risk_payload,
+        risk_explanation=risk_explanation,
+        block_reason_key=block_reason_key,
+        exclude_schedule_item_id=schedule_item.id,
+        candidate_source=VacationScheduleItem.SOURCE_TRANSFER,
+        planning_basis="schedule_change",
+        target_days=schedule_item.chargeable_days,
+    )
+    recommendation = support.get("module_recommendation") or "normal"
+    support.update(
+        {
+            "module_recommendation_label": TRANSFER_RECOMMENDATION_LABELS.get(
+                recommendation,
+                TRANSFER_RECOMMENDATION_LABELS["normal"],
+            ),
+            "module_action": TRANSFER_RECOMMENDATION_ACTIONS.get(
+                recommendation,
+                TRANSFER_RECOMMENDATION_ACTIONS["normal"],
+            ),
+            "module_alternatives": [],
+        }
+    )
+    return support
+
+
 def vacation_request_ai_model_fields(ai_support):
     return {
         "ai_score": ai_support.get("module_score"),
@@ -456,6 +543,30 @@ def vacation_request_ai_model_fields(ai_support):
         "ai_recommendation": ai_support.get("module_recommendation") or "",
         "ai_explanation": ai_support.get("module_explanation") or "",
         "ai_scorer_kind": ai_support.get("module_scorer_kind") or "",
+    }
+
+
+def schedule_change_ai_model_fields(ai_support, *, evaluated_at=None):
+    return {
+        "ai_score": ai_support.get("module_score"),
+        "ai_confidence": ai_support.get("module_confidence"),
+        "ai_model_version": ai_support.get("module_model_version") or "",
+        "ai_recommendation": ai_support.get("module_recommendation") or "",
+        "ai_explanation": ai_support.get("module_explanation") or "",
+        "ai_scorer_kind": ai_support.get("module_scorer_kind") or "",
+        "ai_evaluated_at": evaluated_at or timezone.now(),
+    }
+
+
+def schedule_change_decision_ai_model_fields(ai_support, *, evaluated_at=None):
+    return {
+        "decision_ai_score": ai_support.get("module_score"),
+        "decision_ai_confidence": ai_support.get("module_confidence"),
+        "decision_ai_model_version": ai_support.get("module_model_version") or "",
+        "decision_ai_recommendation": ai_support.get("module_recommendation") or "",
+        "decision_ai_explanation": ai_support.get("module_explanation") or "",
+        "decision_ai_scorer_kind": ai_support.get("module_scorer_kind") or "",
+        "decision_ai_evaluated_at": evaluated_at or timezone.now(),
     }
 
 

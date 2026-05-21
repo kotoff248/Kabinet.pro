@@ -1,3 +1,5 @@
+from decimal import Decimal, ROUND_HALF_UP
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.urls import reverse
@@ -8,6 +10,11 @@ from apps.accounts.services import (
     can_initiate_schedule_change_for_employee,
     can_initiate_schedule_change_for_item,
     can_review_schedule_change_request,
+)
+from apps.leave.ml.request_support import (
+    build_schedule_change_ai_support,
+    schedule_change_ai_model_fields,
+    schedule_change_decision_ai_model_fields,
 )
 from apps.leave.models import VacationScheduleChangeRequest, VacationScheduleItem
 
@@ -21,16 +28,158 @@ from .notifications import notify_schedule_change_created, notify_schedule_chang
 from .risk import (
     build_saved_schedule_change_risk_explanation,
     build_schedule_change_risk_explanation,
+    calculate_schedule_change_request_risk,
     calculate_schedule_change_risk,
 )
 from .text import build_text_preview
 from .validation import validate_schedule_change_request
+
+SCHEDULE_CHANGE_MODULE_BADGE_RECOMMENDATION_LABELS = {
+    "prefer": "удачный период",
+    "normal": "можно одобрять",
+    "avoid": "лучше проверить",
+    "blocked": "есть ограничения",
+}
+
+SCHEDULE_CHANGE_MODULE_BADGE_VARIANTS = {
+    "prefer": "planned",
+    "normal": "info",
+    "avoid": "medium",
+    "blocked": "risk",
+}
+
 
 def is_manager_initiated_schedule_change(change_request):
     return (
         change_request.requested_by_id is not None
         and change_request.requested_by_id != change_request.employee_id
     )
+
+
+def _percent_badge_label(value):
+    if value is None or value == "":
+        return ""
+    try:
+        percent = max(Decimal("0"), min(Decimal("100"), Decimal(str(value))))
+    except Exception:
+        return ""
+    return f"{int(percent.quantize(Decimal('1'), rounding=ROUND_HALF_UP))}%"
+
+
+def _schedule_change_module_badge_payload(*, score, recommendation, explanation, source_label):
+    score_label = _percent_badge_label(score)
+    if not score_label:
+        return None
+
+    recommendation = recommendation or "normal"
+    return {
+        "score_label": score_label,
+        "recommendation": recommendation,
+        "recommendation_label": SCHEDULE_CHANGE_MODULE_BADGE_RECOMMENDATION_LABELS.get(
+            recommendation,
+            SCHEDULE_CHANGE_MODULE_BADGE_RECOMMENDATION_LABELS["normal"],
+        ),
+        "variant": SCHEDULE_CHANGE_MODULE_BADGE_VARIANTS.get(
+            recommendation,
+            SCHEDULE_CHANGE_MODULE_BADGE_VARIANTS["normal"],
+        ),
+        "source_label": source_label,
+        "tooltip_text": explanation or f"Оценка модуля: {source_label.lower()}.",
+    }
+
+
+def _schedule_change_created_module_badge(change_request):
+    return _schedule_change_module_badge_payload(
+        score=change_request.ai_score,
+        recommendation=change_request.ai_recommendation,
+        explanation=change_request.ai_explanation,
+        source_label="При создании переноса",
+    )
+
+
+def _schedule_change_decision_module_badge(change_request):
+    return _schedule_change_module_badge_payload(
+        score=getattr(change_request, "decision_ai_score", None),
+        recommendation=getattr(change_request, "decision_ai_recommendation", ""),
+        explanation=getattr(change_request, "decision_ai_explanation", ""),
+        source_label="На момент решения",
+    )
+
+
+def _schedule_change_risk_payload(change_request):
+    return {
+        "risk_score": change_request.risk_score,
+        "risk_level": change_request.risk_level,
+        "department_load_level": change_request.department_load_level,
+        "overlapping_absences_count": change_request.overlapping_absences_count,
+        "remaining_staff_count": change_request.remaining_staff_count,
+        "min_staff_required": change_request.min_staff_required,
+        "balance_after_change": change_request.balance_after_change,
+    }
+
+
+def _schedule_change_live_module_badge(change_request):
+    if change_request.status != VacationScheduleChangeRequest.STATUS_PENDING:
+        return None
+
+    try:
+        ai_support = build_schedule_change_ai_support(
+            change_request.schedule_item,
+            change_request.new_start_date,
+            change_request.new_end_date,
+            risk_payload=_schedule_change_risk_payload(change_request),
+            risk_explanation=getattr(change_request, "risk_explanation", None),
+            exclude_change_request_id=change_request.id,
+        )
+    except Exception:
+        return None
+
+    return _schedule_change_module_badge_payload(
+        score=ai_support.get("module_score"),
+        recommendation=ai_support.get("module_recommendation"),
+        explanation=ai_support.get("module_explanation"),
+        source_label="На сейчас",
+    )
+
+
+def _schedule_change_reconstructed_decision_module_badge(change_request):
+    if change_request.status == VacationScheduleChangeRequest.STATUS_PENDING:
+        return None
+
+    try:
+        ai_support = build_schedule_change_ai_support(
+            change_request.schedule_item,
+            change_request.new_start_date,
+            change_request.new_end_date,
+            can_submit=True,
+            risk_payload=_schedule_change_risk_payload(change_request),
+            risk_explanation=getattr(change_request, "risk_explanation", None),
+            exclude_change_request_id=change_request.id,
+        )
+    except Exception:
+        return None
+
+    return _schedule_change_module_badge_payload(
+        score=ai_support.get("module_score"),
+        recommendation=ai_support.get("module_recommendation"),
+        explanation=ai_support.get("module_explanation"),
+        source_label="На момент решения",
+    )
+
+
+def _schedule_change_module_badge(change_request):
+    if getattr(change_request, "_module_badge_resolved", False):
+        return getattr(change_request, "module_badge", None)
+    if change_request.status == VacationScheduleChangeRequest.STATUS_PENDING:
+        badge = _schedule_change_created_module_badge(change_request) or _schedule_change_live_module_badge(change_request)
+    else:
+        badge = (
+            _schedule_change_decision_module_badge(change_request)
+            or _schedule_change_reconstructed_decision_module_badge(change_request)
+            or _schedule_change_created_module_badge(change_request)
+        )
+    change_request._module_badge_resolved = True
+    return badge
 
 
 def _validate_reviewer_can_review_change(reviewer, change_request):
@@ -133,17 +282,25 @@ def enrich_schedule_change_request(change_request, *, include_live_risk_explanat
     change_request.old_period_label = format_period_label(change_request.old_start_date, change_request.old_end_date)
     change_request.new_period_label = format_period_label(change_request.new_start_date, change_request.new_end_date)
     change_request.created_at_formatted = date_format(change_request.created_at, "j E Y")
+    live_risk_payload = (
+        calculate_schedule_change_request_risk(change_request)
+        if include_live_risk_explanation
+        else None
+    )
     change_request.risk_explanation = (
         build_schedule_change_risk_explanation(change_request)
         if include_live_risk_explanation
         else build_saved_schedule_change_risk_explanation(change_request)
     )
+    if live_risk_payload is not None:
+        change_request.balance_after_change = live_risk_payload["balance_after_change"]
     change_request.risk_score = change_request.risk_explanation["score"]
     change_request.risk_label = change_request.risk_explanation["label"]
     change_request.risk_short_reason = change_request.risk_explanation["short_reason"]
     change_request.risk_recommended_action = change_request.risk_explanation["recommended_action"]
     change_request.risk_is_conflict = change_request.risk_explanation["is_conflict"]
     change_request.reason_preview = build_text_preview(change_request.reason)
+    change_request.module_badge = _schedule_change_module_badge(change_request)
     change_request.detail_url = reverse("schedule_change_detail", args=[change_request.id])
     change_request.profile_url = f"{reverse('employee_profile', args=[change_request.employee_id])}?from=applications"
     change_request.is_manager_initiated = is_manager_initiated_schedule_change(change_request)
@@ -159,7 +316,10 @@ def enrich_schedule_change_request(change_request, *, include_live_risk_explanat
     return change_request
 
 def serialize_schedule_change_request_row(change_request):
-    enrich_schedule_change_request(change_request)
+    enrich_schedule_change_request(
+        change_request,
+        include_live_risk_explanation=change_request.status == VacationScheduleChangeRequest.STATUS_PENDING,
+    )
     return {
         "id": change_request.id,
         "employee_name": change_request.employee.full_name,
@@ -177,6 +337,7 @@ def serialize_schedule_change_request_row(change_request):
         "risk_recommended_action": change_request.risk_recommended_action,
         "risk_is_conflict": change_request.risk_is_conflict,
         "reason_preview": change_request.reason_preview,
+        "module_badge": change_request.module_badge,
         "can_approve": getattr(change_request, "can_approve", False),
         "decision_locked": getattr(change_request, "decision_locked", False),
         "detail_url": change_request.detail_url,
@@ -197,6 +358,15 @@ def create_schedule_change_request(schedule_item_id, requested_by, new_start_dat
 
     validate_schedule_change_request(schedule_item, new_start_date, new_end_date)
     risk_payload = calculate_schedule_change_risk(schedule_item, new_start_date, new_end_date)
+    ai_support = build_schedule_change_ai_support(
+        schedule_item,
+        new_start_date,
+        new_end_date,
+        can_submit=True,
+        risk_payload=risk_payload,
+        block_reason_key="",
+    )
+    ai_fields = schedule_change_ai_model_fields(ai_support)
     change_request = VacationScheduleChangeRequest.objects.create(
         schedule_item=schedule_item,
         employee=schedule_item.employee,
@@ -207,6 +377,7 @@ def create_schedule_change_request(schedule_item_id, requested_by, new_start_dat
         reason=reason,
         requested_by=requested_by,
         **risk_payload,
+        **ai_fields,
     )
     notify_schedule_change_created(change_request)
     return change_request
@@ -231,6 +402,20 @@ def approve_schedule_change_request(change_request_id, *, reviewer, review_comme
         schedule_item,
         change_request.new_start_date,
         change_request.new_end_date,
+    )
+    reviewed_at = timezone.now()
+    decision_ai_support = build_schedule_change_ai_support(
+        schedule_item,
+        change_request.new_start_date,
+        change_request.new_end_date,
+        can_submit=True,
+        risk_payload=risk_payload,
+        block_reason_key="",
+        exclude_change_request_id=change_request.id,
+    )
+    decision_ai_fields = schedule_change_decision_ai_model_fields(
+        decision_ai_support,
+        evaluated_at=reviewed_at,
     )
 
     schedule_item.status = VacationScheduleItem.STATUS_TRANSFERRED
@@ -266,9 +451,11 @@ def approve_schedule_change_request(change_request_id, *, reviewer, review_comme
 
     change_request.status = VacationScheduleChangeRequest.STATUS_APPROVED
     change_request.reviewed_by = reviewer
-    change_request.reviewed_at = timezone.now()
+    change_request.reviewed_at = reviewed_at
     change_request.review_comment = review_comment
     for field_name, value in risk_payload.items():
+        setattr(change_request, field_name, value)
+    for field_name, value in decision_ai_fields.items():
         setattr(change_request, field_name, value)
     change_request.save(
         update_fields=[
@@ -283,6 +470,7 @@ def approve_schedule_change_request(change_request_id, *, reviewer, review_comme
             "remaining_staff_count",
             "min_staff_required",
             "balance_after_change",
+            *decision_ai_fields.keys(),
         ]
     )
     notify_schedule_change_reviewed(change_request)
@@ -300,11 +488,25 @@ def reject_schedule_change_request(change_request_id, *, reviewer, review_commen
         change_request.new_start_date,
         change_request.new_end_date,
     )
+    reviewed_at = timezone.now()
+    decision_ai_support = build_schedule_change_ai_support(
+        change_request.schedule_item,
+        change_request.new_start_date,
+        change_request.new_end_date,
+        risk_payload=risk_payload,
+        exclude_change_request_id=change_request.id,
+    )
+    decision_ai_fields = schedule_change_decision_ai_model_fields(
+        decision_ai_support,
+        evaluated_at=reviewed_at,
+    )
     change_request.status = VacationScheduleChangeRequest.STATUS_REJECTED
     change_request.reviewed_by = reviewer
-    change_request.reviewed_at = timezone.now()
+    change_request.reviewed_at = reviewed_at
     change_request.review_comment = review_comment
     for field_name, value in risk_payload.items():
+        setattr(change_request, field_name, value)
+    for field_name, value in decision_ai_fields.items():
         setattr(change_request, field_name, value)
     change_request.save(
         update_fields=[
@@ -319,6 +521,7 @@ def reject_schedule_change_request(change_request_id, *, reviewer, review_commen
             "remaining_staff_count",
             "min_staff_required",
             "balance_after_change",
+            *decision_ai_fields.keys(),
         ]
     )
     notify_schedule_change_reviewed(change_request)

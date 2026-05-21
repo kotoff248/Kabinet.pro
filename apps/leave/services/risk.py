@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 
 from apps.employees.models import Employees
-from apps.leave.models import VacationRequest
+from apps.leave.models import VacationRequest, VacationScheduleItem
 
 from .dates import get_vacation_day_cost, quantize_leave_days
 from .ledger import get_employee_requestable_leave, get_employee_reserved_paid_days, get_employee_used_paid_days
@@ -33,6 +33,26 @@ def _risk_level_for_score(risk_score):
     if risk_score >= 40:
         return VacationRequest.RISK_MEDIUM
     return VacationRequest.RISK_LOW
+
+
+def _excluded_primary_schedule_days(exclude_schedule_item_id, vacation_type):
+    if vacation_type != "paid" or exclude_schedule_item_id is None:
+        return Decimal("0")
+    schedule_item = (
+        VacationScheduleItem.objects.filter(pk=exclude_schedule_item_id)
+        .only("chargeable_days", "start_date", "end_date", "status", "vacation_type")
+        .first()
+    )
+    if schedule_item is None:
+        return Decimal("0")
+    return quantize_leave_days(
+        schedule_item.chargeable_days
+        or get_vacation_day_cost(
+            schedule_item.vacation_type,
+            schedule_item.start_date,
+            schedule_item.end_date,
+        )
+    )
 
 
 def _load_risk_boost(load_level):
@@ -187,8 +207,17 @@ def _calculate_vacation_request_risk(
 ):
     requested_cost = Decimal(get_vacation_day_cost(vacation_type, start_date, end_date))
     requestable_days = get_employee_requestable_leave(employee, start_date)
+    ledger_allocation_error = False
     try:
-        used_days = Decimal(get_employee_used_paid_days(employee, start_date))
+        used_days = Decimal(
+            get_employee_used_paid_days(
+                employee,
+                start_date,
+                exclude_request_id=exclude_request_id,
+                exclude_schedule_item_id=exclude_schedule_item_id,
+                exclude_schedule_item_ids=exclude_schedule_item_ids,
+            )
+        )
         reserved_days = Decimal(
             get_employee_reserved_paid_days(
                 employee,
@@ -199,9 +228,14 @@ def _calculate_vacation_request_risk(
             )
         )
     except ValidationError:
+        ledger_allocation_error = True
+        reusable_schedule_days = _excluded_primary_schedule_days(exclude_schedule_item_id, vacation_type)
         used_days = Decimal("0")
         reserved_days = (
-            requestable_days + Decimal(employee.manual_leave_adjustment_days)
+            max(
+                requestable_days + Decimal(employee.manual_leave_adjustment_days) - reusable_schedule_days,
+                Decimal("0"),
+            )
             if vacation_type == "paid"
             else Decimal("0")
         )
@@ -382,6 +416,7 @@ def _calculate_vacation_request_risk(
         "remaining_staff_count": remaining_staff_count,
         "min_staff_required": min_staff_required,
         "balance_after_request": balance_after_request,
+        "ledger_allocation_error": ledger_allocation_error,
     }
     if include_explanation:
         risk_payload["risk_explanation"] = _build_risk_explanation(
@@ -669,21 +704,98 @@ def build_saved_schedule_change_risk_explanation(change_request):
 
 
 def build_schedule_change_risk_explanation(change_request):
-    return build_vacation_request_risk_explanation(
-        change_request.employee,
+    replacement_item_ids = _schedule_change_replacement_item_ids(change_request)
+    return _calculate_schedule_change_risk_payload(
+        change_request.schedule_item,
         change_request.new_start_date,
         change_request.new_end_date,
-        change_request.schedule_item.vacation_type,
-        exclude_schedule_item_id=change_request.schedule_item_id,
+        exclude_schedule_item_ids=replacement_item_ids,
+        include_explanation=True,
+    )["risk_explanation"]
+
+def _schedule_change_replacement_item_ids(change_request):
+    if not getattr(change_request, "id", None):
+        return set()
+    return set(
+        VacationScheduleItem.objects.filter(
+            created_from_change_request_id=change_request.id,
+        ).values_list("id", flat=True)
     )
 
-def calculate_schedule_change_risk(schedule_item, new_start_date, new_end_date):
-    risk_payload = calculate_vacation_request_risk(
+
+def _schedule_change_balance_floor(schedule_item, new_start_date, new_end_date):
+    old_days = _excluded_primary_schedule_days(schedule_item.id, schedule_item.vacation_type)
+    new_days = quantize_leave_days(
+        get_vacation_day_cost(schedule_item.vacation_type, new_start_date, new_end_date)
+    )
+    return quantize_leave_days(old_days - new_days)
+
+
+def _rebuild_schedule_change_risk_explanation(risk_payload, schedule_item, details):
+    current_explanation = risk_payload.get("risk_explanation") or {}
+    return _build_risk_explanation(
+        risk_score=risk_payload["risk_score"],
+        risk_level=risk_payload["risk_level"],
+        details=details,
+        department=schedule_item.employee.department,
+        affected_group_name=current_explanation.get("affected_group", ""),
+        remaining_staff_count=risk_payload["remaining_staff_count"],
+        min_staff_required=risk_payload["min_staff_required"],
+        substitution_used=current_explanation.get("substitution_used", False),
+        department_load_level=risk_payload["department_load_level"],
+        overlapping_absences_count=risk_payload["overlapping_absences_count"],
+        overlapping_employee_ids=None,
+    )
+
+
+def _calculate_schedule_change_risk_payload(
+    schedule_item,
+    new_start_date,
+    new_end_date,
+    *,
+    exclude_schedule_item_ids=None,
+    include_explanation=False,
+):
+    risk_payload = _calculate_vacation_request_risk(
         schedule_item.employee,
         new_start_date,
         new_end_date,
         schedule_item.vacation_type,
         exclude_schedule_item_id=schedule_item.id,
+        exclude_schedule_item_ids=exclude_schedule_item_ids,
+        include_explanation=include_explanation,
+    )
+    balance_floor = _schedule_change_balance_floor(schedule_item, new_start_date, new_end_date)
+    should_apply_floor = (
+        schedule_item.status == VacationScheduleItem.STATUS_TRANSFERRED
+        or risk_payload.get("ledger_allocation_error")
+    )
+    original_balance = risk_payload["balance_after_request"]
+    if should_apply_floor and original_balance < balance_floor:
+        risk_payload["balance_after_request"] = balance_floor
+        if original_balance < 0 <= balance_floor:
+            risk_payload["risk_score"] = max(0, int(risk_payload["risk_score"] or 0) - 18)
+            risk_payload["risk_level"] = _risk_level_for_score(risk_payload["risk_score"])
+            if include_explanation and risk_payload.get("risk_explanation"):
+                details = [
+                    detail
+                    for detail in risk_payload["risk_explanation"].get("details", [])
+                    if detail.get("kind") != "negative_balance"
+                ]
+                risk_payload["risk_explanation"] = _rebuild_schedule_change_risk_explanation(
+                    risk_payload,
+                    schedule_item,
+                    details,
+                )
+    return risk_payload
+
+
+def calculate_schedule_change_risk(schedule_item, new_start_date, new_end_date, exclude_schedule_item_ids=None):
+    risk_payload = _calculate_schedule_change_risk_payload(
+        schedule_item,
+        new_start_date,
+        new_end_date,
+        exclude_schedule_item_ids=exclude_schedule_item_ids,
     )
     return {
         "risk_score": risk_payload["risk_score"],
@@ -694,3 +806,12 @@ def calculate_schedule_change_risk(schedule_item, new_start_date, new_end_date):
         "min_staff_required": risk_payload["min_staff_required"],
         "balance_after_change": risk_payload["balance_after_request"],
     }
+
+
+def calculate_schedule_change_request_risk(change_request):
+    return calculate_schedule_change_risk(
+        change_request.schedule_item,
+        change_request.new_start_date,
+        change_request.new_end_date,
+        exclude_schedule_item_ids=_schedule_change_replacement_item_ids(change_request),
+    )

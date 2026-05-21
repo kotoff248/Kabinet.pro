@@ -12,6 +12,11 @@ from django.utils import timezone
 from apps.core.models import Notification
 from apps.core.services.notifications import mark_notifications_done_by_dedupe_prefix
 from apps.employees.models import Employees
+from apps.leave.ml.preference_support import (
+    build_saved_vacation_preference_ai_comparison,
+    build_vacation_preference_ai_comparison,
+    vacation_preference_ai_model_fields,
+)
 from apps.leave.models import VacationPreference, VacationPreferenceCollection, VacationSchedule, VacationScheduleItem
 
 from .constants import LEAVE_ADVANCE_MONTHS
@@ -26,6 +31,18 @@ from .validation import MIN_CONTINUOUS_PAID_LEAVE_DAYS
 DEMO_FILL_MIN_PERCENT = 72
 DEMO_FILL_MAX_PERCENT = 85
 DEMO_SKIP_PERCENT = 7
+
+
+def _vacation_preference_ai_row_fields(row):
+    return {
+        "ai_score": row.get("ai_score"),
+        "ai_confidence": row.get("ai_confidence"),
+        "ai_model_version": row.get("ai_model_version") or "",
+        "ai_recommendation": row.get("ai_recommendation") or "",
+        "ai_explanation": row.get("ai_explanation") or "",
+        "ai_scorer_kind": row.get("ai_scorer_kind") or "",
+        "ai_evaluated_at": row.get("ai_evaluated_at"),
+    }
 
 
 def preference_response_url(year):
@@ -249,6 +266,7 @@ def _replace_employee_preferences(employee, year, rows, *, created_automatically
             remainder_policy=row.get("remainder_policy", VacationPreference.REMAINDER_AUTO),
             comment=row.get("comment", ""),
             created_automatically=created_automatically,
+            **_vacation_preference_ai_row_fields(row),
         )
         for row in rows
     ]
@@ -319,6 +337,24 @@ def submit_employee_preferences(
     else:
         if remainder_policy not in dict(VacationPreference.REMAINDER_POLICY_CHOICES):
             remainder_policy = VacationPreference.REMAINDER_AUTO
+        ai_comparison = build_vacation_preference_ai_comparison(
+            employee,
+            collection.year,
+            primary_start=primary_start,
+            primary_end=primary_end,
+            backup_start=backup_start,
+            backup_end=backup_end,
+            remainder_policy=remainder_policy,
+        )
+        evaluated_at = timezone.now()
+        primary_ai_fields = vacation_preference_ai_model_fields(
+            ai_comparison.get(VacationPreference.PRIORITY_PRIMARY) or ai_comparison["primary"],
+            evaluated_at=evaluated_at,
+        )
+        backup_ai_fields = vacation_preference_ai_model_fields(
+            ai_comparison.get(VacationPreference.PRIORITY_BACKUP) or ai_comparison["backup"],
+            evaluated_at=evaluated_at,
+        )
         rows = [
             {
                 "priority": VacationPreference.PRIORITY_PRIMARY,
@@ -327,6 +363,7 @@ def submit_employee_preferences(
                 "status": VacationPreference.STATUS_FILLED,
                 "remainder_policy": remainder_policy,
                 "comment": comment,
+                **primary_ai_fields,
             },
             {
                 "priority": VacationPreference.PRIORITY_BACKUP,
@@ -335,6 +372,7 @@ def submit_employee_preferences(
                 "status": VacationPreference.STATUS_FILLED,
                 "remainder_policy": remainder_policy,
                 "comment": comment,
+                **backup_ai_fields,
             },
         ]
     preferences = _replace_employee_preferences(
@@ -949,4 +987,5 @@ def get_employee_preference_page_context(employee, collection):
         "backup_preference_days_label": _days_label(backup_days),
         "remainder_policy": remainder_policy,
         "remainder_policy_label": preference_remainder_policy_label(remainder_policy),
+        "saved_preference_ai_comparison": build_saved_vacation_preference_ai_comparison(primary, backup),
     }

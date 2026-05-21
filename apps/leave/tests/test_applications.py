@@ -1,8 +1,16 @@
 from datetime import date
+from decimal import Decimal
+from unittest.mock import patch
 
 from django.urls import reverse
 
-from apps.leave.models import VacationRequest, VacationSchedule, VacationScheduleItem
+from apps.leave.models import (
+    VacationRequest,
+    VacationSchedule,
+    VacationScheduleChangeRequest,
+    VacationScheduleItem,
+    VacationUrgentClosureRequest,
+)
 from apps.leave.services.schedule_changes import create_schedule_change_request
 
 from .base import LeaveTestCase
@@ -127,6 +135,322 @@ class ApplicationsBoardTests(LeaveTestCase):
         self.assertEqual(badge["source_label"], "На момент решения")
         self.assertIn("Модуль 92% · есть ограничения", payload["vacations_html"])
         self.assertNotIn("Модуль 10%", payload["vacations_html"])
+
+    def test_reviewed_vacation_detail_uses_saved_decision_risk_snapshot(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2027, 8, 1),
+            end_date=date(2027, 8, 14),
+            vacation_type="paid",
+            status=VacationRequest.STATUS_REJECTED,
+            reviewed_by=self.department_head,
+            risk_score=95,
+            risk_level=VacationRequest.RISK_HIGH,
+            department_load_level=5,
+            overlapping_absences_count=7,
+            remaining_staff_count=13,
+            min_staff_required=13,
+            balance_after_request=Decimal("11.00"),
+        )
+
+        self.client.force_login(self.department_head.user)
+        with patch(
+            "apps.leave.services.requests.build_vacation_object_risk_explanation",
+            side_effect=AssertionError("Reviewed detail must use the saved decision snapshot."),
+        ):
+            response = self.client.get(reverse("vacation_detail", args=[request_obj.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["vacation"].balance_after_request, Decimal("11.00"))
+        self.assertFalse(response.context["vacation_saved_risk_snapshot_changed"])
+        self.assertNotContains(response, "Недостаточно дней")
+        self.assertContains(response, "По сохраненному расчету отдел остается ровно на минимуме")
+
+    def test_applications_transfer_card_shows_saved_module_badge(self):
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 7, 1),
+            end_date=date(2027, 7, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = VacationScheduleChangeRequest.objects.create(
+            schedule_item=schedule_item,
+            employee=self.employee,
+            old_start_date=schedule_item.start_date,
+            old_end_date=schedule_item.end_date,
+            new_start_date=date(2027, 8, 1),
+            new_end_date=date(2027, 8, 14),
+            requested_by=self.employee,
+            risk_score=48,
+            risk_level=VacationScheduleItem.RISK_MEDIUM,
+            ai_score="82.00",
+            ai_recommendation="avoid",
+            ai_explanation="Модуль советует проверить перенос перед решением.",
+        )
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(
+            reverse("applications"),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        badge = payload["change_requests"][0]["module_badge"]
+        self.assertEqual(payload["change_requests"][0]["id"], change_request.id)
+        self.assertEqual(badge["score_label"], "82%")
+        self.assertEqual(badge["recommendation_label"], "лучше проверить")
+        self.assertEqual(badge["variant"], "medium")
+        self.assertEqual(badge["source_label"], "При создании переноса")
+        self.assertIn("Модуль 82% · лучше проверить", payload["change_requests_html"])
+        self.assertIn("application-card__module-badge--medium", payload["change_requests_html"])
+
+    def test_applications_reviewed_transfer_card_shows_decision_module_badge(self):
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 7, 1),
+            end_date=date(2027, 7, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = VacationScheduleChangeRequest.objects.create(
+            schedule_item=schedule_item,
+            employee=self.employee,
+            old_start_date=schedule_item.start_date,
+            old_end_date=schedule_item.end_date,
+            new_start_date=date(2027, 8, 1),
+            new_end_date=date(2027, 8, 14),
+            requested_by=self.employee,
+            status=VacationScheduleChangeRequest.STATUS_APPROVED,
+            reviewed_by=self.department_head,
+            risk_score=48,
+            risk_level=VacationScheduleItem.RISK_MEDIUM,
+            ai_score="82.00",
+            ai_recommendation="avoid",
+            ai_explanation="Модуль советовал проверить перенос при создании.",
+            decision_ai_score="92.00",
+            decision_ai_recommendation="blocked",
+            decision_ai_explanation="На момент решения перенос получил ограничения.",
+        )
+        self.client.force_login(self.department_head.user)
+
+        with patch("apps.leave.services.schedule_changes.build_schedule_change_ai_support") as scorer:
+            response = self.client.get(
+                reverse("applications"),
+                {"status": VacationScheduleChangeRequest.STATUS_APPROVED},
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        badge = payload["change_requests"][0]["module_badge"]
+        self.assertEqual(payload["change_requests"][0]["id"], change_request.id)
+        self.assertEqual(badge["score_label"], "92%")
+        self.assertEqual(badge["recommendation_label"], "есть ограничения")
+        self.assertEqual(badge["variant"], "risk")
+        self.assertEqual(badge["source_label"], "На момент решения")
+        self.assertIn("Модуль 92% · есть ограничения", payload["change_requests_html"])
+        self.assertNotIn("Модуль 82%", payload["change_requests_html"])
+        scorer.assert_not_called()
+
+    def test_applications_urgent_closure_card_shows_active_module_badge(self):
+        closure_request = VacationUrgentClosureRequest.objects.create(
+            employee=self.employee,
+            planning_year=2027,
+            closure_year=2026,
+            required_days="3.00",
+            deadline=date(2027, 1, 3),
+            proposed_start_date=date(2026, 12, 29),
+            proposed_end_date=date(2026, 12, 31),
+            created_by=self.hr_employee,
+            risk_score=34,
+            risk_level=VacationScheduleItem.RISK_LOW,
+            ai_score="78.00",
+            ai_recommendation="normal",
+            ai_explanation="Срочный остаток можно отправлять по маршруту.",
+        )
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(
+            reverse("applications"),
+            {"status": VacationRequest.STATUS_PENDING},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        badge = payload["change_requests"][0]["module_badge"]
+        self.assertEqual(payload["change_requests"][0]["id"], closure_request.id)
+        self.assertEqual(badge["score_label"], "78%")
+        self.assertEqual(badge["recommendation_label"], "можно одобрять")
+        self.assertEqual(badge["variant"], "info")
+        self.assertEqual(badge["source_label"], "Текущий период")
+        self.assertIn("Модуль 78% · можно одобрять", payload["change_requests_html"])
+
+    def test_applications_completed_urgent_closure_card_shows_decision_module_badge(self):
+        closure_request = VacationUrgentClosureRequest.objects.create(
+            employee=self.employee,
+            planning_year=2027,
+            closure_year=2026,
+            required_days="3.00",
+            deadline=date(2027, 1, 3),
+            proposed_start_date=date(2026, 12, 29),
+            proposed_end_date=date(2026, 12, 31),
+            created_by=self.hr_employee,
+            finalized_by=self.hr_employee,
+            status=VacationUrgentClosureRequest.STATUS_COMPLETED,
+            risk_score=58,
+            risk_level=VacationScheduleItem.RISK_MEDIUM,
+            ai_score="64.00",
+            ai_recommendation="avoid",
+            ai_explanation="Снимок до решения.",
+            decision_ai_score="84.00",
+            decision_ai_recommendation="prefer",
+            decision_ai_explanation="Финальный период подходит для закрытия остатка.",
+        )
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(
+            reverse("applications"),
+            {"status": VacationRequest.STATUS_APPROVED},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        badge = payload["change_requests"][0]["module_badge"]
+        self.assertEqual(payload["change_requests"][0]["id"], closure_request.id)
+        self.assertEqual(badge["score_label"], "84%")
+        self.assertEqual(badge["recommendation_label"], "удачный период")
+        self.assertEqual(badge["variant"], "planned")
+        self.assertEqual(badge["source_label"], "На момент решения")
+        self.assertIn("Модуль 84% · удачный период", payload["change_requests_html"])
+        self.assertNotIn("Модуль 64%", payload["change_requests_html"])
+
+    def test_applications_transfer_card_calculates_live_module_badge_without_saved_score(self):
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 9, 1),
+            end_date=date(2027, 9, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = VacationScheduleChangeRequest.objects.create(
+            schedule_item=schedule_item,
+            employee=self.employee,
+            old_start_date=schedule_item.start_date,
+            old_end_date=schedule_item.end_date,
+            new_start_date=date(2027, 10, 1),
+            new_end_date=date(2027, 10, 14),
+            requested_by=self.employee,
+            risk_score=12,
+            risk_level=VacationScheduleItem.RISK_LOW,
+        )
+        self.client.force_login(self.department_head.user)
+
+        with patch(
+            "apps.leave.services.schedule_changes.build_schedule_change_ai_support",
+            return_value={
+                "module_score": 76.2,
+                "module_recommendation": "normal",
+                "module_explanation": "Живая оценка для старого переноса.",
+            },
+        ) as scorer:
+            response = self.client.get(
+                reverse("applications"),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        badge = payload["change_requests"][0]["module_badge"]
+        self.assertEqual(payload["change_requests"][0]["id"], change_request.id)
+        self.assertEqual(badge["score_label"], "76%")
+        self.assertEqual(badge["recommendation_label"], "можно одобрять")
+        self.assertEqual(badge["variant"], "info")
+        self.assertEqual(badge["source_label"], "На сейчас")
+        self.assertIn("Модуль 76% · можно одобрять", payload["change_requests_html"])
+        scorer.assert_called_once()
+        self.assertEqual(scorer.call_args.kwargs["exclude_change_request_id"], change_request.id)
+
+    def test_applications_reviewed_transfer_card_reconstructs_badge_without_decision_snapshot(self):
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 9, 1),
+            end_date=date(2027, 9, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = VacationScheduleChangeRequest.objects.create(
+            schedule_item=schedule_item,
+            employee=self.employee,
+            old_start_date=schedule_item.start_date,
+            old_end_date=schedule_item.end_date,
+            new_start_date=date(2027, 10, 1),
+            new_end_date=date(2027, 10, 14),
+            requested_by=self.employee,
+            status=VacationScheduleChangeRequest.STATUS_APPROVED,
+            reviewed_by=self.department_head,
+            risk_score=12,
+            risk_level=VacationScheduleItem.RISK_LOW,
+        )
+        self.client.force_login(self.department_head.user)
+
+        with patch(
+            "apps.leave.services.schedule_changes.build_schedule_change_ai_support",
+            return_value={
+                "module_score": 69.4,
+                "module_recommendation": "avoid",
+                "module_explanation": "Восстановленная оценка закрытого переноса.",
+            },
+        ) as scorer:
+            response = self.client.get(
+                reverse("applications"),
+                {"status": VacationScheduleChangeRequest.STATUS_APPROVED},
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["change_requests"][0]["id"], change_request.id)
+        badge = payload["change_requests"][0]["module_badge"]
+        self.assertEqual(badge["score_label"], "69%")
+        self.assertEqual(badge["recommendation_label"], "лучше проверить")
+        self.assertEqual(badge["variant"], "medium")
+        self.assertEqual(badge["source_label"], "На момент решения")
+        self.assertIn("Модуль 69% · лучше проверить", payload["change_requests_html"])
+        scorer.assert_called_once()
+        self.assertTrue(scorer.call_args.kwargs["can_submit"])
+        self.assertEqual(scorer.call_args.kwargs["exclude_change_request_id"], change_request.id)
 
     def test_applications_search_filters_requests_and_transfers_by_employee_name(self):
         request_obj = VacationRequest.objects.create(

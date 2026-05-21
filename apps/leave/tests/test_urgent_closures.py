@@ -17,6 +17,7 @@ from apps.leave.services.urgent_closures import (
     detect_previous_year_closure_need,
     finalize_urgent_closure,
     propose_urgent_closure_period_by_employee,
+    reject_urgent_closure,
 )
 
 from .base import LeaveTestCase
@@ -112,6 +113,54 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
         self.assertEqual(options[0]["end_date"], date(2026, 11, 30))
         self.assertEqual(options[0]["module_score"], Decimal("91.00"))
 
+    def test_create_urgent_closure_saves_ai_snapshot(self):
+        scoring = SimpleNamespace(
+            score=Decimal("82.00"),
+            confidence=Decimal("91.00"),
+            recommendation="avoid",
+            explanation="Тестовая оценка срочного закрытия.",
+            model_version="urgent-test-ai",
+            scorer_kind="test",
+        )
+
+        with patch("apps.leave.services.urgent_closures.score_candidate_features", return_value=scoring):
+            closure_request = self._create_closure()
+
+        self.assertEqual(closure_request.ai_score, Decimal("82.00"))
+        self.assertEqual(closure_request.ai_confidence, Decimal("91.00"))
+        self.assertEqual(closure_request.ai_recommendation, "avoid")
+        self.assertEqual(closure_request.ai_explanation, "Тестовая оценка срочного закрытия.")
+        self.assertEqual(closure_request.ai_model_version, "urgent-test-ai")
+        self.assertEqual(closure_request.ai_scorer_kind, "test")
+        self.assertIsNotNone(closure_request.ai_evaluated_at)
+
+    def test_manager_date_change_refreshes_urgent_closure_ai_snapshot(self):
+        closure_request = self._create_closure()
+        scoring = SimpleNamespace(
+            score=Decimal("91.00"),
+            confidence=Decimal("88.00"),
+            recommendation="prefer",
+            explanation="Новый период лучше для срочного закрытия.",
+            model_version="urgent-manager-ai",
+            scorer_kind="test",
+        )
+
+        with patch("apps.leave.services.urgent_closures.score_candidate_features", return_value=scoring):
+            approve_urgent_closure_by_manager(
+                closure_request.id,
+                reviewer=self.department_head,
+                start_date=date(2026, 11, 25),
+                end_date=date(2026, 11, 27),
+                comment="Лучше другой период.",
+            )
+
+        closure_request.refresh_from_db()
+        self.assertEqual(closure_request.proposed_start_date, date(2026, 11, 25))
+        self.assertEqual(closure_request.proposed_end_date, date(2026, 11, 27))
+        self.assertEqual(closure_request.ai_score, Decimal("91.00"))
+        self.assertEqual(closure_request.ai_recommendation, "prefer")
+        self.assertEqual(closure_request.ai_model_version, "urgent-manager-ai")
+
     def test_urgent_closure_routes_through_manager_employee_and_hr(self):
         closure_request = self._create_closure()
         detail_url = reverse("urgent_closure_detail", args=[closure_request.id])
@@ -172,6 +221,68 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
         self.assertEqual(schedule_item.chargeable_days, 3)
         self.assertEqual(closure_request.created_schedule_item_id, schedule_item.id)
 
+    def test_finalize_saves_decision_ai_and_detail_shows_module_recommendation(self):
+        closure_request = self._create_closure()
+        approve_urgent_closure_by_manager(closure_request.id, reviewer=self.department_head)
+        accept_urgent_closure_by_employee(closure_request.id, employee=self.employee)
+        scoring = SimpleNamespace(
+            score=Decimal("77.00"),
+            confidence=Decimal("86.00"),
+            recommendation="normal",
+            explanation="Финальная оценка срочного закрытия.",
+            model_version="urgent-decision-ai",
+            scorer_kind="test",
+        )
+
+        with patch("apps.leave.services.urgent_closures.score_candidate_features", return_value=scoring):
+            finalize_urgent_closure(
+                closure_request.id,
+                actor=self.hr_employee,
+                comment="Согласовано всеми участниками.",
+            )
+        closure_request.refresh_from_db()
+
+        self.assertEqual(closure_request.decision_ai_score, Decimal("77.00"))
+        self.assertEqual(closure_request.decision_ai_confidence, Decimal("86.00"))
+        self.assertEqual(closure_request.decision_ai_recommendation, "normal")
+        self.assertEqual(closure_request.decision_ai_explanation, "Финальная оценка срочного закрытия.")
+        self.assertEqual(closure_request.decision_ai_model_version, "urgent-decision-ai")
+        self.assertEqual(closure_request.decision_ai_scorer_kind, "test")
+        self.assertIsNotNone(closure_request.decision_ai_evaluated_at)
+
+        self.client.force_login(self.hr_employee.user)
+        response = self.client.get(reverse("urgent_closure_detail", args=[closure_request.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Оценка модуля")
+        self.assertContains(response, "На момент решения")
+        self.assertContains(response, "77,00%")
+        self.assertContains(response, "urgent-decision-ai")
+
+    def test_reject_saves_decision_ai_snapshot(self):
+        closure_request = self._create_closure()
+        scoring = SimpleNamespace(
+            score=Decimal("42.00"),
+            confidence=Decimal("79.00"),
+            recommendation="avoid",
+            explanation="Оценка при отклонении срочного закрытия.",
+            model_version="urgent-reject-ai",
+            scorer_kind="test",
+        )
+
+        with patch("apps.leave.services.urgent_closures.score_candidate_features", return_value=scoring):
+            reject_urgent_closure(
+                closure_request.id,
+                actor=self.department_head,
+                comment="Период не подходит.",
+            )
+        closure_request.refresh_from_db()
+
+        self.assertEqual(closure_request.status, VacationUrgentClosureRequest.STATUS_REJECTED)
+        self.assertEqual(closure_request.decision_ai_score, Decimal("42.00"))
+        self.assertEqual(closure_request.decision_ai_recommendation, "avoid")
+        self.assertEqual(closure_request.decision_ai_model_version, "urgent-reject-ai")
+
     def test_employee_can_propose_another_period_back_to_manager(self):
         closure_request = self._create_closure()
         approve_urgent_closure_by_manager(closure_request.id, reviewer=self.department_head)
@@ -184,18 +295,29 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
             event_type=Notification.TYPE_URGENT_CLOSURE_EMPLOYEE_REVIEW,
         )
 
-        propose_urgent_closure_period_by_employee(
-            closure_request.id,
-            employee=self.employee,
-            start_date=date(2026, 11, 25),
-            end_date=date(2026, 11, 27),
-            comment="Так удобнее.",
+        scoring = SimpleNamespace(
+            score=Decimal("84.00"),
+            confidence=Decimal("82.00"),
+            recommendation="prefer",
+            explanation="Предложение сотрудника подходит модулю.",
+            model_version="urgent-employee-ai",
+            scorer_kind="test",
         )
+        with patch("apps.leave.services.urgent_closures.score_candidate_features", return_value=scoring):
+            propose_urgent_closure_period_by_employee(
+                closure_request.id,
+                employee=self.employee,
+                start_date=date(2026, 11, 25),
+                end_date=date(2026, 11, 27),
+                comment="Так удобнее.",
+            )
         closure_request.refresh_from_db()
 
         self.assertEqual(closure_request.status, VacationUrgentClosureRequest.STATUS_DEPARTMENT_REVIEW)
         self.assertEqual(closure_request.proposed_start_date, date(2026, 11, 25))
         self.assertEqual(closure_request.proposed_end_date, date(2026, 11, 27))
+        self.assertEqual(closure_request.ai_score, Decimal("84.00"))
+        self.assertEqual(closure_request.ai_model_version, "urgent-employee-ai")
         initial_manager_task.refresh_from_db()
         employee_task.refresh_from_db()
         self.assertEqual(initial_manager_task.status, Notification.STATUS_DONE)
@@ -261,6 +383,10 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
         response = self.client.get(reverse("urgent_closure_detail", args=[closure_request.id]))
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [metric["label"] for metric in response.context["urgent_closure_decision_context"]["metrics"]],
+            ["Состав", "Одновременно отсутствуют", "Нагрузка", "Замещение"],
+        )
         self.assertContains(response, "Закрытие остатка отпуска")
         self.assertContains(response, "Отправить сотруднику")
         self.assertContains(response, "29.12.2026 - 31.12.2026")

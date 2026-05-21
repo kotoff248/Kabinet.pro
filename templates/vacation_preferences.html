@@ -4,7 +4,7 @@
 {% block title %}Кабинет.pro - Пожелания по отпуску{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/preferences.css' %}?v=20260509-preferences-review-mode">
+<link rel="stylesheet" href="{% static 'css/pages/preferences.css' %}?v=20260520-preferences-ai-comparison">
 {% endblock %}
 
 {% block content %}
@@ -92,6 +92,31 @@
                     <small>{{ backup_preference_days_label }} как альтернатива</small>
                 </article>
             </div>
+            {% if saved_preference_ai_comparison %}
+            <section class="preferences-ai preferences-ai--{{ saved_preference_ai_comparison.tone }}" aria-label="Оценка модуля">
+                <div class="preferences-ai__head">
+                    <span class="material-icons-sharp preferences-ai__icon" aria-hidden="true">model_training</span>
+                    <div>
+                        <span class="preferences-eyebrow">Оценка модуля</span>
+                        <strong>{{ saved_preference_ai_comparison.summary }}</strong>
+                        <small>{{ saved_preference_ai_comparison.source_label }}</small>
+                    </div>
+                </div>
+                <p class="preferences-ai__detail">{{ saved_preference_ai_comparison.detail }}</p>
+                <div class="preferences-ai__options">
+                    <article {% if saved_preference_ai_comparison.winner == 'primary' %}data-ai-option-state="winner"{% endif %}>
+                        <span>Основной</span>
+                        <strong>{{ saved_preference_ai_comparison.primary.module_score_label }}</strong>
+                        <small>{{ saved_preference_ai_comparison.primary.module_recommendation_label }}</small>
+                    </article>
+                    <article {% if saved_preference_ai_comparison.winner == 'backup' %}data-ai-option-state="winner"{% endif %}>
+                        <span>Запасной</span>
+                        <strong>{{ saved_preference_ai_comparison.backup.module_score_label }}</strong>
+                        <small>{{ saved_preference_ai_comparison.backup.module_recommendation_label }}</small>
+                    </article>
+                </div>
+            </section>
+            {% endif %}
             {% else %}
             <div class="preferences-saved__empty">
                 <span class="material-icons-sharp" aria-hidden="true">event_busy</span>
@@ -136,6 +161,7 @@
               data-preference-state="{{ preference_state }}"
               data-remainder-policy="{{ remainder_policy }}"
               data-editable="{{ editable|yesno:'true,false' }}"
+              data-ai-preview-url="{% url 'vacation_preferences_ai_preview' collection.year %}"
               data-date-picker-employee-id="{{ employee.id }}"
               data-date-picker-year="{{ collection.year }}">
             {% csrf_token %}
@@ -199,6 +225,30 @@
                 </article>
             </div>
 
+            <section class="preferences-ai preferences-ai--idle" data-preferences-ai aria-live="polite">
+                <div class="preferences-ai__head">
+                    <span class="material-icons-sharp preferences-ai__icon" aria-hidden="true">model_training</span>
+                    <div>
+                        <span class="preferences-eyebrow">Оценка модуля</span>
+                        <strong data-preferences-ai-title>Выберите основной и запасной период</strong>
+                        <small data-preferences-ai-subtitle>Модуль сравнит, какой вариант удобнее для будущего графика.</small>
+                    </div>
+                </div>
+                <p class="preferences-ai__detail" data-preferences-ai-detail>Оценка появится после выбора дат.</p>
+                <div class="preferences-ai__options">
+                    <article data-preferences-ai-option="primary">
+                        <span>Основной</span>
+                        <strong data-preferences-ai-score="primary">-</strong>
+                        <small data-preferences-ai-message="primary">Выберите даты</small>
+                    </article>
+                    <article data-preferences-ai-option="backup">
+                        <span>Запасной</span>
+                        <strong data-preferences-ai-score="backup">-</strong>
+                        <small data-preferences-ai-message="backup">Выберите даты</small>
+                    </article>
+                </div>
+            </section>
+
             <p class="preferences-live-alert" data-preferences-alert aria-live="polite" hidden></p>
 
             <section class="preferences-remainder" aria-label="Решение по остатку дней">
@@ -255,5 +305,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/pages/vacation-preferences.js' %}?v=20260509-edit-date-picker" defer></script>
+<script src="{% static 'js/pages/vacation-preferences.js' %}?v=20260520-ai-comparison" defer></script>
 {% endblock %}

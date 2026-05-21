@@ -151,6 +151,25 @@
         const alert = form.querySelector("[data-preferences-alert]");
         const totalHint = form.querySelector("[data-preferences-total-hint]");
         const comment = form.querySelector('[name="comment"]');
+        const aiPreviewUrl = form.dataset.aiPreviewUrl || "";
+        const aiPanel = form.querySelector("[data-preferences-ai]");
+        const aiTitle = form.querySelector("[data-preferences-ai-title]");
+        const aiSubtitle = form.querySelector("[data-preferences-ai-subtitle]");
+        const aiDetail = form.querySelector("[data-preferences-ai-detail]");
+        const aiOptionElements = {
+            primary: form.querySelector('[data-preferences-ai-option="primary"]'),
+            backup: form.querySelector('[data-preferences-ai-option="backup"]'),
+        };
+        const aiScores = {
+            primary: form.querySelector('[data-preferences-ai-score="primary"]'),
+            backup: form.querySelector('[data-preferences-ai-score="backup"]'),
+        };
+        const aiMessages = {
+            primary: form.querySelector('[data-preferences-ai-message="primary"]'),
+            backup: form.querySelector('[data-preferences-ai-message="backup"]'),
+        };
+        let aiPreviewTimer = null;
+        let aiPreviewRequestId = 0;
         const draftKey = getDraftKey(collectionYear);
         const isActiveEditableCollection = editable
             && collectionYear === planningYear
@@ -258,6 +277,125 @@
             setText(period.message, message || "Выберите даты");
         }
 
+        function setAiTone(tone) {
+            if (!aiPanel) {
+                return;
+            }
+            aiPanel.classList.remove(
+                "preferences-ai--idle",
+                "preferences-ai--loading",
+                "preferences-ai--prefer",
+                "preferences-ai--normal",
+                "preferences-ai--avoid",
+                "preferences-ai--blocked",
+                "preferences-ai--error",
+            );
+            aiPanel.classList.add(`preferences-ai--${tone || "idle"}`);
+        }
+
+        function resetAiPreview(title, detail) {
+            aiPreviewRequestId += 1;
+            if (aiPreviewTimer) {
+                window.clearTimeout(aiPreviewTimer);
+                aiPreviewTimer = null;
+            }
+            setAiTone("idle");
+            setText(aiTitle, title || "Выберите основной и запасной период");
+            setText(aiSubtitle, "Модуль сравнит, какой вариант удобнее для будущего графика.");
+            setText(aiDetail, detail || "Оценка появится после выбора дат.");
+            setText(aiScores.primary, "-");
+            setText(aiScores.backup, "-");
+            setText(aiMessages.primary, "Выберите даты");
+            setText(aiMessages.backup, "Выберите даты");
+            Object.values(aiOptionElements).forEach((element) => {
+                if (element) {
+                    element.dataset.aiOptionState = "";
+                }
+            });
+        }
+
+        function setAiLoading() {
+            setAiTone("loading");
+            setText(aiTitle, "Модуль проверяет варианты");
+            setText(aiSubtitle, "Оценка обновится автоматически.");
+            setText(aiDetail, "Сравниваем основной и запасной период.");
+        }
+
+        function renderAiOption(key, option, winner) {
+            const score = option && (option.module_score_label || option.score_label);
+            const message = option && (option.module_recommendation_label || option.block_reason || option.module_action);
+            setText(aiScores[key], score || "-");
+            setText(aiMessages[key], message || "Нет оценки");
+            const element = aiOptionElements[key];
+            if (element) {
+                element.dataset.aiOptionState = winner === key ? "winner" : "";
+            }
+        }
+
+        function renderAiPreview(payload) {
+            if (!payload || payload.ok === false) {
+                setAiTone("error");
+                setText(aiTitle, "Оценка временно недоступна");
+                setText(aiSubtitle, "");
+                setText(aiDetail, (payload && payload.message) || "Попробуйте изменить даты.");
+                return;
+            }
+            setAiTone(payload.tone || "normal");
+            setText(aiTitle, payload.summary || payload.winner_label || "Оценка модуля готова");
+            setText(aiSubtitle, payload.winner_label || "");
+            setText(aiDetail, payload.detail || "");
+            renderAiOption("primary", payload.primary || {}, payload.winner);
+            renderAiOption("backup", payload.backup || {}, payload.winner);
+        }
+
+        function scheduleAiPreview(primaryState, backupState) {
+            if (!aiPanel || !aiPreviewUrl) {
+                return;
+            }
+            if (!primaryState.complete || !backupState.complete) {
+                resetAiPreview();
+                return;
+            }
+            if (aiPreviewTimer) {
+                window.clearTimeout(aiPreviewTimer);
+            }
+            const requestId = aiPreviewRequestId + 1;
+            aiPreviewRequestId = requestId;
+            setAiLoading();
+            aiPreviewTimer = window.setTimeout(() => {
+                const params = new URLSearchParams({
+                    primary_start_date: periods.primary.start ? periods.primary.start.value : "",
+                    primary_end_date: periods.primary.end ? periods.primary.end.value : "",
+                    backup_start_date: periods.backup.start ? periods.backup.start.value : "",
+                    backup_end_date: periods.backup.end ? periods.backup.end.value : "",
+                    remainder_policy: (remainderInputs.find((input) => input.checked) || {}).value || "auto",
+                });
+                fetch(`${aiPreviewUrl}?${params.toString()}`, {
+                    method: "GET",
+                    credentials: "same-origin",
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Accept": "application/json",
+                    },
+                })
+                    .then((response) => response.json())
+                    .then((payload) => {
+                        if (requestId === aiPreviewRequestId) {
+                            renderAiPreview(payload);
+                        }
+                    })
+                    .catch(() => {
+                        if (requestId !== aiPreviewRequestId) {
+                            return;
+                        }
+                        setAiTone("error");
+                        setText(aiTitle, "Оценка временно недоступна");
+                        setText(aiSubtitle, "");
+                        setText(aiDetail, "Пожелания можно сохранить, если даты проходят обычную проверку.");
+                    });
+            }, 350);
+        }
+
         function validatePeriod(period) {
             const start = parseIsoDate(period.start && period.start.value);
             const end = parseIsoDate(period.end && period.end.value);
@@ -345,6 +483,7 @@
             });
 
             if (!isPlanningYear) {
+                resetAiPreview(`${collectionYear} год заполнять не нужно.`, `Сейчас сбор пожеланий ведётся на ${planningYear} год.`);
                 Object.values(periods).forEach((period) => {
                     setPeriodState(period, "warning", `${collectionYear} год заполнять не нужно.`, 0);
                 });
@@ -362,6 +501,7 @@
             }
 
             if (!editable) {
+                resetAiPreview("Сбор закрыт для редактирования.", "Ответ можно просматривать, но нельзя изменить.");
                 Object.values(periods).forEach((period) => {
                     setPeriodState(period, "warning", "Сбор закрыт для редактирования.", 0);
                 });
@@ -374,6 +514,7 @@
             }
 
             if (noPreferences && noPreferences.checked) {
+                resetAiPreview("Оценка не нужна", "Вы выбрали вариант без пожеланий.");
                 Object.values(periods).forEach((period) => {
                     setPeriodState(period, "", "Даты не нужны: выбран вариант без пожеланий.", 0);
                 });
@@ -391,6 +532,7 @@
             const remainderPolicy = (remainderInputs.find((input) => input.checked) || {}).value || "auto";
             setPeriodState(periods.primary, primary.state, primary.message, primary.days);
             setPeriodState(periods.backup, backup.state, backup.message, backup.days);
+            scheduleAiPreview(primary, backup);
 
             const selectedDays = primary.days;
             setText(totalDays, selectedDays > 0 ? `${selectedDays} д.` : "0 д.");

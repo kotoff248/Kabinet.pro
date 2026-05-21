@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="{% static 'css/layout/app-shell.css' %}?v=20260430-header-readable-copy">
     <link rel="stylesheet" href="{% static 'css/components/page-hero.css' %}?v=20260502-toolbar-search-card-radius">
     <link rel="stylesheet" href="{% static 'css/components/modals.css' %}?v=20260513-preference-collection">
-    <link rel="stylesheet" href="{% static 'css/components/schedule-transfer-modal.css' %}?v=20260505-transfer-preview">
+    <link rel="stylesheet" href="{% static 'css/components/schedule-transfer-modal.css' %}?v=20260520-transfer-module">
     <link rel="stylesheet" href="{% static 'css/components/date-picker.css' %}?v=20260516-custom-date-picker">
     <link rel="stylesheet" href="{% static 'css/components/panels.css' %}?v=20260430-readable-copy">
     <link rel="stylesheet" href="{% static 'css/components/messages.css' %}">
@@ -143,7 +143,7 @@
                     </span>
                 </a>
                 {% endif %}
-                {% if is_department_head or is_enterprise_head %}
+                {% if can_access_analytics %}
                 <a href="{% url 'analytics' %}" class="sidebar__link {% if current_url == 'analytics' or sidebar_section == 'analytics' %}active{% endif %}" data-sidebar-link data-sidebar-key="analytics" aria-label="Аналитика" title="Аналитика" {% if current_url == 'analytics' or sidebar_section == 'analytics' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
                         <span class="material-icons-sharp">insights</span>
@@ -177,7 +177,7 @@
     <script src="{% static 'js/components/date-picker.js' %}?v=20260516-custom-date-picker" defer></script>
     <script src="{% static 'js/core/base.js' %}?v=20260513-planning-prefetch-2" defer></script>
     <script src="{% static 'js/components/schedule-status-tooltip.js' %}?v=20260503-schedule-tooltip" defer></script>
-    <script src="{% static 'js/components/schedule-transfer-modal.js' %}?v=20260505-transfer-preview" defer></script>
+    <script src="{% static 'js/components/schedule-transfer-modal.js' %}?v=20260520-transfer-module" defer></script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

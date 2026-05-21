@@ -1649,6 +1649,56 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
         self.assertContains(response, "Право на оплачиваемый отпуск")
         self.assertContains(response, add_months_safe(timezone.localdate(), 6).strftime("%d.%m.%Y"))
 
+    def test_preference_ai_preview_compares_primary_and_backup(self):
+        year = self._year()
+        self._start_collection()
+        self.client.force_login(self.employee.user)
+
+        response = self.client.get(
+            reverse("vacation_preferences_ai_preview", args=[year]),
+            {
+                "primary_start_date": date(year, 6, 1).isoformat(),
+                "primary_end_date": date(year, 6, 14).isoformat(),
+                "backup_start_date": date(year, 8, 1).isoformat(),
+                "backup_end_date": date(year, 8, 14).isoformat(),
+                "remainder_policy": VacationPreference.REMAINDER_AUTO,
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertIn(payload["winner"], {"primary", "backup", "tie"})
+        self.assertIn("module_score", payload["primary"])
+        self.assertIn("module_recommendation", payload["primary"])
+        self.assertIn("module_explanation", payload["primary"])
+        self.assertIn("module_score", payload["backup"])
+        self.assertIn("module_recommendation", payload["backup"])
+        self.assertIn("module_explanation", payload["backup"])
+
+    def test_preference_ai_preview_marks_invalid_period_unavailable(self):
+        year = self._year()
+        self._start_collection()
+        self.client.force_login(self.employee.user)
+
+        response = self.client.get(
+            reverse("vacation_preferences_ai_preview", args=[year]),
+            {
+                "primary_start_date": date(year, 6, 1).isoformat(),
+                "primary_end_date": date(year, 6, 14).isoformat(),
+                "backup_start_date": date(year, 8, 20).isoformat(),
+                "backup_end_date": date(year, 8, 1).isoformat(),
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["winner"], "unavailable")
+        self.assertFalse(payload["backup"]["can_place"])
+        self.assertEqual(payload["backup"]["module_recommendation"], "blocked")
+
     def test_employee_can_submit_or_skip_preferences_and_complete_notification(self):
         year = self._year()
         self._start_collection()
@@ -1679,7 +1729,20 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
             year=year,
             priority=VacationPreference.PRIORITY_PRIMARY,
         )
+        backup = VacationPreference.objects.get(
+            employee=self.employee,
+            year=year,
+            priority=VacationPreference.PRIORITY_BACKUP,
+        )
         self.assertEqual(primary.remainder_policy, VacationPreference.REMAINDER_AUTO)
+        for preference in (primary, backup):
+            self.assertIsNotNone(preference.ai_score)
+            self.assertIsNotNone(preference.ai_confidence)
+            self.assertTrue(preference.ai_model_version)
+            self.assertTrue(preference.ai_recommendation)
+            self.assertTrue(preference.ai_explanation)
+            self.assertTrue(preference.ai_scorer_kind)
+            self.assertIsNotNone(preference.ai_evaluated_at)
         notification = Notification.objects.get(
             dedupe_key=f"{Notification.TYPE_PREFERENCES_COLLECTION_STARTED}:{year}:{self.employee.id}"
         )
@@ -1687,6 +1750,7 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
 
         saved_response = self.client.get(reverse("vacation_preferences", args=[year]))
         self.assertContains(saved_response, "Пожелания сохранены")
+        self.assertContains(saved_response, "Оценка модуля")
         self.assertContains(saved_response, "Можно изменить ответ до закрытия сбора.")
         self.assertContains(saved_response, "Изменить")
         self.assertNotContains(saved_response, "data-preferences-form")
@@ -1736,6 +1800,14 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
             ).count(),
             2,
         )
+        for preference in VacationPreference.objects.filter(
+            employee=self.employee,
+            year=year,
+            status=VacationPreference.STATUS_SKIPPED,
+        ):
+            self.assertIsNone(preference.ai_score)
+            self.assertIsNone(preference.ai_confidence)
+            self.assertEqual(preference.ai_recommendation, "")
         summary = build_preference_collection_summary(year)
         self.assertGreaterEqual(summary["ready"], 1)
         self.assertEqual(summary["ready"], summary["total"] - summary["attention"])

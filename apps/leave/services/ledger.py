@@ -680,8 +680,20 @@ def _ledger_totals(
     periods = get_employee_entitlement_periods_for_read(employee, _source_horizon(as_of_date, sources))
     return _calculate_ledger_totals(employee, as_of_date, sources, periods, strict=strict)
 
-def get_employee_used_paid_days(employee, as_of_date=None):
-    return _ledger_totals(employee, as_of_date=as_of_date)["used"]
+def get_employee_used_paid_days(
+    employee,
+    as_of_date=None,
+    exclude_request_id=None,
+    exclude_schedule_item_id=None,
+    exclude_schedule_item_ids=None,
+):
+    return _ledger_totals(
+        employee,
+        as_of_date=as_of_date,
+        exclude_request_id=exclude_request_id,
+        exclude_schedule_item_id=exclude_schedule_item_id,
+        exclude_schedule_item_ids=exclude_schedule_item_ids,
+    )["used"]
 
 def get_employee_reserved_paid_days(
     employee,

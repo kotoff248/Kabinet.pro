@@ -4,7 +4,7 @@
 {% block title %}Кабинет.pro - Аналитика{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/analytics.css' %}?v=20260502-planning-dashboard-6">
+<link rel="stylesheet" href="{% static 'css/pages/analytics.css' %}?v=20260521-module-summary-1">
 {% endblock %}
 
 {% block extra_head %}
@@ -110,6 +110,78 @@
         </aside>
     </section>
 
+    <section class="analytics-panel analytics-panel--module" aria-labelledby="analytics-module-title">
+        <div class="analytics-panel__head">
+            <div>
+                <span class="analytics-eyebrow">Нейромодуль</span>
+                <h2 id="analytics-module-title">Сводка модуля</h2>
+            </div>
+            <span class="analytics-panel__badge">{{ analytics_year }}</span>
+        </div>
+        <div class="analytics-module-grid">
+            <article class="analytics-module-headline analytics-module-card--{{ module_summary.headline.variant }}">
+                <span class="analytics-module-headline__icon material-icons-sharp" aria-hidden="true">model_training</span>
+                <div class="analytics-module-headline__body">
+                    <span>Главный фокус</span>
+                    <strong>
+                        {% if module_summary.has_attention %}
+                        {{ module_summary.headline.month_name }} · {{ module_summary.headline.department_name }}
+                        {% else %}
+                        Критичных месяцев модуль не видит
+                        {% endif %}
+                    </strong>
+                    <p>
+                        {% if module_summary.has_attention %}
+                        Модуль {{ module_summary.headline.score_label }} · {{ module_summary.headline.recommendation_label }}. {{ module_summary.headline.reason }}
+                        {% else %}
+                        {{ module_summary.headline.reason }}
+                        {% endif %}
+                    </p>
+                </div>
+                <a href="{{ module_summary.headline.calendar_url }}" data-app-link>Открыть график</a>
+            </article>
+
+            <div class="analytics-module-toplist" aria-label="Главные месяцы внимания">
+                {% for item in module_summary.top_cells %}
+                <a
+                    class="analytics-module-row analytics-module-card--{{ item.variant }}"
+                    href="{{ item.calendar_url }}"
+                    data-app-link
+                    data-schedule-status-tooltip
+                    data-schedule-status-variant="{{ item.variant }}"
+                    data-tooltip-title="{{ item.month_name }} · {{ item.department_name }}"
+                    data-tooltip-text="{{ item.reason }}"
+                >
+                    <span class="material-icons-sharp" aria-hidden="true">radar</span>
+                    <span>
+                        <strong>{{ item.month_name }} · {{ item.department_name }}</strong>
+                        <small>Модуль {{ item.score_label }} · {{ item.recommendation_label }}</small>
+                    </span>
+                    <b>{{ item.load_level }}/5</b>
+                </a>
+                {% empty %}
+                <p class="analytics-empty">Критичных месяцев модуль не видит.</p>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="analytics-module-rollup" aria-label="Оценка модуля по месяцам">
+            {% for month in module_summary.monthly_rollup %}
+            <a
+                class="analytics-module-month analytics-module-card--{{ month.variant }}"
+                href="{{ month.calendar_url }}"
+                data-app-link
+                data-schedule-status-tooltip
+                data-schedule-status-variant="{{ month.variant }}"
+                data-tooltip-title="{{ month.month_short }}"
+                data-tooltip-text="{% if month.department_name %}Самый напряженный отдел: {{ month.department_name }}. Модуль {{ month.score_label }} · {{ month.recommendation_label }}{% else %}Критичных рисков не видно. Модуль {{ month.score_label }} · {{ month.recommendation_label }}{% endif %}"
+            >
+                <span>{{ month.month_short }}</span>
+                <strong>{{ month.score_label|default:"—" }}</strong>
+            </a>
+            {% endfor %}
+        </div>
+    </section>
+
     <section class="analytics-panel analytics-panel--heatmap" aria-labelledby="analytics-heatmap-title">
         <div class="analytics-panel__head">
             <div>
@@ -145,8 +217,8 @@
                     data-schedule-status-tooltip
                     data-schedule-status-variant="{% if month.status == 'conflict' %}conflict{% elif month.status == 'risk' %}risk{% elif month.status == 'watch' %}watch{% elif month.status == 'stable' %}planned{% else %}empty{% endif %}"
                     data-tooltip-title="{{ department.department_name }} · {{ month.month_name }}"
-                    data-tooltip-text="Отсутствуют: {{ month.absent_count }} · останется: {{ month.remaining_staff }} · нагрузка: {{ month.load_level }}/5{% if month.conflict_count %} · конфликтов: {{ month.conflict_count }}{% endif %}{% if month.risk_count %} · рисков: {{ month.risk_count }}{% endif %}"
-                    aria-label="{{ department.department_name }}, {{ month.month_name }}: {{ month.status }}"
+                    data-tooltip-text="Отсутствуют: {{ month.absent_count }} · останется: {{ month.remaining_staff }} · нагрузка: {{ month.load_level }}/5{% if month.conflict_count %} · конфликтов: {{ month.conflict_count }}{% endif %}{% if month.risk_count %} · рисков: {{ month.risk_count }}{% endif %}{% if month.module_score_label %} · Модуль: {{ month.module_score_label }} · {{ month.module_recommendation_label }}{% endif %}{% if month.module_reason %} · {{ month.module_reason }}{% endif %}"
+                    aria-label="{{ department.department_name }}, {{ month.month_name }}: {{ month.status }}{% if month.module_score_label %}, модуль {{ month.module_score_label }}{% endif %}"
                 >
                     <span>{{ month.absent_count }}</span>
                     {% if month.conflict_count or month.risk_count %}
@@ -316,5 +388,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/pages/analytics.js' %}?v=20260502-planning-dashboard-6" defer></script>
+<script src="{% static 'js/pages/analytics.js' %}?v=20260521-module-summary-1" defer></script>
 {% endblock %}

@@ -18,7 +18,7 @@ from apps.leave.services.page_contexts import build_analytics_page_context
 def analytics(request):
     current_employee = get_current_employee(request)
     if not can_access_analytics(current_employee):
-        messages.error(request, "Раздел аналитики доступен только руководителям.")
+        messages.error(request, "Раздел аналитики доступен только HR и руководителям.")
         return redirect("main")
 
     context = get_user_context(request)

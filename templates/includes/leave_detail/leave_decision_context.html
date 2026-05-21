@@ -6,62 +6,42 @@
         data-tooltip-title="Вывод по риску"
         data-tooltip-text="Короткий итог актуального расчета: учитываются правила состава, замещения, пересечения отпусков, нагрузка отдела и баланс."
     >
-        <span>Вывод по риску</span>
-        <strong>{{ decision_context.title }}</strong>
-        <p>{{ decision_context.summary }}</p>
-        <em>{{ decision_context.score_label }}</em>
+        <div class="vacation-decision-context__summary-main">
+            <span>Вывод по риску</span>
+            <strong>{{ decision_context.title }}</strong>
+            <p>{{ decision_context.summary }}</p>
+        </div>
+        <div class="vacation-decision-context__summary-actions">
+            <em>{{ decision_context.score_label }}</em>
+            <a class="vacation-decision-context__calendar-link" href="{{ decision_context.calendar_url }}" data-app-link>
+                <span class="material-icons-sharp" aria-hidden="true">calendar_month</span>
+                <span>{{ decision_context.calendar_action_label }}</span>
+            </a>
+        </div>
+        {% if decision_context.recommended_action %}
+        <p class="vacation-decision-context__recommendation">{{ decision_context.recommended_action }}</p>
+        {% endif %}
     </div>
 
     <dl class="vacation-decision-context__metrics">
+        {% for metric in decision_context.metrics %}
         <div
+            class="vacation-decision-context__metric vacation-decision-context__metric--{{ metric.variant }}"
             data-schedule-status-tooltip
-            data-schedule-status-variant="{{ decision_context.variant }}"
-            data-tooltip-title="Правило состава"
-            data-tooltip-text="{{ decision_context.staffing_tooltip }}"
+            data-schedule-status-variant="{{ metric.variant }}"
+            data-tooltip-title="{{ metric.tooltip_title }}"
+            data-tooltip-text="{{ metric.tooltip_text }}"
         >
-            <dt>Правило состава</dt>
-            <dd>{{ decision_context.staffing_target }}</dd>
-            <small>{{ decision_context.staffing_ratio }}</small>
+            <dt>{{ metric.label }}</dt>
+            <dd>{{ metric.value }}</dd>
+            <small>{{ metric.hint }}</small>
         </div>
-        <div
-            data-schedule-status-tooltip
-            data-schedule-status-variant="{% if decision_context.variant == 'conflict' %}conflict{% elif decision_context.variant == 'risk' %}risk{% else %}info{% endif %}"
-            data-tooltip-title="Кто уже отсутствует"
-            data-tooltip-text="{{ decision_context.overlap_tooltip }}"
-        >
-            <dt>Одновременно отсутствуют</dt>
-            <dd>{{ decision_context.overlap_label }}</dd>
-            <small>{{ decision_context.overlap_people_label }}</small>
-        </div>
-        <div
-            data-schedule-status-tooltip
-            data-schedule-status-variant="{% if decision_context.substitution.variant == 'conflict' %}conflict{% elif decision_context.substitution.variant == 'risk' %}risk{% else %}planned{% endif %}"
-            data-tooltip-title="{{ decision_context.substitution.label }}"
-            data-tooltip-text="{{ decision_context.substitution.tooltip }}"
-        >
-            <dt>{{ decision_context.substitution.label }}</dt>
-            <dd>{{ decision_context.substitution.value }}</dd>
-            <small>{{ decision_context.substitution.hint }}</small>
-        </div>
-        <div
-            data-schedule-status-tooltip
-            data-schedule-status-variant="{% if decision_context.variant == 'conflict' %}conflict{% elif decision_context.variant == 'risk' %}risk{% else %}info{% endif %}"
-            data-tooltip-title="Нагрузка отдела"
-            data-tooltip-text="{{ decision_context.workload_tooltip }}"
-        >
-            <dt>Нагрузка отдела</dt>
-            <dd>{{ decision_context.workload_label }}</dd>
-            <small>Уточняет лимиты периода</small>
-        </div>
+        {% endfor %}
     </dl>
 
     <section class="vacation-decision-context__rules" aria-label="Факторы риска">
         <header>
             <span class="detail-eyebrow">Что именно проверить</span>
-            <a class="vacation-decision-context__calendar-link" href="{{ decision_context.calendar_url }}" data-app-link>
-                <span class="material-icons-sharp" aria-hidden="true">calendar_month</span>
-                <span>{{ decision_context.calendar_action_label }}</span>
-            </a>
         </header>
         {% if decision_context.rule_cards %}
         <ul class="vacation-risk-card-list">
@@ -93,7 +73,7 @@
             data-tooltip-text="Система не нашла жестких нарушений или факторов, которые требуют отдельной проверки."
         >
             <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
-            <strong>Нарушений по правилам состава не найдено</strong>
+            <strong>Отдельных нарушений не найдено</strong>
         </div>
         {% endif %}
     </section>
