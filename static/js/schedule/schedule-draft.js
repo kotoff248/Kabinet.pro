@@ -789,9 +789,8 @@
         const explanation = payload.package_explanation || "";
         const scoreLabel = payload.package_score_label || "";
         const recommendation = payload.package_recommendation_label || "";
-        const confidence = payload.package_confidence_label ? "уверенность " + payload.package_confidence_label : "";
         const model = payload.package_model_version ? "модель " + payload.package_model_version : "";
-        const meta = [recommendation, confidence, model].filter(Boolean).join(" · ");
+        const meta = [recommendation, model].filter(Boolean).join(" · ");
         const staffingChips = normalizeStaffingChips(payload.staffing_chips || []);
         const hasContent = Boolean(explanation || scoreLabel || meta || staffingChips.length);
         panel.hidden = !hasContent;

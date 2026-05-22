@@ -74,13 +74,13 @@ class CandidateTrainingTests(LeaveTestCase):
         reset_package_ranker_model_cache()
         super().tearDown()
 
-    @override_settings(VACATION_CANDIDATE_SCORER_VERSION="vacation-candidate-mlp-v1")
-    def test_default_loader_uses_v1(self):
+    def test_default_loader_uses_v2(self):
         reset_candidate_mlp_model_cache()
 
         model = load_candidate_mlp_model()
 
         self.assertEqual(model["version"], DEFAULT_NEURAL_CANDIDATE_SCORER_VERSION)
+        self.assertEqual(model["version"], "vacation-candidate-mlp-v2")
 
     def test_dataset_uses_saved_historical_features_only(self):
         selected = self._create_candidate(

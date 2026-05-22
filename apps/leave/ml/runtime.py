@@ -6,7 +6,7 @@ from pathlib import Path
 
 from django.conf import settings
 
-DEFAULT_NEURAL_CANDIDATE_SCORER_VERSION = "vacation-candidate-mlp-v1"
+DEFAULT_NEURAL_CANDIDATE_SCORER_VERSION = "vacation-candidate-mlp-v2"
 NEURAL_CANDIDATE_SCORER_VERSION = getattr(
     settings,
     "VACATION_CANDIDATE_SCORER_VERSION",

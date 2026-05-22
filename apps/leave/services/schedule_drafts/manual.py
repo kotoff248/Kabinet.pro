@@ -55,8 +55,8 @@ from apps.leave.services.staffing import format_staff_count
 from apps.leave.services.urgent_closures import detect_previous_year_closure_need, get_active_urgent_closure_payload_map
 from apps.leave.services.validation import MIN_CONTINUOUS_PAID_LEAVE_DAYS, get_overlapping_requests, get_overlapping_schedule_items
 from apps.leave.ml.package_scoring import (
+    PackageScoringResult,
     build_generation_package_features,
-    build_package_features,
     score_generation_package,
     score_package_features,
 )
@@ -194,7 +194,132 @@ def _package_preview_recommendation_label(recommendation):
     }.get(recommendation or "", "Оценен")
 
 
-def _manual_package_preview_scoring_payload(period_payloads, planning_need, post_planning_need, *, can_submit):
+def _manual_package_iso_signature_from_periods(periods):
+    signature = []
+    for period in periods:
+        start_date = period.get("start_date")
+        end_date = period.get("end_date")
+        if not start_date or not end_date:
+            continue
+        signature.append(
+            (
+                start_date.isoformat() if hasattr(start_date, "isoformat") else str(start_date),
+                end_date.isoformat() if hasattr(end_date, "isoformat") else str(end_date),
+            )
+        )
+    return tuple(sorted(signature))
+
+
+def _manual_suggestion_option_signature(option):
+    periods = list(option.get("periods") or [])
+    if not periods and (option.get("start_date") or option.get("end_date")):
+        periods = [{"start_date": option.get("start_date"), "end_date": option.get("end_date")}]
+    return tuple(
+        sorted(
+            (str(period.get("start_date") or ""), str(period.get("end_date") or ""))
+            for period in periods
+            if period.get("start_date") and period.get("end_date")
+        )
+    )
+
+
+def _manual_package_scoring_response(result, *, alternative_count=0):
+    return {
+        "package_score": result.score,
+        "package_score_label": _percent_label(result.score),
+        "package_confidence": result.confidence,
+        "package_confidence_label": _percent_label(result.confidence),
+        "package_model_version": result.model_version,
+        "package_recommendation": result.recommendation,
+        "package_recommendation_label": _package_preview_recommendation_label(result.recommendation),
+        "package_explanation": result.explanation,
+        "alternative_count": int(alternative_count or 0),
+    }
+
+
+def _manual_package_scoring_payload_from_suggestion_option(option):
+    result = PackageScoringResult(
+        score=_feature_decimal(option.get("score") or option.get("package_score")),
+        confidence=_feature_decimal(option.get("confidence") or option.get("package_confidence")),
+        recommendation=option.get("recommendation") or option.get("package_recommendation") or "",
+        explanation=(
+            option.get("package_explanation")
+            or option.get("explanation")
+            or option.get("message")
+            or ""
+        ),
+        model_version=option.get("model_version") or option.get("package_model_version") or "",
+        scorer_kind=option.get("scorer_kind") or option.get("package_scorer_kind") or "",
+    )
+    return _manual_package_scoring_response(
+        result,
+        alternative_count=option.get("alternative_count") or 0,
+    )
+
+
+def _find_matching_manual_suggestion_option(schedule, employee, period_payloads):
+    target_signature = _manual_package_iso_signature_from_periods(period_payloads)
+    if not target_signature:
+        return None
+
+    version = int(schedule.manual_suggestion_cache_version or 0)
+    if version <= 0:
+        return None
+    cache = VacationScheduleManualSuggestionCache.objects.filter(
+        schedule=schedule,
+        employee=employee,
+        version=version,
+    ).first()
+    payload = cache.payload if cache else {}
+    if int((payload or {}).get("suggestion_schema_version") or 0) != MANUAL_DRAFT_SUGGESTION_CACHE_SCHEMA_VERSION:
+        return None
+    return next(
+        (
+            option
+            for option in (payload.get("options") or [])
+            if _manual_suggestion_option_signature(option) == target_signature
+        ),
+        None,
+    )
+
+
+def _manual_preview_package_from_periods(employee, period_payloads, planning_need, post_planning_need, year):
+    candidates = [
+        _manual_candidate_from_period_preview(
+            employee,
+            period,
+            planning_need,
+            year,
+            order=index,
+        )
+        for index, period in enumerate(period_payloads, start=1)
+    ]
+    total_days = sum((_feature_decimal(period["chargeable_days"]) for period in period_payloads), Decimal("0.00"))
+    return DraftGenerationCandidatePackage(
+        employee=employee,
+        candidates=candidates,
+        source=VacationScheduleItem.SOURCE_MANUAL,
+        explanation="Оценка выбранного пакета.",
+        metadata={
+            "package_kind": "manual_preview",
+            "total_chargeable_days": total_days,
+            "periods_count": len(candidates),
+            "package_target_days": planning_need["open_required_days"],
+            "remaining_after_package": post_planning_need["open_required_days"],
+            "package_closes_need": post_planning_need["open_required_days"] <= 0,
+        },
+    )
+
+
+def _manual_package_preview_scoring_payload(
+    schedule,
+    employee,
+    period_payloads,
+    planning_need,
+    post_planning_need,
+    *,
+    can_submit,
+):
     if not period_payloads:
         return {
             "package_score": None,
@@ -208,49 +333,28 @@ def _manual_package_preview_scoring_payload(period_payloads, planning_need, post
             "alternative_count": 0,
         }
 
-    rows = [
-        {
-            "start_date": period["start_date"],
-            "end_date": period["end_date"],
-            "chargeable_days": period["chargeable_days"],
-            "risk_score": period["risk_score"],
-            "risk_level": period["risk_level"],
-            "risk_is_conflict": period["risk_is_conflict"],
-            "staff_margin": (
-                ((period.get("assessment") or {}).get("risk_payload") or {})
-                .get("risk_explanation", {})
-                .get("remaining_staff", 0)
-            ),
-            "passed_hard_rules": bool(period["can_place"]),
-        }
-        for period in period_payloads
-    ]
-    total_days = sum((_feature_decimal(period["chargeable_days"]) for period in period_payloads), Decimal("0.00"))
-    features = build_package_features(
-        {
-            "total_chargeable_days": total_days,
-            "package_target_days": planning_need["open_required_days"],
-            "remaining_after_package": post_planning_need["open_required_days"],
-            "package_closes_need": post_planning_need["open_required_days"] <= 0,
-        },
-        rows,
-        package_source=VacationScheduleItem.SOURCE_MANUAL,
+    if can_submit:
+        matching_option = _find_matching_manual_suggestion_option(schedule, employee, period_payloads)
+        if matching_option is not None:
+            return _manual_package_scoring_payload_from_suggestion_option(matching_option)
+
+    preview_package = _manual_preview_package_from_periods(
+        employee,
+        period_payloads,
+        planning_need,
+        post_planning_need,
+        schedule.year,
     )
-    result = score_package_features(
-        features,
-        passed_hard_rules=bool(can_submit) and all(period["can_place"] for period in period_payloads),
+    result = score_generation_package(
+        preview_package,
+        use_neural=True,
     )
-    return {
-        "package_score": result.score,
-        "package_score_label": _percent_label(result.score),
-        "package_confidence": result.confidence,
-        "package_confidence_label": _percent_label(result.confidence),
-        "package_model_version": result.model_version,
-        "package_recommendation": result.recommendation,
-        "package_recommendation_label": _package_preview_recommendation_label(result.recommendation),
-        "package_explanation": result.explanation,
-        "alternative_count": 0,
-    }
+    if not (bool(can_submit) and all(period["can_place"] for period in period_payloads)):
+        result = score_package_features(
+            build_generation_package_features(preview_package),
+            passed_hard_rules=False,
+        )
+    return _manual_package_scoring_response(result)
 
 
 def _merged_paid_leave_segments(items):
@@ -402,6 +506,8 @@ def build_manual_schedule_draft_package_preview(*, year, employee_id, periods):
     )
     staffing_summary, staffing_chips = _worst_staffing_summary_from_payloads(period_payloads)
     package_scoring = _manual_package_preview_scoring_payload(
+        schedule,
+        employee,
         period_payloads,
         planning_need,
         post_planning_need,
@@ -441,6 +547,34 @@ def build_manual_schedule_draft_package_preview(*, year, employee_id, periods):
 
 def _manual_candidate_from_period_preview(employee, period_payload, planning_need, year, *, actor=None, order=1):
     comment = f"Вручную размещено HR: {actor.full_name if actor else 'HR'}."
+    preference = None
+    preference_match = ""
+    preference_match_label = ""
+    preference_pair = get_employee_preference_pair(employee, year)
+    for priority, label in (
+        (VacationPreference.PRIORITY_PRIMARY, "Основное пожелание"),
+        (VacationPreference.PRIORITY_BACKUP, "Запасное пожелание"),
+    ):
+        current_preference = preference_pair.get(priority)
+        if not current_preference or not current_preference.start_date or not current_preference.end_date:
+            continue
+        if (
+            period_payload["start_date"] == current_preference.start_date
+            and period_payload["end_date"] == current_preference.end_date
+        ):
+            preference = current_preference
+            preference_match = priority
+            preference_match_label = label
+            break
+        if (
+            period_payload["start_date"] == current_preference.start_date
+            and current_preference.start_date <= period_payload["end_date"] <= current_preference.end_date
+        ):
+            preference = current_preference
+            preference_match = f"{priority}_partial"
+            preference_match_label = f"Часть {label.lower()}"
+            break
+
     candidate = DraftGenerationCandidate(
         employee=employee,
         start_date=period_payload["start_date"],
@@ -448,10 +582,14 @@ def _manual_candidate_from_period_preview(employee, period_payload, planning_nee
         kind=VacationScheduleCandidate.KIND_MANUAL,
         source=VacationScheduleItem.SOURCE_MANUAL,
         comment=comment,
+        preference=preference,
         metadata={
             "manual_package_selected": True,
             "manual_package_period_order": order,
             "target_chargeable_days": period_payload["chargeable_days"],
+            "preference_match": preference_match,
+            "preference_match_label": preference_match_label,
+            "is_preference_candidate": bool(preference_match),
         },
     )
     _apply_planning_need_metadata(candidate, planning_need, year)
@@ -652,30 +790,43 @@ def place_manual_schedule_draft_items(*, year, employee_id, periods, actor):
     suggestion_packages = _manual_candidate_packages(
         context,
         context_employee,
-        limit=3,
+        limit=MANUAL_DRAFT_MAX_PACKAGE_SUGGESTIONS,
     )
-    selected_candidates = [
-        _manual_candidate_from_period_preview(
-            employee,
-            period_payload,
-            planning_need,
-            year,
-            actor=actor,
-            order=index,
+    selected_key = tuple((period["start_date"], period["end_date"]) for period in preview["periods"])
+    selected_package = next(
+        (
+            package
+            for package in suggestion_packages
+            if _manual_package_key(package) == selected_key
+        ),
+        None,
+    )
+    if selected_package is None:
+        selected_candidates = [
+            _manual_candidate_from_period_preview(
+                employee,
+                period_payload,
+                planning_need,
+                year,
+                actor=actor,
+                order=index,
+            )
+            for index, period_payload in enumerate(preview["periods"], start=1)
+        ]
+        selected_package = DraftGenerationCandidatePackage(
+            employee=employee,
+            candidates=selected_candidates,
+            source=VacationScheduleItem.SOURCE_MANUAL,
+            explanation=preview["message"],
+            metadata={
+                "package_kind": "manual_selected",
+                "total_chargeable_days": preview["chargeable_days"],
+                "periods_count": len(selected_candidates),
+                "package_target_days": planning_need["open_required_days"],
+                "remaining_after_package": preview["remaining_after_placement"],
+                "package_closes_need": preview["remaining_after_placement"] <= 0,
+            },
         )
-        for index, period_payload in enumerate(preview["periods"], start=1)
-    ]
-    selected_package = DraftGenerationCandidatePackage(
-        employee=employee,
-        candidates=selected_candidates,
-        source=VacationScheduleItem.SOURCE_MANUAL,
-        explanation=preview["message"],
-        metadata={
-            "package_kind": "manual_selected",
-            "total_chargeable_days": preview["chargeable_days"],
-            "remaining_after_placement": preview["remaining_after_placement"],
-        },
-    )
 
     generation_run = _start_schedule_generation_run(schedule, actor)
     _, selected_candidate_records, selected_period_records = _persist_manual_candidate_package(
@@ -687,7 +838,7 @@ def place_manual_schedule_draft_items(*, year, employee_id, periods, actor):
     )
     selected_key = _manual_package_key(selected_package)
     rejected_rank = 2
-    for package in suggestion_packages:
+    for package in suggestion_packages[:3]:
         if _manual_package_key(package) == selected_key:
             continue
         _persist_manual_candidate_package(

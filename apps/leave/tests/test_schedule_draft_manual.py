@@ -38,7 +38,10 @@ from apps.leave.services.schedule_drafts.candidate_generation import (
     _build_preference_generation_candidates,
 )
 from apps.leave.services.schedule_drafts.constants import MANUAL_DRAFT_SUGGESTION_CACHE_SCHEMA_VERSION
-from apps.leave.services.schedule_drafts.manual import place_manual_schedule_draft_items
+from apps.leave.services.schedule_drafts.manual import (
+    build_manual_schedule_draft_package_preview,
+    place_manual_schedule_draft_items,
+)
 from apps.leave.services.schedule_drafts.manual_suggestions import (
     _manual_package_payload,
     _rank_manual_candidate_packages,
@@ -281,6 +284,48 @@ class ScheduleDraftManualTests(LeaveTestCase):
         self.assertEqual(first_option["preference_match"], "backup")
         self.assertEqual(first_option["periods"][0]["start_date"], date(year, 9, 1).isoformat())
         self.assertEqual(first_option["periods"][0]["end_date"], date(year, 9, 14).isoformat())
+
+    def test_manual_package_preview_matches_selected_suggestion_score(self):
+        year = self._year()
+        self.activate_only(self.employee)
+        self._set_filled_preferences(
+            self.employee,
+            primary_start=date(year, 6, 1),
+            primary_end=date(year, 6, 14),
+            backup_start=date(year, 9, 1),
+            backup_end=date(year, 9, 14),
+        )
+        schedule = self.create_minimal_draft(year=year)
+        self.create_employee_draft_item(
+            self.employee,
+            schedule=schedule,
+            start_date=date(year, 6, 1),
+            end_date=date(year, 6, 14),
+        )
+
+        suggestions = self.warm_manual_suggestion_cache(year=year, employee=self.employee, limit=10)
+        selected_option = suggestions["options"][0]
+        preview_periods = [
+            {
+                "start_date": date.fromisoformat(period["start_date"]),
+                "end_date": date.fromisoformat(period["end_date"]),
+            }
+            for period in selected_option["periods"]
+        ]
+
+        preview = build_manual_schedule_draft_package_preview(
+            year=year,
+            employee_id=self.employee.id,
+            periods=preview_periods,
+        )
+
+        self.assertTrue(preview["can_submit"])
+        self.assertEqual(preview["package_score"], Decimal(str(selected_option["score"])))
+        self.assertEqual(preview["package_score_label"], selected_option["score_label"])
+        self.assertEqual(preview["package_confidence"], Decimal(str(selected_option["confidence"])))
+        self.assertEqual(preview["package_confidence_label"], selected_option["confidence_label"])
+        self.assertEqual(preview["package_model_version"], selected_option["model_version"])
+        self.assertIn(selected_option["confidence_label"].replace(",", "."), selected_option["package_explanation"])
 
     def test_manual_suggestions_offer_partial_backup_when_remaining_is_smaller_than_backup(self):
         year = self._year()

@@ -377,12 +377,13 @@ def _manual_package_payload(package, *, rank=None, alternative_count=0):
     preference_payload = next((payload for payload in period_payloads if payload.get("is_preference_candidate")), None)
     total_days = sum((_feature_decimal(payload["chargeable_days"]) for payload in period_payloads), Decimal("0.00"))
     package_score = _manual_package_quality_score(package)
-    avg_confidence = (
+    period_avg_confidence = (
         sum((_feature_decimal(payload["confidence"]) for payload in period_payloads), Decimal("0.00"))
         / Decimal(len(period_payloads))
         if period_payloads
         else Decimal("0.00")
     )
+    package_confidence = package.metadata.get("package_confidence") or period_avg_confidence
     highest_risk = max(
         period_payloads,
         key=lambda payload: (_risk_level_rank(payload["risk_level"]), int(payload["risk_score"] or 0)),
@@ -417,8 +418,10 @@ def _manual_package_payload(package, *, rank=None, alternative_count=0):
         "staffing_chips": staffing_chips,
         "score": package_score,
         "score_label": _percent_label(package_score),
-        "confidence": avg_confidence,
-        "confidence_label": _percent_label(avg_confidence),
+        "confidence": package_confidence,
+        "confidence_label": _percent_label(package_confidence),
+        "period_confidence": period_avg_confidence,
+        "period_confidence_label": _percent_label(period_avg_confidence),
         "model_version": package.metadata.get("package_model_version", ""),
         "scorer_kind": package.metadata.get("package_scorer_kind", ""),
         "recommendation": package_recommendation,
