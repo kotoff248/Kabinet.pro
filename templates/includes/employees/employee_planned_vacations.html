@@ -42,7 +42,7 @@
                 {% if item.detail_url %}
                 <a
                     class="planned-vacations__link planned-vacations__link--secondary"
-                    href="{{ item.detail_url }}?from=profile&amp;back_url={{ request.get_full_path|urlencode }}&amp;back_label=%D0%9A%20%D0%BF%D1%80%D0%BE%D1%84%D0%B8%D0%BB%D1%8E"
+                    href="{{ item.detail_url }}?from={{ employee_profile_detail_source|urlencode }}&amp;back_url={{ request.get_full_path|urlencode }}&amp;back_label={{ employee_profile_detail_back_label|urlencode }}"
                     data-app-link
                 >{{ item.detail_label }}</a>
                 {% endif %}

@@ -18,6 +18,7 @@ from apps.accounts.services import (
     get_user_context,
     is_authorized_person_employee,
 )
+from apps.core.services.navigation import build_explicit_back_link
 from apps.employees.services import update_context_with_departments
 from apps.leave.models import (
     VACATION_TYPE_CHOICES,
@@ -71,6 +72,17 @@ DATE_PICKER_SCHEDULE_STATUSES = (
     VacationScheduleItem.STATUS_PLANNED,
     VacationScheduleItem.STATUS_APPROVED,
 )
+
+CALENDAR_CONTEXT_SOURCES = {
+    "profile",
+    "employees",
+    "applications",
+    "departments",
+    "analytics",
+    "staffing",
+    "notifications",
+    "calendar",
+}
 
 
 def _normalize_vacation_form_data(post_data):
@@ -544,8 +556,14 @@ def graphics(request):
             detail_employee_ids=detail_employee_ids,
         )
     )
-    if request.GET.get("from") == "schedule_planning" and can_access_schedule_planning(current_user):
+    navigation_source = request.GET.get("from")
+    if navigation_source == "schedule_planning" and can_access_schedule_planning(current_user):
         context["sidebar_section"] = "schedule_planning"
+    elif navigation_source in CALENDAR_CONTEXT_SOURCES:
+        context["sidebar_section"] = navigation_source
+    explicit_back_link = build_explicit_back_link(request.GET, section=context.get("sidebar_section", ""))
+    if explicit_back_link:
+        context["page_header_back_link"] = explicit_back_link
     calendar_period_label = context["calendar_period_label"]
     calendar_period_description = context["calendar_period_description"]
     calendar_details = context["calendar_details"]

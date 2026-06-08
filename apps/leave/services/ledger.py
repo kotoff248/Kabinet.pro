@@ -434,7 +434,11 @@ def _build_allocation_rows(employee, periods, sources, strict=True, for_save=Fal
             source_usable_days = _source_usable_days_for_period(source, period)
             if source_usable_days <= 0:
                 continue
-            requestable_on_start = _period_requestable_days(period, source["start_date"])
+            requestable_on_start = (
+                Decimal(period.entitled_days)
+                if source["state"] == VacationEntitlementAllocation.STATE_USED
+                else _period_requestable_days(period, source["start_date"])
+            )
             period_left = quantize_leave_days(requestable_on_start - allocated_by_period[period_key])
             if period_left <= 0:
                 continue

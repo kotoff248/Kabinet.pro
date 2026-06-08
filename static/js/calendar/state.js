@@ -106,15 +106,13 @@
             }
 
             const persistedTargetUrl = new URL(persistedUrl, window.location.href);
-            if (persistedTargetUrl.searchParams.get("from") === "schedule_planning") {
+            if (persistedTargetUrl.searchParams.has("from")) {
                 persistedTargetUrl.searchParams.delete("from");
                 persistedTargetUrl.searchParams.delete("back_url");
                 persistedTargetUrl.searchParams.delete("back_label");
-                link.href = persistedTargetUrl.href;
-                return;
             }
 
-            link.href = persistedUrl;
+            link.href = persistedTargetUrl.href;
         }, { capture: true });
     }
 

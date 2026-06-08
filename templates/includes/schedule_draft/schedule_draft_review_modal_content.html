@@ -1,21 +1,21 @@
 <div class="schedule-draft-review__summary">
-    <article>
+    <article data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Сотрудник" data-tooltip-text="Сотрудник, для которого проверяется выбранный пункт черновика графика.">
         <span>Сотрудник</span>
         <strong>{{ employee_name }}</strong>
         <small>{{ source_hint }}</small>
     </article>
-    <article>
+    <article data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Назначено" data-tooltip-text="Период, который система поставила в черновик графика для этого сотрудника.">
         <span>Назначено</span>
         <strong>{{ period_label }}</strong>
         <small>{{ chargeable_days_label }}</small>
     </article>
-    <article class="schedule-draft-review__risk schedule-draft-review__risk--{{ risk_tone }}">
+    <article class="schedule-draft-review__risk schedule-draft-review__risk--{{ risk_tone }}" data-schedule-status-tooltip data-schedule-status-variant="{% if risk_tone == 'danger' %}conflict{% elif risk_tone == 'warning' %}risk{% else %}planned{% endif %}" data-tooltip-title="Риск пункта" data-tooltip-text="Итоговая оценка риска выбранного периода после проверки правил состава, нагрузки и предпочтений.">
         <span>Риск</span>
         <strong>{{ risk_label }} · {{ risk_score }}%</strong>
         <small>Жесткие правила уже проверены</small>
     </article>
     {% if ai_decision %}
-    <article>
+    <article data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Оценка модуля" data-tooltip-text="Сохранённая оценка нейромодуля для выбранного периода или пакета отпуска.">
         <span>Модуль</span>
         <strong>{{ ai_decision.score_label }}</strong>
         <small>{% if ai_decision.confidence_label %}Уверенность {{ ai_decision.confidence_label }}{% else %}Оценка сохранена{% endif %}</small>
@@ -37,7 +37,7 @@
             <span>Пакет отпуска</span>
             <h3>Почему выбран этот пакет</h3>
         </div>
-        <strong class="schedule-draft-package-report__score">
+        <strong class="schedule-draft-package-report__score" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Оценка пакета" data-tooltip-text="Суммарная оценка набора периодов, который закрывает план сотрудника.">
             {% if package_report.score_label %}{{ package_report.score_label }}{% else %}Без оценки{% endif %}
         </strong>
     </div>
@@ -112,7 +112,7 @@
             <span>Кандидаты</span>
             <h3>Какие варианты сравнивались</h3>
         </div>
-        <a href="{{ calendar_url }}" class="schedule-draft-card__action schedule-draft-review__calendar-action" data-app-link>
+        <a href="{{ calendar_url }}" class="schedule-draft-card__action schedule-draft-review__calendar-action" data-app-link data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Показать на графике" data-tooltip-text="Открывает график и фокусирует выбранный период этого сотрудника.">
             <span class="material-icons-sharp" aria-hidden="true">calendar_month</span>
             Показать на графике
         </a>
@@ -178,15 +178,15 @@
         <input type="hidden" name="next" value="{{ current_path }}">
         <input type="text" name="comment" value="{% if feedback.current %}{{ feedback.current.comment }}{% endif %}" maxlength="800" placeholder="Короткий комментарий">
         <div class="schedule-draft-feedback__actions">
-            <button type="submit" name="decision" value="agree" class="schedule-draft-feedback__button schedule-draft-feedback__button--positive{% if feedback.current.decision == 'agree' %} is-active{% endif %}" title="Согласен">
+            <button type="submit" name="decision" value="agree" class="schedule-draft-feedback__button schedule-draft-feedback__button--positive{% if feedback.current.decision == 'agree' %} is-active{% endif %}" aria-label="Согласен" data-schedule-status-tooltip data-schedule-status-variant="planned" data-tooltip-title="Согласен" data-tooltip-text="Подтвердить, что предложенный период подходит без правок.">
                 <span class="material-icons-sharp" aria-hidden="true">thumb_up</span>
                 <span>Согласен</span>
             </button>
-            <button type="submit" name="decision" value="needs_change" class="schedule-draft-feedback__button schedule-draft-feedback__button--warning{% if feedback.current.decision == 'needs_change' %} is-active{% endif %}" title="Нужна правка">
+            <button type="submit" name="decision" value="needs_change" class="schedule-draft-feedback__button schedule-draft-feedback__button--warning{% if feedback.current.decision == 'needs_change' %} is-active{% endif %}" aria-label="Нужна правка" data-schedule-status-tooltip data-schedule-status-variant="risk" data-tooltip-title="Нужна правка" data-tooltip-text="Отметить, что период можно согласовать только после изменения или дополнительной проверки.">
                 <span class="material-icons-sharp" aria-hidden="true">edit_note</span>
                 <span>Правка</span>
             </button>
-            <button type="submit" name="decision" value="reject" class="schedule-draft-feedback__button schedule-draft-feedback__button--danger{% if feedback.current.decision == 'reject' %} is-active{% endif %}" title="Отклонить">
+            <button type="submit" name="decision" value="reject" class="schedule-draft-feedback__button schedule-draft-feedback__button--danger{% if feedback.current.decision == 'reject' %} is-active{% endif %}" aria-label="Отклонить" data-schedule-status-tooltip data-schedule-status-variant="conflict" data-tooltip-title="Отклонить" data-tooltip-text="Отклонить рекомендацию и вернуть пункт на доработку.">
                 <span class="material-icons-sharp" aria-hidden="true">block</span>
                 <span>Отклонить</span>
             </button>

@@ -63,6 +63,31 @@ body.is-calendar-page .page-main{
     max-width: 56rem;
 }
 
+.calendar-page__header--with-back .page-hero__copy{
+    flex: 0 1 calc(50% - 6rem);
+    max-width: min(34rem, calc(50% - 6rem));
+}
+
+.calendar-page__header--with-back .page-hero__aside{
+    max-width: min(34rem, calc(50% - 6rem));
+}
+
+.calendar-page__header--with-back .calendar-header-actions{
+    flex-wrap: wrap;
+}
+
+.calendar-page__header--with-back .page-hero__back-link span:last-child{
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.calendar-page__header--with-back .page-hero__title-group,
+.calendar-page__header--with-back .page-hero__subtitle{
+    min-width: 0;
+    max-width: 100%;
+}
+
 .calendar-page__header .page-hero__aside{
     align-items: center;
     align-self: center;
@@ -100,6 +125,14 @@ body.is-calendar-page .page-main{
     .calendar-page__header .page-hero__copy{
         flex: 1 1 auto;
         min-width: 0;
+    }
+
+    .calendar-page__header--with-back .page-hero__copy{
+        max-width: min(28rem, calc(50% - 6rem));
+    }
+
+    .calendar-page__header--with-back .page-hero__aside{
+        max-width: min(28rem, calc(50% - 6rem));
     }
 
     .calendar-page__header .page-hero__aside{

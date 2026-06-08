@@ -27,6 +27,17 @@
         const legendToggle = context.legendToggle;
         const legendPopover = context.legendPopover;
         const signal = context.signal;
+        const preservedContextSources = [
+            "schedule_planning",
+            "profile",
+            "employees",
+            "applications",
+            "departments",
+            "analytics",
+            "staffing",
+            "notifications",
+            "calendar",
+        ];
         const searchDebounceMs = 250;
         let searchTimer = null;
 
@@ -56,7 +67,8 @@
 
         function getCurrentPlanningContextParams() {
             const currentParams = new URL(window.location.href).searchParams;
-            if (currentParams.get("from") !== "schedule_planning") {
+            const source = currentParams.get("from");
+            if (preservedContextSources.indexOf(source) === -1) {
                 return [];
             }
 

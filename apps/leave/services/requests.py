@@ -55,6 +55,16 @@ APPLICATION_MODULE_BADGE_VARIANTS = {
     "blocked": "risk",
 }
 
+VACATION_REQUEST_RISK_MODEL_FIELDS = {
+    "risk_score",
+    "risk_level",
+    "department_load_level",
+    "overlapping_absences_count",
+    "remaining_staff_count",
+    "min_staff_required",
+    "balance_after_request",
+}
+
 
 def _percent_badge_label(value):
     if value is None or value == "":
@@ -105,6 +115,15 @@ def _validate_reviewer_can_approve(reviewer, employee):
     if not can_approve_leave_for_employee(reviewer, employee):
         raise ValidationError("У вас нет прав для согласования этой заявки.")
 
+
+def _vacation_request_risk_model_fields(risk_payload):
+    return {
+        key: risk_payload[key]
+        for key in VACATION_REQUEST_RISK_MODEL_FIELDS
+        if key in risk_payload
+    }
+
+
 @transaction.atomic
 def create_vacation_request(employee, start_date, end_date, vacation_type, reason=""):
     employee = Employees.objects.select_for_update().get(pk=employee.pk)
@@ -126,7 +145,7 @@ def create_vacation_request(employee, start_date, end_date, vacation_type, reaso
         vacation_type=vacation_type,
         status=VacationRequest.STATUS_PENDING,
         reason=reason,
-        **risk_payload,
+        **_vacation_request_risk_model_fields(risk_payload),
         **vacation_request_ai_model_fields(ai_support),
     )
     record_vacation_request_created(vacation)

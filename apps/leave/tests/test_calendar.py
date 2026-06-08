@@ -465,6 +465,104 @@ class CalendarTests(LeaveTestCase):
         self.assertContains(response, 'role="button"')
         self.assertContains(response, reverse("employee_profile", args=[self.employee.id]))
 
+    def test_calendar_opened_from_profile_keeps_profile_navigation_and_back_link(self):
+        self.client.force_login(self.employee.user)
+
+        response = self.client.get(
+            reverse("calendar"),
+            {
+                "from": "profile",
+                "back_url": reverse("main"),
+                "back_label": "К профилю",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "profile")
+        self.assertEqual(response.context["page_header_back_link"]["label"], "К профилю")
+        self.assertEqual(response.context["page_header_back_link"]["url"], reverse("main"))
+        self.assertContains(response, "К профилю")
+        self.assertContains(response, "calendar-page__header--with-back")
+        self.assertContains(
+            response,
+            'data-sidebar-key="profile" aria-label="Профиль" title="Профиль" aria-current="page"',
+        )
+        self.assertNotContains(
+            response,
+            'data-sidebar-key="calendar" aria-label="График" title="График" aria-current="page"',
+        )
+
+    def test_calendar_opened_from_employee_profile_keeps_employees_navigation_and_back_link(self):
+        self.client.force_login(self.hr_employee.user)
+        profile_url = f"{reverse('employee_profile', args=[self.employee.id])}?from=employees"
+
+        response = self.client.get(
+            reverse("calendar"),
+            {
+                "from": "employees",
+                "back_url": profile_url,
+                "back_label": "К сотруднику",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "employees")
+        self.assertEqual(response.context["page_header_back_link"]["label"], "К сотруднику")
+        self.assertEqual(response.context["page_header_back_link"]["url"], profile_url)
+        self.assertContains(response, "К сотруднику")
+        self.assertContains(response, "calendar-page__header--with-back")
+        self.assertContains(
+            response,
+            'data-sidebar-key="employees" aria-label="Сотрудники" title="Сотрудники" aria-current="page"',
+        )
+        self.assertNotContains(
+            response,
+            'data-sidebar-key="calendar" aria-label="График" title="График" aria-current="page"',
+        )
+
+    def test_calendar_opened_from_applications_keeps_applications_navigation_and_back_link(self):
+        self.client.force_login(self.hr_employee.user)
+        application_url = reverse("applications")
+
+        response = self.client.get(
+            reverse("calendar"),
+            {
+                "from": "applications",
+                "back_url": application_url,
+                "back_label": "К заявкам",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "applications")
+        self.assertEqual(response.context["page_header_back_link"]["label"], "К заявкам")
+        self.assertEqual(response.context["page_header_back_link"]["url"], application_url)
+        self.assertContains(response, "К заявкам")
+        self.assertContains(
+            response,
+            'data-sidebar-key="applications" aria-label="Заявки" title="Заявки" aria-current="page"',
+        )
+        self.assertNotContains(
+            response,
+            'data-sidebar-key="calendar" aria-label="График" title="График" aria-current="page"',
+        )
+
+    def test_calendar_opened_from_analytics_keeps_analytics_navigation(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("calendar"), {"from": "analytics"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "analytics")
+        self.assertContains(
+            response,
+            'data-sidebar-key="analytics" aria-label="Аналитика" title="Аналитика" aria-current="page"',
+        )
+        self.assertNotContains(
+            response,
+            'data-sidebar-key="calendar" aria-label="График" title="График" aria-current="page"',
+        )
+
     def test_calendar_detail_drawer_request_links_have_modal_return_hooks(self):
         request_obj = VacationRequest.objects.create(
             employee=self.employee,

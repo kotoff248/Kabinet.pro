@@ -34,7 +34,13 @@
                 </p>
             </div>
             <div class="panel-heading__actions schedule-draft-panel__actions">
-                <span class="schedule-draft-status{% if draft_exists %} schedule-draft-status--ready{% endif %}">
+                <span
+                    class="schedule-draft-status{% if draft_exists %} schedule-draft-status--ready{% endif %}"
+                    data-schedule-status-tooltip
+                    data-schedule-status-variant="{% if draft_exists %}planned{% else %}empty{% endif %}"
+                    data-tooltip-title="Статус черновика"
+                    data-tooltip-text="{% if draft_exists %}Черновик создан для планируемого года. Его можно проверять, дорабатывать и отправлять на согласование.{% else %}Черновик ещё не создан. Он появится после завершения сбора пожеланий и запуска планирования.{% endif %}"
+                >
                     <span class="material-icons-sharp" aria-hidden="true">{{ draft_status.icon }}</span>
                     {{ draft_status.label }}
                 </span>
@@ -42,6 +48,10 @@
                 <button type="button"
                         class="app-modal__button app-modal__button--primary"
                         data-draft-auto-open
+                        data-schedule-status-tooltip
+                        data-schedule-status-variant="medium"
+                        data-tooltip-title="Добрать незакрытые дни"
+                        data-tooltip-text="Запускает автоматический подбор дат для сотрудников, у которых в черновике остались незакрытые дни."
                         data-auto-manual-count="{{ draft_summary.manual }}"
                         data-auto-plan-days="{{ draft_summary.remaining_plan_days_label }}"
                         data-auto-blocking-count="{{ draft_summary.blocking }}"
@@ -103,32 +113,32 @@
 
         <div class="schedule-draft-panel__scroll">
             <div class="schedule-draft-summary" aria-label="Сводка черновика">
-                <article class="schedule-draft-summary__card schedule-draft-summary__card--primary">
+                <article class="schedule-draft-summary__card schedule-draft-summary__card--primary" data-schedule-status-tooltip data-schedule-status-variant="planned" data-tooltip-title="Размещено" data-tooltip-text="Сотрудники, которым система уже поставила даты в рабочий черновик графика.">
                     <span>Размещено</span>
                     <strong>{{ draft_summary.placed }}</strong>
                     <small>Попали в рабочий черновик</small>
                 </article>
-                <article>
+                <article data-schedule-status-tooltip data-schedule-status-variant="{% if draft_summary.remaining_plan_days_label != '0 д.' %}info{% else %}planned{% endif %}" data-tooltip-title="К распределению" data-tooltip-text="Дни планового отпуска, которые ещё нужно распределить без учёта срочных дедлайнов прошлых периодов.">
                     <span>К распределению</span>
                     <strong>{{ draft_summary.remaining_plan_days_label }}</strong>
                     <small>Без срочных дедлайнов</small>
                 </article>
-                <article class="schedule-draft-summary__card--blocker">
+                <article class="schedule-draft-summary__card--blocker" data-schedule-status-tooltip data-schedule-status-variant="{% if draft_summary.blocking %}conflict{% else %}planned{% endif %}" data-tooltip-title="Блокирует" data-tooltip-text="Сотрудники со срочным остатком, который нужно закрыть до срока использования, иначе график нельзя безопасно согласовать.">
                     <span>Блокирует</span>
                     <strong>{{ draft_summary.blocking }}</strong>
                     <small>{{ draft_summary.blocking_days_label }} срочного остатка</small>
                 </article>
-                <article>
+                <article data-schedule-status-tooltip data-schedule-status-variant="{% if draft_summary.manual %}medium{% else %}planned{% endif %}" data-tooltip-title="Вручную" data-tooltip-text="Сотрудники, которым требуется ручной выбор периода или отдельное решение HR/руководителя.">
                     <span>Вручную</span>
                     <strong>{{ draft_summary.manual }}</strong>
                     <small>Сотрудников требуют решения</small>
                 </article>
-                <article class="schedule-draft-summary__card--risk">
+                <article class="schedule-draft-summary__card--risk" data-schedule-status-tooltip data-schedule-status-variant="{% if draft_summary.high_risk %}risk{% else %}planned{% endif %}" data-tooltip-title="Высокий риск" data-tooltip-text="Пункты черновика с высоким риском без жёсткого конфликта. Их можно оставить после проверки.">
                     <span>Высокий риск</span>
                     <strong>{{ draft_summary.high_risk }}</strong>
                     <small>Можно оставить после проверки</small>
                 </article>
-                <article class="schedule-draft-summary__card--conflict">
+                <article class="schedule-draft-summary__card--conflict" data-schedule-status-tooltip data-schedule-status-variant="{% if draft_summary.conflicts %}conflict{% else %}planned{% endif %}" data-tooltip-title="Конфликты" data-tooltip-text="Пункты черновика, которые нарушают правила состава отдела или группы и требуют разбора до согласования.">
                     <span>Конфликты</span>
                     <strong>{{ draft_summary.conflicts }}</strong>
                     <small>{% if draft_summary.conflicts %}Нужно разбирать до согласования{% else %}Можно согласовывать после ручных задач{% endif %}</small>
@@ -203,7 +213,7 @@
                 <div class="schedule-draft-list">
                     {% for row in placed_rows %}
                     <article id="draft-item-{{ row.item.id }}" class="schedule-draft-card{% if row.planning_need.has_blocker %} schedule-draft-card--blocker{% endif %}{% if row.has_conflict %} schedule-draft-card--conflict{% endif %}{% if row.has_high_risk %} schedule-draft-card--risk{% endif %}">
-                        <a class="schedule-draft-card__profile schedule-draft-card__profile--{{ row.role_variant }}" href="{{ row.profile_url }}" data-app-link title="Открыть профиль {{ row.employee_name }}" aria-label="Открыть профиль {{ row.employee_name }}. {{ row.role_label }}">
+                        <a class="schedule-draft-card__profile schedule-draft-card__profile--{{ row.role_variant }}" href="{{ row.profile_url }}" data-app-link aria-label="Открыть профиль {{ row.employee_name }}. {{ row.role_label }}" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="{{ row.role_label }}" data-tooltip-text="Открыть профиль сотрудника {{ row.employee_name }}.">
                             {% if row.role_icon_type == 'symbol' %}
                             <span class="schedule-draft-card__profile-symbol" aria-hidden="true">{{ row.role_icon }}</span>
                             {% else %}
@@ -227,17 +237,17 @@
                                 {% endfor %}
                             </div>
                         </div>
-                        <div class="schedule-draft-card__assignment">
+                        <div class="schedule-draft-card__assignment" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Назначено" data-tooltip-text="Период поставлен в черновик графика. Пока график не утверждён, это плановая запись.">
                             <span>Назначено</span>
                             <strong>{{ row.period_label }}</strong>
                             <small>{{ row.chargeable_days_label }} · {{ row.source_hint }}</small>
                         </div>
                         <div class="schedule-draft-card__metrics">
-                            <span class="schedule-draft-issue">
+                            <span class="schedule-draft-issue" data-schedule-status-tooltip data-schedule-status-variant="{% if row.has_conflict %}conflict{% elif row.has_high_risk %}risk{% else %}planned{% endif %}" data-tooltip-title="{{ row.issue_label }}" data-tooltip-text="{% if row.has_conflict %}В периоде есть конфликт состава, который нужно проверить до согласования.{% elif row.has_high_risk %}Период отмечен высоким риском, но без жёсткого конфликта состава.{% else %}Для этого пункта черновика критичных проблем не найдено.{% endif %}">
                                 <span class="material-icons-sharp" aria-hidden="true">{{ row.issue_icon }}</span>
                                 {{ row.issue_label }}
                             </span>
-                            <span class="schedule-draft-card__metric schedule-draft-card__metric--plan">
+                            <span class="schedule-draft-card__metric schedule-draft-card__metric--plan" data-schedule-status-tooltip data-schedule-status-variant="{% if row.planning_need.has_blocker %}conflict{% elif row.planning_need.needs_manual_attention %}medium{% else %}planned{% endif %}" data-tooltip-title="План сотрудника" data-tooltip-text="Сравнение уже размещённых дней с целевой нормой сотрудника на планируемый год.">
                                 <span class="material-icons-sharp" aria-hidden="true">{{ row.planning_need.status.icon }}</span>
                                 <span>План</span>
                                 <strong>{{ row.planning_need.placed_days_label }} / {{ row.planning_need.target_days_label }}</strong>
@@ -245,13 +255,17 @@
                                         class="schedule-draft-card__metric-link"
                                         data-draft-day-calculation-open
                                         data-modal-open="schedule-draft-day-calculation-modal"
+                                        data-schedule-status-tooltip
+                                        data-schedule-status-variant="info"
+                                        data-tooltip-title="Расчёт дней"
+                                        data-tooltip-text="Открывает расшифровку нормы, размещённых дней и остатка по сотруднику."
                                         data-calculation-url="{{ row.day_calculation_url }}"
                                         data-calculation-employee="{{ row.employee_name }}">
                                     Расчёт
                                 </button>
                             </span>
                             {% if row.ai_decision %}
-                            <span class="schedule-draft-card__metric schedule-draft-card__metric--ai">
+                            <span class="schedule-draft-card__metric schedule-draft-card__metric--ai" data-schedule-status-tooltip data-schedule-status-variant="{% if row.ai_decision.variant %}{{ row.ai_decision.variant }}{% else %}info{% endif %}" data-tooltip-title="Оценка модуля" data-tooltip-text="{{ row.ai_decision.explanation|default:'Нейромодуль оценил качество выбранного периода с учётом правил и предпочтений.' }}">
                                 <span class="material-icons-sharp" aria-hidden="true">psychology_alt</span>
                                 <span>Оценка модуля</span>
                                 <strong>{{ row.ai_decision.score_label }}</strong>
@@ -262,7 +276,7 @@
                             {% endif %}
                         </div>
                         <div class="schedule-draft-card__actions">
-                            <a class="schedule-draft-card__action schedule-draft-card__action--calendar" href="{{ row.calendar_url }}" data-app-link>
+                            <a class="schedule-draft-card__action schedule-draft-card__action--calendar" href="{{ row.calendar_url }}" data-app-link data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Показать на графике" data-tooltip-text="Открывает годовой график и фокусирует строку этого сотрудника.">
                                 <span class="material-icons-sharp" aria-hidden="true">calendar_month</span>
                                 <span>Показать на графике</span>
                             </a>
@@ -270,6 +284,10 @@
                                     class="schedule-draft-card__action schedule-draft-card__action--review"
                                     data-draft-review-open
                                     data-modal-open="schedule-draft-review-modal"
+                                    data-schedule-status-tooltip
+                                    data-schedule-status-variant="{% if row.feedback.summary.total %}medium{% else %}info{% endif %}"
+                                    data-tooltip-title="Проверка"
+                                    data-tooltip-text="Открывает проверку выбранного периода, альтернативы и обратную связь по рекомендации модуля."
                                     data-review-url="{{ row.review_url }}">
                                 <span class="material-icons-sharp" aria-hidden="true">fact_check</span>
                                 <span>Проверка</span>
@@ -278,7 +296,7 @@
                                 {% endif %}
                             </button>
                             {% if row.planning_need.needs_manual_attention %}
-                            <a class="schedule-draft-card__action schedule-draft-card__action--task schedule-draft-card__task-link" href="#{{ row.manual_anchor }}" data-draft-task-link>
+                            <a class="schedule-draft-card__action schedule-draft-card__action--task schedule-draft-card__task-link" href="#{{ row.manual_anchor }}" data-draft-task-link data-schedule-status-tooltip data-schedule-status-variant="medium" data-tooltip-title="К задаче" data-tooltip-text="Прокручивает к ручной задаче по этому сотруднику ниже на странице.">
                                 <span class="material-icons-sharp" aria-hidden="true">south</span>
                                 <span>К задаче</span>
                             </a>
@@ -287,6 +305,10 @@
                             <button type="button"
                                     class="schedule-draft-card__action schedule-draft-card__action--task"
                                     data-draft-manual-open
+                                    data-schedule-status-tooltip
+                                    data-schedule-status-variant="medium"
+                                    data-tooltip-title="Изменить пакет"
+                                    data-tooltip-text="Открывает ручную доработку пакета отпусков для выбранного сотрудника."
                                     data-manual-action-url="{{ row.rework_action_url }}"
                                     data-manual-package-preview-url="{{ row.rework_package_preview_url }}"
                                     data-manual-suggestions-url="{{ row.rework_suggestions_url }}"
@@ -342,7 +364,7 @@
                 <div class="schedule-draft-manual-list">
                     {% for row in manual_rows %}
                     <article id="{{ row.manual_anchor }}" class="schedule-draft-manual-card schedule-draft-manual-card--{{ row.reason.kind }}{% if row.planning_need.has_blocker %} schedule-draft-manual-card--blocker{% endif %}">
-                        <a class="schedule-draft-card__profile schedule-draft-card__profile--{{ row.role_variant }}" href="{{ row.profile_url }}" data-app-link title="Открыть профиль {{ row.employee_name }}" aria-label="Открыть профиль {{ row.employee_name }}. {{ row.role_label }}">
+                        <a class="schedule-draft-card__profile schedule-draft-card__profile--{{ row.role_variant }}" href="{{ row.profile_url }}" data-app-link aria-label="Открыть профиль {{ row.employee_name }}. {{ row.role_label }}" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="{{ row.role_label }}" data-tooltip-text="Открыть профиль сотрудника {{ row.employee_name }}.">
                             {% if row.role_icon_type == 'symbol' %}
                             <span class="schedule-draft-card__profile-symbol" aria-hidden="true">{{ row.role_icon }}</span>
                             {% else %}
@@ -367,16 +389,16 @@
                             </div>
                         </div>
                         <div class="schedule-draft-manual-card__periods">
-                            <article>
+                            <article data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Основной период" data-tooltip-text="Период, который сотрудник указал как основной в пожеланиях.">
                                 <span>Основной</span>
                                 <strong>{{ row.primary_label }}</strong>
                             </article>
-                            <article>
+                            <article data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Запасной период" data-tooltip-text="Запасной вариант из пожеланий сотрудника, если основной период неудобен для графика.">
                                 <span>Запасной</span>
                                 <strong>{{ row.backup_label }}</strong>
                             </article>
                         </div>
-                        <div class="schedule-draft-card__plan schedule-draft-plan schedule-draft-plan--{{ row.planning_need.status.tone }}">
+                        <div class="schedule-draft-card__plan schedule-draft-plan schedule-draft-plan--{{ row.planning_need.status.tone }}" data-schedule-status-tooltip data-schedule-status-variant="{% if row.planning_need.has_blocker %}conflict{% elif row.planning_need.needs_manual_attention %}medium{% else %}planned{% endif %}" data-tooltip-title="План сотрудника" data-tooltip-text="{{ row.planning_need.action_text }}">
                             <span>
                                 <span class="material-icons-sharp" aria-hidden="true">{{ row.planning_need.status.icon }}</span>
                                 {{ row.planning_need.status.label }}
@@ -386,13 +408,17 @@
                                     class="schedule-draft-plan__calculation"
                                     data-draft-day-calculation-open
                                     data-modal-open="schedule-draft-day-calculation-modal"
+                                    data-schedule-status-tooltip
+                                    data-schedule-status-variant="info"
+                                    data-tooltip-title="Расчёт дней"
+                                    data-tooltip-text="Открывает расшифровку нормы, размещённых дней и остатка по сотруднику."
                                     data-calculation-url="{{ row.day_calculation_url }}"
                                     data-calculation-employee="{{ row.employee_name }}">
                                 Расчёт
                             </button>
                             <div class="schedule-draft-plan__breakdown" aria-label="Состав плановой цели">
                                 {% for item in row.planning_need.plan_breakdown %}
-                                <span class="schedule-draft-plan__chip schedule-draft-plan__chip--{{ item.tone }}">
+                                <span class="schedule-draft-plan__chip schedule-draft-plan__chip--{{ item.tone }}" data-schedule-status-tooltip data-schedule-status-variant="{% if item.tone == 'danger' %}conflict{% elif item.tone == 'warning' %}risk{% else %}info{% endif %}" data-tooltip-title="{{ item.label }}" data-tooltip-text="Часть плановой цели сотрудника, которую нужно закрыть в графике или отдельным решением.">
                                     {{ item.label }} <b>{{ item.value }}</b>
                                 </span>
                                 {% endfor %}
@@ -409,19 +435,27 @@
                                 {% if row.urgent_closure.active_request_url %}
                                 <a href="{{ row.urgent_closure.active_request_url }}?from={{ draft_return_source }}&amp;back_url={{ current_path|urlencode }}&amp;back_label={{ draft_back_label|urlencode }}"
                                    class="app-modal__button app-modal__button--secondary schedule-draft-manual-card__button"
-                                   data-app-link>
+                                   data-app-link
+                                   data-schedule-status-tooltip
+                                   data-schedule-status-variant="info"
+                                   data-tooltip-title="Открыть согласование"
+                                   data-tooltip-text="Открывает уже созданное согласование срочного остатка по этому сотруднику.">
                                     <span class="material-icons-sharp" aria-hidden="true">open_in_new</span>
                                     Открыть согласование
                                 </a>
                                 {% elif row.urgent_closure.can_create %}
                                 <button type="button"
                                         class="app-modal__button app-modal__button--secondary schedule-draft-manual-card__button"
-                                        data-modal-open="{{ row.urgent_closure.modal_id }}">
+                                        data-modal-open="{{ row.urgent_closure.modal_id }}"
+                                        data-schedule-status-tooltip
+                                        data-schedule-status-variant="conflict"
+                                        data-tooltip-title="Закрыть в {{ row.urgent_closure.closure_year }}"
+                                        data-tooltip-text="Создаёт согласование для срочного остатка, который нужно закрыть до срока использования.">
                                     <span class="material-icons-sharp" aria-hidden="true">event_busy</span>
                                     Закрыть в {{ row.urgent_closure.closure_year }}
                                 </button>
                                 {% else %}
-                                <span class="schedule-draft-manual-card__state">
+                                <span class="schedule-draft-manual-card__state" data-schedule-status-tooltip data-schedule-status-variant="conflict" data-tooltip-title="Нет безопасных дат" data-tooltip-text="Система не нашла период, который можно поставить без нарушения жёстких правил.">
                                     <span class="material-icons-sharp" aria-hidden="true">info</span>
                                     Нет безопасных дат
                                 </span>
@@ -430,6 +464,10 @@
                             <button type="button"
                                     class="app-modal__button app-modal__button--secondary schedule-draft-manual-card__button"
                                     data-draft-manual-open
+                                    data-schedule-status-tooltip
+                                    data-schedule-status-variant="{% if row.planning_need.has_blocker %}conflict{% else %}medium{% endif %}"
+                                    data-tooltip-title="{% if row.planning_need.has_blocker %}Поставить до срока{% else %}Распределить{% endif %}"
+                                    data-tooltip-text="Открывает ручное размещение периода для сотрудника с пересчётом дней и риска."
                                     data-manual-action-url="{{ row.manual_place_url }}"
                                     data-manual-preview-url="{{ row.manual_preview_url }}"
                                     data-manual-package-preview-url="{{ row.manual_package_preview_url }}"

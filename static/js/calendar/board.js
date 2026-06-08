@@ -34,10 +34,7 @@
             url.searchParams.delete("calendar_focus_end");
         }
 
-        function stripPlanningContextParams(url) {
-            if (url.searchParams.get("from") !== "schedule_planning") {
-                return;
-            }
+        function stripNavigationContextParams(url) {
             url.searchParams.delete("from");
             url.searchParams.delete("back_url");
             url.searchParams.delete("back_label");
@@ -47,7 +44,7 @@
             const url = new URL(value || window.location.href, window.location.href);
             stripModalParams(url);
             if (!context.isPlanningContext) {
-                stripPlanningContextParams(url);
+                stripNavigationContextParams(url);
             }
             return url.href;
         }
@@ -220,7 +217,7 @@
             section.classList.toggle("is-collapsed", isCollapsed);
             if (toggle) {
                 toggle.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
-                toggle.setAttribute("title", isCollapsed ? "Развернуть" : "Свернуть");
+                toggle.removeAttribute("title");
             }
             if (body) {
                 body.setAttribute("aria-hidden", isCollapsed ? "true" : "false");

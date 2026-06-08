@@ -1,0 +1,57 @@
+<div class="page-hero__toolset page-hero__toolset--analytics">
+    <form id="analytics-filter-form" method="get" class="employee-hero-filter employee-hero-filter--toolbar employee-hero-filter--compound analytics-hero-filter" data-analytics-filters aria-label="Фильтры аналитики">
+        <div class="employee-select employee-select--toolbar employee-select--floating analytics-select analytics-select--year" data-employee-select data-employee-select-menu-min-width="180">
+            <select id="analytics-year" name="year" class="employee-select__native">
+                {% for year_value in analytics_available_years %}
+                <option value="{{ year_value }}" {% if year_value == analytics_filters.selected_year %}selected{% endif %}>{{ year_value }}</option>
+                {% endfor %}
+            </select>
+            <button type="button" class="employee-select__trigger" data-employee-select-trigger data-employee-select-label="Год" aria-haspopup="listbox" aria-expanded="false">
+                <span class="employee-select__compact-icon material-icons-sharp" aria-hidden="true">calendar_month</span>
+                <span class="employee-select__value" data-employee-select-value>{{ analytics_filters.selected_year }}</span>
+                <span class="employee-select__chevron material-icons-sharp" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                {% for year_value in analytics_available_years %}
+                <button type="button" class="employee-select__option {% if year_value == analytics_filters.selected_year %}is-selected{% endif %}" data-employee-select-option data-value="{{ year_value }}" role="option" aria-selected="{% if year_value == analytics_filters.selected_year %}true{% else %}false{% endif %}">
+                    {{ year_value }}
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="employee-select employee-select--toolbar employee-select--floating analytics-select analytics-select--department" data-employee-select data-employee-select-menu-min-width="300">
+            <select id="analytics-department" name="department" class="employee-select__native">
+                <option value="all" {% if analytics_filters.selected_department == 'all' %}selected{% endif %}>Все отделы</option>
+                {% for department in analytics_department_options %}
+                <option value="{{ department.id }}" {% if department.id|stringformat:"s" == analytics_filters.selected_department|stringformat:"s" %}selected{% endif %}>{{ department.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="button" class="employee-select__trigger" data-employee-select-trigger data-employee-select-label="Отдел" aria-haspopup="listbox" aria-expanded="false">
+                <span class="employee-select__compact-icon material-icons-sharp" aria-hidden="true">apartment</span>
+                <span class="employee-select__value" data-employee-select-value>
+                    {% if analytics_filters.selected_department == 'all' %}
+                    Все отделы
+                    {% else %}
+                        {% for department in analytics_department_options %}
+                            {% if department.id|stringformat:"s" == analytics_filters.selected_department|stringformat:"s" %}
+                    {{ department.name }}
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+                </span>
+                <span class="employee-select__chevron material-icons-sharp" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                <button type="button" class="employee-select__option {% if analytics_filters.selected_department == 'all' %}is-selected{% endif %}" data-employee-select-option data-value="all" role="option" aria-selected="{% if analytics_filters.selected_department == 'all' %}true{% else %}false{% endif %}">
+                    Все отделы
+                </button>
+                {% for department in analytics_department_options %}
+                <button type="button" class="employee-select__option {% if department.id|stringformat:"s" == analytics_filters.selected_department|stringformat:"s" %}is-selected{% endif %}" data-employee-select-option data-value="{{ department.id }}" role="option" aria-selected="{% if department.id|stringformat:"s" == analytics_filters.selected_department|stringformat:"s" %}true{% else %}false{% endif %}">
+                    {{ department.name }}
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+    </form>
+</div>

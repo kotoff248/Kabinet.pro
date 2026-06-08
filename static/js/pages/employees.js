@@ -400,9 +400,21 @@ function initEmployeesPage() {
         rememberListHref();
     }
 
-    function createCell(label, value, extraClass) {
+    function applyTooltip(node, options) {
+        if (!node || !options) {
+            return node;
+        }
+        node.dataset.scheduleStatusTooltip = "";
+        node.dataset.scheduleStatusVariant = options.variant || "info";
+        node.dataset.tooltipTitle = options.title || "";
+        node.dataset.tooltipText = options.text || "";
+        return node;
+    }
+
+    function createCell(label, value, extraClass, tooltip) {
         const cell = document.createElement("div");
         cell.className = "employee-card__cell" + (extraClass ? " " + extraClass : "");
+        applyTooltip(cell, tooltip);
 
         const labelNode = document.createElement("span");
         labelNode.className = "employee-card__label";
@@ -559,8 +571,12 @@ function initEmployeesPage() {
 
         const role = document.createElement("div");
         role.className = "employee-card__role employee-card__role--" + (employee.role_variant || "employee");
-        role.title = employee.role_label || "Сотрудник";
         role.setAttribute("aria-label", employee.role_label || "Сотрудник");
+        applyTooltip(role, {
+            variant: "info",
+            title: employee.role_label || "Сотрудник",
+            text: "Роль сотрудника определяет доступные разделы и маршрут согласования заявок.",
+        });
 
         const roleIcon = document.createElement("span");
         roleIcon.className = employee.role_icon_type === "symbol" ? "employee-card__role-symbol" : "material-icons-sharp";
@@ -591,12 +607,27 @@ function initEmployeesPage() {
 
         const meta = document.createElement("div");
         meta.className = "employee-card__meta";
-        meta.appendChild(createCell("Доступный отпуск", employee.available_days + " д.", "employee-card__cell--available"));
-        meta.appendChild(createCell("Ближайший отпуск", employee.upcoming_vacation_label || "Не запланирован", "employee-card__cell--upcoming"));
+        meta.appendChild(createCell("Доступный отпуск", employee.available_days + " д.", "employee-card__cell--available", {
+            variant: Number(employee.available_days || 0) ? "planned" : "empty",
+            title: "Доступный отпуск",
+            text: "Текущий свободный остаток оплачиваемого отпуска сотрудника.",
+        }));
+        meta.appendChild(createCell("Ближайший отпуск", employee.upcoming_vacation_label || "Не запланирован", "employee-card__cell--upcoming", {
+            variant: "info",
+            title: "Ближайший отпуск",
+            text: "Самая ближайшая запись отпуска или отсутствия сотрудника.",
+        }));
 
         const status = document.createElement("div");
         status.className = "employee-card__status";
         status.innerHTML = '<span class="employee-card__label">Статус</span>';
+        applyTooltip(status, {
+            variant: employee.is_working ? "planned" : "info",
+            title: "Текущий статус",
+            text: employee.is_working
+                ? "Сотрудник сейчас в работе по графику и утверждённым заявкам."
+                : "Сотрудник сейчас находится в отпуске или другом утверждённом отсутствии.",
+        });
 
         const statusStack = document.createElement("span");
         statusStack.className = "employee-card__status-stack";

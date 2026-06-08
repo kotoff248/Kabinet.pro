@@ -5,6 +5,10 @@
     data-calendar-collapse-level="{{ heading_level }}"
     data-calendar-collapse-id="{{ group.id }}"
     data-calendar-collapse-name="{{ group.name }}"
+    data-schedule-status-tooltip
+    data-schedule-status-variant="{% if group.has_conflict %}conflict{% elif group.has_high_risk %}risk{% else %}info{% endif %}"
+    data-tooltip-title="{% if heading_level == 'department' %}Отдел{% else %}Группа{% endif %} {{ group.name }}"
+    data-tooltip-text="{{ group.employee_count_label }}{% if group.total_days_label %} · {{ group.total_days_label }}{% endif %}{% if group.has_conflict %} · есть конфликт состава{% elif group.has_high_risk %} · есть высокий риск{% endif %}. Нажмите, чтобы свернуть или раскрыть блок."
     aria-expanded="true"
 >
     <span class="calendar-row-group-heading__main">
@@ -18,13 +22,13 @@
     {% if group.has_conflict or group.has_high_risk %}
     <span class="calendar-row-group-heading__issues" aria-label="Проблемы блока">
         {% if group.has_high_risk %}
-        <span class="calendar-row-group-heading__issue calendar-row-group-heading__issue--risk">
+        <span class="calendar-row-group-heading__issue calendar-row-group-heading__issue--risk" data-schedule-status-tooltip data-schedule-status-variant="risk" data-tooltip-title="Высокий риск" data-tooltip-text="Внутри блока есть {{ group.risk_count }} записей с высоким риском без жёсткого конфликта.">
             <span class="material-icons-sharp" aria-hidden="true">bolt</span>
             <span>{{ group.risk_count }}</span>
         </span>
         {% endif %}
         {% if group.has_conflict %}
-        <span class="calendar-row-group-heading__issue calendar-row-group-heading__issue--conflict">
+        <span class="calendar-row-group-heading__issue calendar-row-group-heading__issue--conflict" data-schedule-status-tooltip data-schedule-status-variant="conflict" data-tooltip-title="Конфликт состава" data-tooltip-text="Внутри блока есть {{ group.conflict_count }} записей, нарушающих правила состава.">
             <span class="calendar-issue-symbol" aria-hidden="true">⚔</span>
             <span>{{ group.conflict_count }}</span>
         </span>

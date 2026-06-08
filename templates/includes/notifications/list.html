@@ -19,7 +19,7 @@
     </div>
     <div class="notification-card__actions">
         {% if notification.action_url %}
-        <a class="notification-action notification-action--primary" href="{{ notification.action_url }}" data-app-link>
+        <a class="notification-action notification-action--primary" href="{{ notification.action_url }}" data-app-link data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Открыть" data-tooltip-text="Перейти к объекту уведомления: заявке, переносу, графику или задаче.">
             <span class="material-icons-sharp">open_in_new</span>
             <span>Открыть</span>
         </a>
@@ -29,7 +29,7 @@
             {% csrf_token %}
             <input type="hidden" name="notification_id" value="{{ notification.id }}">
             <input type="hidden" name="action" value="mark_read">
-            <button type="submit" class="notification-action notification-action--read">
+            <button type="submit" class="notification-action notification-action--read" data-schedule-status-tooltip data-schedule-status-variant="planned" data-tooltip-title="Прочитано" data-tooltip-text="Отметить уведомление как прочитанное и оставить его в списке.">
                 <span class="material-icons-sharp">visibility</span>
                 <span>Прочитано</span>
             </button>
@@ -39,7 +39,7 @@
             {% csrf_token %}
             <input type="hidden" name="notification_id" value="{{ notification.id }}">
             <input type="hidden" name="action" value="mark_unread">
-            <button type="submit" class="notification-action notification-action--unread notification-action--icon" aria-label="Сделать непрочитанным" title="Сделать непрочитанным">
+            <button type="submit" class="notification-action notification-action--unread notification-action--icon" aria-label="Сделать непрочитанным" data-schedule-status-tooltip data-schedule-status-variant="medium" data-tooltip-title="Сделать непрочитанным" data-tooltip-text="Вернуть уведомление в статус нового.">
                 <span class="material-icons-sharp" aria-hidden="true">notifications_active</span>
             </button>
         </form>
@@ -49,7 +49,7 @@
             {% csrf_token %}
             <input type="hidden" name="notification_id" value="{{ notification.id }}">
             <input type="hidden" name="action" value="mark_done">
-            <button type="submit" class="notification-action notification-action--done">
+            <button type="submit" class="notification-action notification-action--done" data-schedule-status-tooltip data-schedule-status-variant="planned" data-tooltip-title="Выполнено" data-tooltip-text="Отметить задачу по уведомлению как выполненную.">
                 <span class="material-icons-sharp">check_circle</span>
                 <span>Выполнено</span>
             </button>
@@ -59,7 +59,7 @@
             {% csrf_token %}
             <input type="hidden" name="notification_id" value="{{ notification.id }}">
             <input type="hidden" name="action" value="mark_active">
-            <button type="submit" class="notification-action notification-action--undo-done notification-action--icon" aria-label="Вернуть в работу" title="Вернуть в работу">
+            <button type="submit" class="notification-action notification-action--undo-done notification-action--icon" aria-label="Вернуть в работу" data-schedule-status-tooltip data-schedule-status-variant="medium" data-tooltip-title="Вернуть в работу" data-tooltip-text="Снять отметку выполнения и вернуть задачу в активное состояние.">
                 <span class="material-icons-sharp" aria-hidden="true">close</span>
             </button>
         </form>
@@ -71,7 +71,10 @@
             data-notification-id="{{ notification.id }}"
             data-notification-title="{{ notification.title }}"
             aria-label="Удалить уведомление"
-            title="Удалить уведомление"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="danger"
+            data-tooltip-title="Удалить уведомление"
+            data-tooltip-text="Удаляет уведомление из списка. Данные заявки или графика при этом не меняются."
         >
             <span class="material-icons-sharp" aria-hidden="true">delete</span>
         </button>

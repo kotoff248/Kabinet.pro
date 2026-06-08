@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from django.db.models import Count
 from django.urls import reverse
@@ -132,12 +132,25 @@ def _overlaps_year_queryset(queryset, year, start_field="start_date", end_field=
 
 
 def _calendar_url(year, department_id=None, issue="all"):
-    params = {"view": "year", "year": year}
+    params = {"view": "year", "year": year, "from": "analytics"}
     if department_id:
         params["department"] = department_id
     if issue and issue != "all":
         params["issue"] = issue
     return f"{reverse('calendar')}?{urlencode(params)}"
+
+
+def _analytics_profile_url(employee_id):
+    return f"{reverse('employee_profile', args=[employee_id])}?{urlencode({'from': 'analytics'})}"
+
+
+def _profile_url_from_analytics(profile_url):
+    if not profile_url:
+        return profile_url
+    parsed = urlsplit(profile_url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query["from"] = "analytics"
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
 
 
 def _get_absent_employee_ids(employee_ids, current_date):
@@ -878,7 +891,7 @@ def _build_balance_summary(employees, year):
                 "reserved": _format_decimal(reserved),
                 "used": _format_decimal(used),
                 "is_low": available <= Decimal("7.00"),
-                "profile_url": reverse("employee_profile", args=[employee.id]),
+                "profile_url": _analytics_profile_url(employee.id),
             }
         )
 
@@ -993,10 +1006,12 @@ def _build_attention_items(department_heatmap, balance_summary, preference_summa
         items.append(
             {
                 "tone": "danger" if row.get("has_conflict") else "warning",
-                "icon": "person_alert" if row.get("has_conflict") else "bolt",
+                "icon": row.get("role_icon") or "person",
+                "icon_type": row.get("role_icon_type") or "material",
+                "icon_role_variant": row.get("role_variant") or "employee",
                 "title": row["employee_name"],
                 "text": row.get("issue_description") or "В годовом графике есть риск.",
-                "url": row["profile_url"],
+                "url": _profile_url_from_analytics(row["profile_url"]),
                 "action_label": "Профиль",
                 "priority": 2 if row.get("has_conflict") else 3,
             }

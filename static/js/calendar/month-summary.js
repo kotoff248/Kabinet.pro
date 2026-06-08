@@ -7,6 +7,16 @@
     Calendar.createMonthSummaryController = function (context) {
         let currentMonthNumber = null;
         const monthDetailRequests = new Map();
+        const calendarNavigationSources = [
+            "profile",
+            "employees",
+            "applications",
+            "departments",
+            "analytics",
+            "staffing",
+            "notifications",
+            "calendar",
+        ];
 
         function stripModalParams(url) {
             url.searchParams.delete("calendar_modal");
@@ -56,6 +66,12 @@
             return url.pathname + url.search + url.hash;
         }
 
+        function getCalendarNavigationSource() {
+            const url = new URL(window.location.href);
+            const source = url.searchParams.get("from") || "";
+            return calendarNavigationSources.indexOf(source) === -1 ? "calendar" : source;
+        }
+
         function syncCurrentMonthSummaryHistoryState(focusTarget) {
             if (!currentMonthNumber) {
                 return;
@@ -74,7 +90,7 @@
             }
 
             const url = new URL(profileUrl, window.location.href);
-            url.searchParams.set("from", "calendar");
+            url.searchParams.set("from", getCalendarNavigationSource());
             url.searchParams.set("back_url", buildMonthSummaryReturnHref(focusTarget, scrollTop));
             url.searchParams.set("back_label", "К графику");
             return url.href;
@@ -234,8 +250,13 @@
                         const link = document.createElement("a");
                         link.className = linkClass;
                         link.dataset.appLink = "";
-                        link.title = "Открыть профиль сотрудника " + employee.name;
                         link.setAttribute("aria-label", "Открыть профиль сотрудника " + employee.name);
+                        setTooltip(
+                            link,
+                            "Профиль сотрудника",
+                            "Открыть профиль сотрудника " + employee.name + ".",
+                            "info"
+                        );
                         link.textContent = employee.name;
                         bindProfileReturnState(link, employee.profile_url, "issues");
                         target.appendChild(link);
@@ -426,6 +447,12 @@
                     const action = document.createElement("button");
                     action.type = "button";
                     action.className = "calendar-month-drawer__problem-action";
+                    setTooltip(
+                        action,
+                        "Показать участников",
+                        "Оставит на годовом графике только сотрудников, которые участвуют именно в этом конфликте.",
+                        "conflict"
+                    );
                     action.innerHTML = '<span class="material-icons-sharp" aria-hidden="true">group</span><span>Показать участников</span>';
                     action.addEventListener("click", function () {
                         navigateToProblemScope(problem, detail);
@@ -468,6 +495,12 @@
                 title.textContent = group.department + " · " + group.production_group;
                 const meta = document.createElement("span");
                 meta.textContent = formatEmployeeCount(group.employee_count) + " · " + formatDays(group.days);
+                setTooltip(
+                    head,
+                    "Группа отсутствующих",
+                    group.department + " · " + group.production_group + ": " + formatEmployeeCount(group.employee_count) + ", " + formatDays(group.days) + ".",
+                    "info"
+                );
                 head.appendChild(title);
                 head.appendChild(meta);
                 item.appendChild(head);
@@ -483,8 +516,13 @@
                     if (hasProfile) {
                         employeeItem.classList.add("calendar-month-drawer__employee--link");
                         employeeItem.dataset.appLink = "";
-                        employeeItem.title = "Открыть профиль сотрудника " + employee.employee_name;
                         employeeItem.setAttribute("aria-label", "Открыть профиль сотрудника " + employee.employee_name);
+                        setTooltip(
+                            employeeItem,
+                            "Профиль сотрудника",
+                            "Открыть профиль сотрудника " + employee.employee_name + ".",
+                            "info"
+                        );
                         bindProfileReturnState(employeeItem, employee.profile_url, "groups");
                     }
                     const name = document.createElement("strong");

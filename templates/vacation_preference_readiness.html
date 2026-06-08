@@ -25,12 +25,18 @@
                 </p>
             </div>
             <div class="panel-heading__actions preference-readiness-panel__actions">
-                <div class="preference-readiness-status preference-readiness-status--{% if is_finished %}finished{% elif is_open %}open{% else %}not-started{% endif %}">
+                <div
+                    class="preference-readiness-status preference-readiness-status--{% if is_finished %}finished{% elif is_open %}open{% else %}not-started{% endif %}"
+                    data-schedule-status-tooltip
+                    data-schedule-status-variant="{% if is_finished %}planned{% elif is_open %}medium{% else %}empty{% endif %}"
+                    data-tooltip-title="Статус сбора"
+                    data-tooltip-text="{% if is_finished %}Сбор завершён, можно создавать или открывать черновик графика.{% elif is_open %}Сотрудники ещё могут заполнить пожелания до срока сбора.{% else %}Сбор пожеланий ещё не запущен для выбранного года.{% endif %}"
+                >
                     <span class="material-icons-sharp" aria-hidden="true">{% if is_finished %}task_alt{% elif is_open %}pending_actions{% else %}fact_check{% endif %}</span>
                     <span>{% if is_finished %}Готово к черновику{% elif is_open %}Сбор идет{% else %}Не начат{% endif %}</span>
                 </div>
                 {% if can_start_collection %}
-                <button type="button" class="calendar-action-btn calendar-action-btn--preferences" data-modal-open="preference-collection-modal" title="Начать сбор пожеланий" aria-label="Начать сбор пожеланий">
+                <button type="button" class="calendar-action-btn calendar-action-btn--preferences" data-modal-open="preference-collection-modal" aria-label="Начать сбор пожеланий" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Начать сбор пожеланий" data-tooltip-text="Открывает форму запуска сбора: сотрудники получат задачу указать основной и запасной период.">
                     <span class="material-icons-sharp" aria-hidden="true">fact_check</span>
                     <span class="calendar-action-btn__label">Начать сбор пожеланий</span>
                 </button>
@@ -39,14 +45,14 @@
                 <form method="post" action="{{ finish_url }}" class="preference-readiness-finish">
                     {% csrf_token %}
                     <input type="hidden" name="next" value="{{ current_path }}">
-                    <button type="submit" class="app-modal__button app-modal__button--primary">
+                    <button type="submit" class="app-modal__button app-modal__button--primary" data-schedule-status-tooltip data-schedule-status-variant="planned" data-tooltip-title="Завершить сбор" data-tooltip-text="Закрывает сбор пожеланий и фиксирует ответы для формирования черновика графика.">
                         <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
                         Завершить сбор
                     </button>
                 </form>
                 {% endif %}
                 {% if draft_status.exists %}
-                <a href="{{ draft_status.url }}" class="app-modal__button app-modal__button--primary preference-readiness-draft-link" data-app-link>
+                <a href="{{ draft_status.url }}" class="app-modal__button app-modal__button--primary preference-readiness-draft-link" data-app-link data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Открыть черновик" data-tooltip-text="Переходит к рабочему черновику графика на выбранный год.">
                     <span class="material-icons-sharp" aria-hidden="true">edit_calendar</span>
                     Открыть черновик
                 </a>
@@ -54,7 +60,7 @@
                 <form method="post" action="{{ draft_status.create_url }}" class="preference-readiness-finish">
                     {% csrf_token %}
                     <input type="hidden" name="next" value="{{ draft_status.create_next_url }}">
-                    <button type="submit" class="app-modal__button app-modal__button--primary">
+                    <button type="submit" class="app-modal__button app-modal__button--primary" data-schedule-status-tooltip data-schedule-status-variant="planned" data-tooltip-title="Создать черновик" data-tooltip-text="Запускает создание рабочей версии графика на основе пожеланий и правил состава.">
                         <span class="material-icons-sharp" aria-hidden="true">auto_awesome_motion</span>
                         Создать черновик
                     </button>
@@ -65,22 +71,22 @@
 
         <div class="preference-readiness-panel__scroll">
             <div class="preference-readiness-summary" aria-label="Сводка готовности сбора">
-                <article class="preference-readiness-summary__card preference-readiness-summary__card--primary">
+                <article class="preference-readiness-summary__card preference-readiness-summary__card--primary" data-schedule-status-tooltip data-schedule-status-variant="{% if summary.ready_percentage == 100 %}planned{% elif summary.ready_percentage %}medium{% else %}empty{% endif %}" data-tooltip-title="Готовность" data-tooltip-text="Доля сотрудников, которые уже дали ответ по пожеланиям на выбранный год.">
                     <span>Готовность</span>
                     <strong>{{ summary.ready_percentage }}%</strong>
                     <small>{{ summary.answered }} из {{ summary.total }} ответили</small>
                 </article>
-                <article>
+                <article data-schedule-status-tooltip data-schedule-status-variant="planned" data-tooltip-title="Ответили" data-tooltip-text="Сотрудники, которые указали основной и запасной период отпуска.">
                     <span>Ответили</span>
                     <strong>{{ summary.filled }}</strong>
                     <small>Указали основной и запасной период</small>
                 </article>
-                <article>
+                <article data-schedule-status-tooltip data-schedule-status-variant="{% if summary.not_answered %}risk{% else %}planned{% endif %}" data-tooltip-title="Не ответили" data-tooltip-text="Сотрудники без ответа. Для них система сможет подобрать только безопасные периоды без учёта пожеланий.">
                     <span>Не ответили</span>
                     <strong>{{ summary.not_answered }}</strong>
                     <small>Система поставит только безопасные периоды</small>
                 </article>
-                <article>
+                <article data-schedule-status-tooltip data-schedule-status-variant="{% if summary.no_preferences %}info{% else %}planned{% endif %}" data-tooltip-title="Без пожеланий" data-tooltip-text="Сотрудники, которые ответили, но не указали конкретные даты. Их отпуск можно ставить по необходимости графика.">
                     <span>Без пожеланий</span>
                     <strong>{{ summary.no_preferences }}</strong>
                     <small>Даты можно ставить по необходимости</small>
@@ -105,6 +111,10 @@
                             name="status"
                             value="{{ filter.key }}"
                             data-filter-url="{{ filter.url }}"
+                            data-schedule-status-tooltip
+                            data-schedule-status-variant="{% if filter.count %}info{% else %}empty{% endif %}"
+                            data-tooltip-title="{{ filter.label }}"
+                            data-tooltip-text="Показать сотрудников в этом статусе готовности. Сейчас в фильтре: {{ filter.count }}."
                             class="segmented-control__item{% if filter.active %} active{% endif %}">
                         <span>
                             <em>{{ filter.label }}</em>
@@ -159,8 +169,11 @@
                         <a class="preference-readiness-card__profile-icon preference-readiness-card__profile-icon--{{ row.role_variant }}"
                            href="{% url 'employee_profile' row.employee.id %}?from=preferences&amp;back_url={{ current_path|urlencode }}&amp;back_label=%D0%9A%20%D1%81%D0%B1%D0%BE%D1%80%D1%83"
                            data-app-link
-                           title="Открыть профиль сотрудника {{ row.employee.full_name }}"
-                           aria-label="Открыть профиль сотрудника {{ row.employee.full_name }}">
+                           aria-label="Открыть профиль сотрудника {{ row.employee.full_name }}"
+                           data-schedule-status-tooltip
+                           data-schedule-status-variant="info"
+                           data-tooltip-title="{{ row.role_label }}"
+                           data-tooltip-text="Открыть профиль сотрудника {{ row.employee.full_name }}.">
                             {% if row.role_icon_type == 'symbol' %}
                             <span class="preference-readiness-card__profile-symbol" aria-hidden="true">{{ row.role_icon }}</span>
                             {% else %}
@@ -172,12 +185,12 @@
                             <p>{{ row.department_name }} · {{ row.group_name }} · {{ row.position }}</p>
                         </div>
                     </div>
-                    <div class="preference-readiness-card__status preference-readiness-card__status--{{ row.status.key }}">
+                    <div class="preference-readiness-card__status preference-readiness-card__status--{{ row.status.key }}" data-schedule-status-tooltip data-schedule-status-variant="{% if row.status.key == 'filled' %}planned{% elif row.status.key == 'not_answered' %}risk{% else %}info{% endif %}" data-tooltip-title="{{ row.status.label }}" data-tooltip-text="Статус ответа сотрудника в текущем сборе пожеланий.">
                         <span class="material-icons-sharp" aria-hidden="true">{{ row.status.icon }}</span>
                         {{ row.status.label }}
                     </div>
                     <div class="preference-readiness-card__periods">
-                        <article>
+                        <article data-schedule-status-tooltip data-schedule-status-variant="{% if row.primary.start_date and row.primary.end_date %}info{% else %}empty{% endif %}" data-tooltip-title="Основной период" data-tooltip-text="Первый желаемый период сотрудника для будущего графика.">
                             <span>Основной период</span>
                             <strong>
                                 {% if row.primary.start_date and row.primary.end_date %}
@@ -187,7 +200,7 @@
                                 {% endif %}
                             </strong>
                         </article>
-                        <article>
+                        <article data-schedule-status-tooltip data-schedule-status-variant="{% if row.backup.start_date and row.backup.end_date %}info{% else %}empty{% endif %}" data-tooltip-title="Запасной период" data-tooltip-text="Второй вариант периода, если основной конфликтует с правилами или нагрузкой отдела.">
                             <span>Запасной период</span>
                             <strong>
                                 {% if row.backup.start_date and row.backup.end_date %}
@@ -198,7 +211,7 @@
                             </strong>
                         </article>
                     </div>
-                    <div class="preference-readiness-card__comment">
+                    <div class="preference-readiness-card__comment" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Остаток дней" data-tooltip-text="Показывает, как сотрудник предпочитает распределить дни, которые не вошли в основной и запасной период.">
                         <span>Остаток дней</span>
                         <p>{{ row.remainder_policy_label }}</p>
                         {% if row.comment %}

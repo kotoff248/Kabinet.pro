@@ -5,8 +5,11 @@
             class="calendar-drawer__profile-link calendar-drawer__profile-link--{{ selected_employee_detail.role_variant|default:'employee' }}{% if not selected_employee_detail.profile_url %} is-hidden{% endif %}"
             href="{{ selected_employee_detail.profile_url|default:'#' }}"
             data-app-link
-            title="{% if selected_employee_detail %}Открыть профиль сотрудника {{ selected_employee_detail.employee_name }}{% else %}Открыть профиль сотрудника{% endif %}"
             aria-label="{% if selected_employee_detail %}Открыть профиль сотрудника {{ selected_employee_detail.employee_name }}. {{ selected_employee_detail.role_label }}{% else %}Открыть профиль сотрудника{% endif %}"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="info"
+            data-tooltip-title="{% if selected_employee_detail %}{{ selected_employee_detail.role_label }}{% else %}Профиль{% endif %}"
+            data-tooltip-text="{% if selected_employee_detail %}Открыть профиль сотрудника {{ selected_employee_detail.employee_name }}.{% else %}Открыть профиль сотрудника.{% endif %}"
         >
             {% if selected_employee_detail.role_icon_type == 'symbol' %}
             <span class="calendar-drawer__profile-symbol" aria-hidden="true">{{ selected_employee_detail.role_icon }}</span>
@@ -151,7 +154,7 @@
                     <span>Отсутствуют:</span>
                     <strong class="calendar-drawer__affected-list">
                         {% if problem.affected_employees %}
-                        {% for affected_employee in problem.affected_employees %}{% if not forloop.first %}, {% endif %}<a class="calendar-drawer__affected-link" href="{{ affected_employee.profile_url }}" data-app-link title="Открыть профиль сотрудника {{ affected_employee.name }}" aria-label="Открыть профиль сотрудника {{ affected_employee.name }}">{{ affected_employee.name }}</a>{% endfor %}{% if problem.extra_affected_count %} + еще {{ problem.extra_affected_count }}{% endif %}
+                        {% for affected_employee in problem.affected_employees %}{% if not forloop.first %}, {% endif %}<a class="calendar-drawer__affected-link" href="{{ affected_employee.profile_url }}" data-app-link aria-label="Открыть профиль сотрудника {{ affected_employee.name }}" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Профиль сотрудника" data-tooltip-text="Открыть профиль сотрудника {{ affected_employee.name }}.">{{ affected_employee.name }}</a>{% endfor %}{% if problem.extra_affected_count %} + еще {{ problem.extra_affected_count }}{% endif %}
                         {% else %}
                         {{ problem.affected_names|join:', ' }}{% if problem.extra_affected_count %} + еще {{ problem.extra_affected_count }}{% endif %}
                         {% endif %}
@@ -173,6 +176,10 @@
                 id="calendar-detail-upcoming-action"
                 class="calendar-drawer__upcoming-action{% if not selected_employee_detail.upcoming_anchor %} is-hidden{% endif %}"
                 data-calendar-focus-upcoming
+                data-schedule-status-tooltip
+                data-schedule-status-variant="info"
+                data-tooltip-title="Показать ближайшую запись"
+                data-tooltip-text="Прокручивает график к ближайшей записи выбранного сотрудника."
             >
                 <span class="material-icons-sharp" aria-hidden="true">my_location</span>
                 <span>Показать</span>
@@ -195,8 +202,8 @@
                         <div class="calendar-drawer__entry-main">
                             <strong>{{ item.period_label }}</strong>
                             <span class="calendar-drawer__entry-meta">
-                                <span>{{ item.source_label }} &bull; {{ item.vacation_type_label }}</span>
-                                <span class="calendar-drawer__entry-stage calendar-drawer__entry-stage--{{ item.stage }}" title="Этап: {{ item.stage_label }}" aria-label="Этап: {{ item.stage_label }}">
+                                <span data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Источник" data-tooltip-text="Показывает, откуда появилась запись: график, заявка, перенос или ручное действие.">{{ item.source_label }} &bull; {{ item.vacation_type_label }}</span>
+                                <span class="calendar-drawer__entry-stage calendar-drawer__entry-stage--{{ item.stage }}" aria-label="Этап: {{ item.stage_label }}" data-schedule-status-tooltip data-schedule-status-variant="{% if item.stage == 'approved' %}planned{% elif item.stage == 'draft' %}medium{% else %}info{% endif %}" data-tooltip-title="Этап: {{ item.stage_label }}" data-tooltip-text="Показывает, на каком этапе находится запись: черновик, план, утверждение или фактическое отсутствие.">
                                     <span class="material-icons-sharp" aria-hidden="true">{{ item.stage_icon }}</span>
                                     <span>{{ item.stage_label }}</span>
                                 </span>
@@ -216,8 +223,8 @@
                             </span>
                         </div>
                         <div class="calendar-drawer__entry-side">
-                            <span>{{ item.status_label }}</span>
-                            <strong>{{ item.days }} д.</strong>
+                            <span data-schedule-status-tooltip data-schedule-status-variant="{% if item.status == 'approved' %}planned{% elif item.status == 'rejected' %}empty{% else %}medium{% endif %}" data-tooltip-title="Статус" data-tooltip-text="Текущий статус записи или связанной заявки.">{{ item.status_label }}</span>
+                            <strong data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Дней" data-tooltip-text="Количество календарных дней этой записи.">{{ item.days }} д.</strong>
                             {% if item.detail_url %}
                             <a
                                 class="calendar-drawer__entry-action calendar-drawer__entry-action--link"
@@ -225,6 +232,10 @@
                                 data-app-link
                                 data-calendar-detail-return
                                 data-calendar-detail-return-url="{{ item.detail_url }}"
+                                data-schedule-status-tooltip
+                                data-schedule-status-variant="info"
+                                data-tooltip-title="{{ item.detail_label|default:'Открыть заявку' }}"
+                                data-tooltip-text="Открывает детали заявки или записи согласования."
                             >{{ item.detail_label|default:'Открыть заявку' }}</a>
                             {% endif %}
                             {% if item.can_request_transfer %}
@@ -243,6 +254,10 @@
                                 data-transfer-hint="{{ item.transfer_hint }}"
                                 data-transfer-modal-title="{{ item.transfer_modal_title }}"
                                 data-transfer-modal-subtitle="{{ item.transfer_modal_subtitle }}"
+                                data-schedule-status-tooltip
+                                data-schedule-status-variant="medium"
+                                data-tooltip-title="{{ item.transfer_action_label }}"
+                                data-tooltip-text="{{ item.transfer_hint }}"
                             >{{ item.transfer_action_label }}</button>
                             {% endif %}
                             <button
@@ -252,6 +267,10 @@
                                 data-employee-id="{{ item.anchor.employee_id }}"
                                 data-start-date="{{ item.anchor.start_date }}"
                                 data-end-date="{{ item.anchor.end_date }}"
+                                data-schedule-status-tooltip
+                                data-schedule-status-variant="info"
+                                data-tooltip-title="Показать в графике"
+                                data-tooltip-text="Подсвечивает эту запись на календарной доске и прокручивает к ней."
                             >Показать в графике</button>
                         </div>
                     </article>
@@ -276,8 +295,8 @@
                         <div class="calendar-drawer__entry-main">
                             <strong>{{ item.period_label }}</strong>
                             <span class="calendar-drawer__entry-meta">
-                                <span>{{ item.source_label }} &bull; {{ item.vacation_type_label }}</span>
-                                <span class="calendar-drawer__entry-stage calendar-drawer__entry-stage--{{ item.stage }}" title="Этап: {{ item.stage_label }}" aria-label="Этап: {{ item.stage_label }}">
+                                <span data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Источник" data-tooltip-text="Показывает, откуда появилась запись: график, заявка, перенос или ручное действие.">{{ item.source_label }} &bull; {{ item.vacation_type_label }}</span>
+                                <span class="calendar-drawer__entry-stage calendar-drawer__entry-stage--{{ item.stage }}" aria-label="Этап: {{ item.stage_label }}" data-schedule-status-tooltip data-schedule-status-variant="{% if item.stage == 'approved' %}planned{% elif item.stage == 'draft' %}medium{% else %}info{% endif %}" data-tooltip-title="Этап: {{ item.stage_label }}" data-tooltip-text="Показывает, на каком этапе находится запись: черновик, план, утверждение или фактическое отсутствие.">
                                     <span class="material-icons-sharp" aria-hidden="true">{{ item.stage_icon }}</span>
                                     <span>{{ item.stage_label }}</span>
                                 </span>
@@ -297,8 +316,8 @@
                             </span>
                         </div>
                         <div class="calendar-drawer__entry-side">
-                            <span>{{ item.status_label }}</span>
-                            <strong>{{ item.days }} д.</strong>
+                            <span data-schedule-status-tooltip data-schedule-status-variant="{% if item.status == 'approved' %}planned{% elif item.status == 'rejected' %}empty{% else %}medium{% endif %}" data-tooltip-title="Статус" data-tooltip-text="Текущий статус записи или связанной заявки.">{{ item.status_label }}</span>
+                            <strong data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Дней" data-tooltip-text="Количество календарных дней этой записи.">{{ item.days }} д.</strong>
                             {% if item.detail_url %}
                             <a
                                 class="calendar-drawer__entry-action calendar-drawer__entry-action--link"
@@ -306,6 +325,10 @@
                                 data-app-link
                                 data-calendar-detail-return
                                 data-calendar-detail-return-url="{{ item.detail_url }}"
+                                data-schedule-status-tooltip
+                                data-schedule-status-variant="info"
+                                data-tooltip-title="{{ item.detail_label|default:'Открыть заявку' }}"
+                                data-tooltip-text="Открывает детали заявки или записи согласования."
                             >{{ item.detail_label|default:'Открыть заявку' }}</a>
                             {% endif %}
                             {% if item.can_request_transfer %}
@@ -324,6 +347,10 @@
                                 data-transfer-hint="{{ item.transfer_hint }}"
                                 data-transfer-modal-title="{{ item.transfer_modal_title }}"
                                 data-transfer-modal-subtitle="{{ item.transfer_modal_subtitle }}"
+                                data-schedule-status-tooltip
+                                data-schedule-status-variant="medium"
+                                data-tooltip-title="{{ item.transfer_action_label }}"
+                                data-tooltip-text="{{ item.transfer_hint }}"
                             >{{ item.transfer_action_label }}</button>
                             {% endif %}
                             <button
@@ -333,6 +360,10 @@
                                 data-employee-id="{{ item.anchor.employee_id }}"
                                 data-start-date="{{ item.anchor.start_date }}"
                                 data-end-date="{{ item.anchor.end_date }}"
+                                data-schedule-status-tooltip
+                                data-schedule-status-variant="info"
+                                data-tooltip-title="Показать в графике"
+                                data-tooltip-text="Подсвечивает эту запись на календарной доске и прокручивает к ней."
                             >Показать в графике</button>
                         </div>
                     </article>

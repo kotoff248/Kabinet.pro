@@ -104,6 +104,12 @@ document.addEventListener("DOMContentLoaded", function () {
             listPath: "/departments/",
             detailPattern: /^\/departments\/\d+\/$/,
         },
+        analytics: {
+            listPath: "/analytics/",
+        },
+        staffing: {
+            listPath: "/staffing/",
+        },
         notifications: {
             listStorageKey: "notifications:last-list-href",
             listPath: "/notifications/",
@@ -259,6 +265,13 @@ document.addEventListener("DOMContentLoaded", function () {
         return url;
     }
 
+    function stripNavigationContextParams(url) {
+        url.searchParams.delete("from");
+        url.searchParams.delete("back_url");
+        url.searchParams.delete("back_label");
+        return url;
+    }
+
     function getMemorySafePlanningUrl(href) {
         const url = toSameOriginUrl(href || window.location.href);
         if (!isSchedulePlanningWorkspaceUrl(url)) {
@@ -311,6 +324,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 && rememberedUrl.pathname === rememberedPath
                 && rememberedUrl.searchParams.get("from") !== "schedule_planning"
             ) {
+                if (rememberedUrl.searchParams.has("from")) {
+                    stripNavigationContextParams(rememberedUrl);
+                }
                 return rememberedUrl.href;
             }
         } catch (error) {
@@ -324,6 +340,9 @@ document.addEventListener("DOMContentLoaded", function () {
         const rememberedUrl = toSameOriginUrl(rememberedHref);
         if (isPlanningContextCalendarUrl(rememberedUrl)) {
             return stripPlanningContextParams(rememberedUrl).href;
+        }
+        if (rememberedUrl && rememberedUrl.pathname === SECTION_MEMORY.calendar.listPath) {
+            return stripNavigationContextParams(rememberedUrl).href;
         }
         return rememberedHref;
     }
@@ -646,12 +665,39 @@ document.addEventListener("DOMContentLoaded", function () {
         const nextOptions = options || {};
         const planningHref = withActivePlanningContext(href, nextOptions);
         const url = toSameOriginUrl(planningHref);
-        if (!url || !isContextualDetailUrl(url)) {
+        if (!url) {
             return planningHref;
         }
 
         const sectionKey = getActiveSidebarSectionKey();
-        if (!url.searchParams.has("from") && sectionKey && SECTION_MEMORY[sectionKey]) {
+        const canUseActiveSection = Boolean(sectionKey && SECTION_MEMORY[sectionKey]);
+        const currentSource = url.searchParams.get("from") || "";
+        const canReplaceSource = !currentSource || currentSource === "calendar" || Boolean(SECTION_MEMORY[currentSource]);
+        if (
+            url.pathname === SECTION_MEMORY.calendar.listPath
+            && canUseActiveSection
+            && sectionKey !== "calendar"
+        ) {
+            if (canReplaceSource) {
+                url.searchParams.set("from", sectionKey);
+            }
+
+            if (!nextOptions.skipBackLink && !url.searchParams.has("back_url")) {
+                const backLabel = getBackLabelForCurrentPage();
+                if (backLabel) {
+                    url.searchParams.set("back_url", getCurrentRelativeHref());
+                    url.searchParams.set("back_label", backLabel);
+                }
+            }
+
+            return url.href;
+        }
+
+        if (!isContextualDetailUrl(url)) {
+            return planningHref;
+        }
+
+        if (canUseActiveSection && canReplaceSource) {
             url.searchParams.set("from", sectionKey);
         }
 

@@ -5,7 +5,7 @@
             <h2>Отпуска и график</h2>
             <p>Подтверждённые отпуска, другие отсутствия и переносы по выбранному периоду.</p>
         </div>
-        <div class="profile-schedule__summary" aria-label="Количество записей в графике">
+        <div class="profile-schedule__summary" aria-label="Количество записей в графике" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="В графике" data-tooltip-text="Количество записей отпуска и отсутствий, показанных в текущем фильтре профиля.">
             <span class="profile-schedule__summary-label">В графике</span>
             <span class="profile-schedule__counter" data-profile-schedule-counter>{{ planned_vacations.initial_count }}</span>
         </div>
@@ -81,43 +81,47 @@
             <div class="profile-schedule__cards" data-profile-schedule-entries aria-label="Подтверждённые отпуска и отсутствия">
                 {% for item in planned_vacations.entries %}
                 <article class="profile-schedule-card status-{{ item.status }}" data-schedule-entry-card data-years="{{ item.years_attr }}" data-vacation-type="{{ item.vacation_type }}" data-source-kind="{{ item.source_kind }}" data-status="{{ item.status }}">
-                    <div class="profile-schedule-card__stage profile-schedule-card__stage--{{ item.stage }}" title="Этап: {{ item.stage_label }}" aria-label="Этап: {{ item.stage_label }}">
+                    <div class="profile-schedule-card__stage profile-schedule-card__stage--{{ item.stage }}" aria-label="Этап: {{ item.stage_label }}" data-schedule-status-tooltip data-schedule-status-variant="{% if item.stage == 'approved' %}planned{% elif item.stage == 'draft' %}medium{% else %}info{% endif %}" data-tooltip-title="Этап: {{ item.stage_label }}" data-tooltip-text="Показывает, на каком этапе находится запись: черновик, план, утверждение или фактическое отсутствие.">
                         <span class="profile-schedule-card__label">Этап</span>
                         <span class="profile-schedule-card__stage-icon" aria-hidden="true">
                             <span class="material-icons-sharp">{{ item.stage_icon }}</span>
                         </span>
                         <strong class="profile-schedule-card__value">{{ item.stage_label }}</strong>
                     </div>
-                    <div class="profile-schedule-card__cell profile-schedule-card__cell--period">
+                    <div class="profile-schedule-card__cell profile-schedule-card__cell--period" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Период" data-tooltip-text="Даты начала и окончания этой записи отпуска или отсутствия.">
                         <span class="profile-schedule-card__label">Период</span>
                         <strong class="profile-schedule-card__value">{{ item.period_label }}</strong>
                     </div>
-                    <div class="profile-schedule-card__cell">
+                    <div class="profile-schedule-card__cell" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Тип отпуска" data-tooltip-text="Тип записи определяет, списываются ли оплачиваемые дни из баланса сотрудника.">
                         <span class="profile-schedule-card__label">Тип</span>
                         <strong class="profile-schedule-card__value">{{ item.vacation_type_label }}</strong>
                     </div>
-                    <div class="profile-schedule-card__cell">
+                    <div class="profile-schedule-card__cell" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Дней" data-tooltip-text="Количество календарных дней записи. Для оплачиваемого отпуска праздники не уменьшают баланс.">
                         <span class="profile-schedule-card__label">Дней</span>
                         <strong class="profile-schedule-card__value">{{ item.days }} д.</strong>
                     </div>
-                    <div class="profile-schedule-card__cell profile-schedule-card__cell--status">
+                    <div class="profile-schedule-card__cell profile-schedule-card__cell--status" data-schedule-status-tooltip data-schedule-status-variant="{% if item.status == 'approved' %}planned{% elif item.status == 'rejected' %}empty{% else %}medium{% endif %}" data-tooltip-title="Статус" data-tooltip-text="Текущий статус записи в графике или заявке.">
                         <span class="profile-schedule-card__label">Статус</span>
                         <span class="profile-schedule-card__status">{{ item.status_label }}</span>
                     </div>
-                    <div class="profile-schedule-card__cell">
+                    <div class="profile-schedule-card__cell" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Источник" data-tooltip-text="Показывает, откуда появилась запись: график, заявка, перенос или ручное действие.">
                         <span class="profile-schedule-card__label">Источник</span>
                         <strong class="profile-schedule-card__value">{{ item.source_label }}</strong>
                     </div>
                     <div class="profile-schedule-card__actions" aria-label="Действия с записью">
-                        <a class="profile-schedule-card__link profile-schedule-card__link--secondary" href="{{ item.calendar_url }}" data-app-link>
+                        <a class="profile-schedule-card__link profile-schedule-card__link--secondary" href="{{ item.calendar_url }}" data-app-link data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="График" data-tooltip-text="Открывает календарь на периоде этой записи и подсвечивает дни сотрудника.">
                             <span class="material-icons-sharp" aria-hidden="true">event</span>
                             <span>График</span>
                         </a>
                         {% if item.detail_url %}
                         <a
                             class="profile-schedule-card__link"
-                            href="{{ item.detail_url }}?from=profile&amp;back_url={{ request.get_full_path|urlencode }}&amp;back_label=%D0%9A%20%D0%BF%D1%80%D0%BE%D1%84%D0%B8%D0%BB%D1%8E"
+                            href="{{ item.detail_url }}?from={{ employee_profile_detail_source|urlencode }}&amp;back_url={{ request.get_full_path|urlencode }}&amp;back_label={{ employee_profile_detail_back_label|urlencode }}"
                             data-app-link
+                            data-schedule-status-tooltip
+                            data-schedule-status-variant="info"
+                            data-tooltip-title="{{ item.detail_label }}"
+                            data-tooltip-text="Открывает карточку заявки или записи с деталями согласования."
                         >
                             <span class="material-icons-sharp" aria-hidden="true">open_in_new</span>
                             <span>{{ item.detail_label }}</span>
@@ -128,6 +132,10 @@
                             type="button"
                             class="profile-schedule-card__link"
                             data-transfer-open
+                            data-schedule-status-tooltip
+                            data-schedule-status-variant="medium"
+                            data-tooltip-title="{{ item.transfer_action_label }}"
+                            data-tooltip-text="{{ item.transfer_hint }}"
                             data-transfer-url="{{ item.transfer_url }}"
                             data-transfer-preview-url="{{ item.transfer_preview_url }}"
                             data-transfer-title="{{ item.transfer_title }}"
@@ -166,31 +174,31 @@
                     class="profile-schedule-card profile-schedule-card--transfer is-clickable"
                     data-schedule-transfer-card
                     data-years="{{ change_request.years_attr }}"
-                    data-href="{{ change_request.detail_url }}?from=profile&amp;back_url={{ request.get_full_path|urlencode }}&amp;back_label=%D0%9A%20%D0%BF%D1%80%D0%BE%D1%84%D0%B8%D0%BB%D1%8E"
+                    data-href="{{ change_request.detail_url }}?from={{ employee_profile_detail_source|urlencode }}&amp;back_url={{ request.get_full_path|urlencode }}&amp;back_label={{ employee_profile_detail_back_label|urlencode }}"
                     tabindex="0"
                     role="link"
                     aria-label="Открыть перенос отпуска {{ change_request.old_period_label }} - {{ change_request.new_period_label }}"
                 >
-                    <div class="profile-schedule-card__cell">
+                    <div class="profile-schedule-card__cell" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Старый период" data-tooltip-text="Период утверждённого графика, который сотрудник просит перенести.">
                         <span class="profile-schedule-card__label">Старый период</span>
                         <strong class="profile-schedule-card__value">{{ change_request.old_period_label }}</strong>
                     </div>
-                    <div class="profile-schedule-card__cell">
+                    <div class="profile-schedule-card__cell" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Новый период" data-tooltip-text="Новые даты, предложенные в запросе переноса.">
                         <span class="profile-schedule-card__label">Новый период</span>
                         <strong class="profile-schedule-card__value">{{ change_request.new_period_label }}</strong>
                     </div>
-                    <div class="profile-schedule-card__cell">
+                    <div class="profile-schedule-card__cell" data-schedule-status-tooltip data-schedule-status-variant="{% if change_request.risk_level == 'high' %}risk{% elif change_request.risk_level == 'medium' %}medium{% else %}planned{% endif %}" data-tooltip-title="Риск переноса" data-tooltip-text="{% if change_request.risk_short_reason %}{{ change_request.risk_short_reason }}{% else %}Оценка показывает влияние нового периода на состав, нагрузку и баланс.{% endif %}">
                         <span class="profile-schedule-card__label">Риск</span>
                         <strong class="profile-schedule-card__value">{{ change_request.risk_label }} · {{ change_request.risk_score }}%</strong>
                     </div>
-                    <div class="profile-schedule-card__cell profile-schedule-card__cell--status">
+                    <div class="profile-schedule-card__cell profile-schedule-card__cell--status" data-schedule-status-tooltip data-schedule-status-variant="{% if change_request.status == 'approved' %}planned{% elif change_request.status == 'rejected' %}empty{% else %}medium{% endif %}" data-tooltip-title="Статус переноса" data-tooltip-text="Показывает, ожидает ли перенос решения или уже рассмотрен.">
                         <span class="profile-schedule-card__label">Статус</span>
                         <span class="profile-schedule-card__status-badge">
                             {% include 'includes/shared/status_badge.html' with status_css_class=change_request.status_css_class status_icon=change_request.status_icon status_label=change_request.status_label %}
                         </span>
                     </div>
                     {% if change_request.reason_preview %}
-                    <div class="profile-schedule-card__reason" title="{{ change_request.reason_preview }}">
+                    <div class="profile-schedule-card__reason" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Причина переноса" data-tooltip-text="{{ change_request.reason_preview }}">
                         <span class="material-icons-sharp" aria-hidden="true">notes</span>
                         <span>{{ change_request.reason_preview }}</span>
                     </div>

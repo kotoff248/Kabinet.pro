@@ -188,7 +188,7 @@ class LeaveLedgerTests(LeaveTestCase):
         self.assertEqual(summary["used"], 14)
 
     def test_leave_summary_read_does_not_create_allocations(self):
-        VacationRequest.objects.create(
+        request_obj = VacationRequest.objects.create(
             employee=self.employee,
             start_date=self.today - timedelta(days=30),
             end_date=self.today - timedelta(days=21),
@@ -202,7 +202,10 @@ class LeaveLedgerTests(LeaveTestCase):
 
         self.assertEqual(before_count, 0)
         self.assertEqual(after_count, before_count)
-        self.assertEqual(summary["used"], 10)
+        self.assertEqual(
+            summary["used"],
+            get_chargeable_leave_days(request_obj.start_date, request_obj.end_date, request_obj.vacation_type),
+        )
 
     def test_future_summary_read_does_not_rewrite_allocation_state(self):
         schedule = VacationSchedule.objects.create(

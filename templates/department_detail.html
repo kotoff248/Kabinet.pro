@@ -178,15 +178,15 @@
                         </div>
 
                         <div class="department-group-card__metrics" aria-label="Показатели группы">
-                            <span>
+                            <span data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Сотрудников" data-tooltip-text="Количество активных сотрудников в этой производственной группе.">
                                 <span>Сотрудников</span>
                                 <strong>{{ group.employee_count }}</strong>
                             </span>
-                            <span>
+                            <span data-schedule-status-tooltip data-schedule-status-variant="{% if group.current_vacation_count %}info{% else %}empty{% endif %}" data-tooltip-title="Сейчас отсутствует" data-tooltip-text="Сколько сотрудников группы отсутствуют сегодня по графику или утверждённым заявкам.">
                                 <span>Сейчас отсутствует</span>
                                 <strong>{{ group.current_vacation_count }}</strong>
                             </span>
-                            <span>
+                            <span data-schedule-status-tooltip data-schedule-status-variant="{% if group.pending_applications_count %}risk{% else %}planned{% endif %}" data-tooltip-title="Заявки" data-tooltip-text="Количество заявок сотрудников группы, которые ещё ожидают решения.">
                                 <span>Заявок</span>
                                 <strong>{{ group.pending_applications_count }}</strong>
                             </span>
@@ -250,7 +250,7 @@
                 <div class="employee-cards-list department-detail-employees-list" id="employees-table-body">
                     {% for employee in employees %}
                     <article class="employee-card employee-row employee-row-clickable is-clickable" data-href="{% url 'employee_profile' employee.id %}?from=departments" data-employee-id="{{ employee.id }}" tabindex="0" role="link">
-                        <div class="employee-card__role employee-card__role--{{ employee.role_variant }}" title="{{ employee.role_label }}" aria-label="{{ employee.role_label }}">
+                        <div class="employee-card__role employee-card__role--{{ employee.role_variant }}" aria-label="{{ employee.role_label }}" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="{{ employee.role_label }}" data-tooltip-text="Роль сотрудника определяет доступные разделы и маршрут согласования заявок.">
                             {% if employee.role_icon_type == 'symbol' %}
                             <span class="employee-card__role-symbol" aria-hidden="true">{{ employee.role_icon }}</span>
                             {% else %}
@@ -288,17 +288,17 @@
                         </div>
 
                         <div class="employee-card__meta">
-                            <div class="employee-card__cell employee-card__cell--available">
+                            <div class="employee-card__cell employee-card__cell--available" data-schedule-status-tooltip data-schedule-status-variant="{% if employee.available_days %}planned{% else %}empty{% endif %}" data-tooltip-title="Доступный отпуск" data-tooltip-text="Текущий свободный остаток оплачиваемого отпуска сотрудника.">
                                 <span class="employee-card__label">Доступный отпуск</span>
                                 <span class="employee-card__value">{{ employee.available_days }} д.</span>
                             </div>
-                            <div class="employee-card__cell employee-card__cell--upcoming">
+                            <div class="employee-card__cell employee-card__cell--upcoming" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Ближайший отпуск" data-tooltip-text="Самая ближайшая запись отпуска или отсутствия сотрудника.">
                                 <span class="employee-card__label">Ближайший отпуск</span>
                                 <span class="employee-card__value">{{ employee.upcoming_vacation_label }}</span>
                             </div>
                         </div>
 
-                        <div class="employee-card__status">
+                        <div class="employee-card__status" data-schedule-status-tooltip data-schedule-status-variant="{% if employee.is_working %}planned{% else %}info{% endif %}" data-tooltip-title="Текущий статус" data-tooltip-text="{% if employee.is_working %}Сотрудник сейчас в работе по графику и утверждённым заявкам.{% else %}Сотрудник сейчас находится в отпуске или другом утверждённом отсутствии.{% endif %}">
                             <span class="employee-card__label">Статус</span>
                             <span class="employee-status-badge {% if employee.is_working %}employee-status-badge--working{% else %}employee-status-badge--vacation{% endif %}">
                                 {{ employee.status_label }}

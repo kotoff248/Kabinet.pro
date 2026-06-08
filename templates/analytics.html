@@ -4,7 +4,8 @@
 {% block title %}Кабинет.pro - Аналитика{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/analytics.css' %}?v=20260521-module-summary-1">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260525-analytics-controls">
+<link rel="stylesheet" href="{% static 'css/pages/analytics.css' %}?v=20260526-module-summary">
 {% endblock %}
 
 {% block extra_head %}
@@ -13,28 +14,9 @@
 
 {% block content %}
 <section class="profile-page analytics-page" data-analytics-page>
-    {% include 'includes/page_header.html' with eyebrow='Планирование' title='Аналитика графика' subtitle='Риски состава, нагрузка отделов, баланс отпусков и действия для закрытия годового плана.' %}
+    {% include 'includes/page_header.html' with eyebrow='Планирование' title='Аналитика графика' subtitle='Риски состава, нагрузка отделов, баланс отпусков и действия для закрытия годового плана.' header_actions_template='includes/page_headers/analytics_controls.html' %}
 
-    <form class="analytics-filterbar" method="get" data-analytics-filters aria-label="Фильтры аналитики">
-        <label class="analytics-filter">
-            <span>Год</span>
-            <select name="year">
-                {% for year_value in analytics_available_years %}
-                <option value="{{ year_value }}" {% if year_value == analytics_filters.selected_year %}selected{% endif %}>{{ year_value }}</option>
-                {% endfor %}
-            </select>
-        </label>
-        <label class="analytics-filter analytics-filter--wide">
-            <span>Отдел</span>
-            <select name="department">
-                <option value="all" {% if analytics_filters.selected_department == 'all' %}selected{% endif %}>Все отделы</option>
-                {% for department in analytics_department_options %}
-                <option value="{{ department.id }}" {% if department.id|stringformat:"s" == analytics_filters.selected_department|stringformat:"s" %}selected{% endif %}>{{ department.name }}</option>
-                {% endfor %}
-            </select>
-        </label>
-    </form>
-
+    <div class="analytics-page__scroll">
     <section class="analytics-kpi-grid" aria-label="Ключевые показатели планирования">
         {% for metric in planning_kpis %}
         <article
@@ -96,7 +78,11 @@
             <div class="analytics-attention-list">
                 {% for item in attention_items %}
                 <article class="analytics-attention analytics-attention--{{ item.tone }}">
+                    {% if item.icon_role_variant %}
+                    <span class="analytics-attention__icon analytics-attention__icon--role analytics-attention__icon--role-{{ item.icon_role_variant }}{% if item.icon_type == 'symbol' %} analytics-attention__icon-symbol{% else %} material-icons-sharp{% endif %}" aria-hidden="true">{{ item.icon }}</span>
+                    {% else %}
                     <span class="analytics-attention__icon material-icons-sharp" aria-hidden="true">{{ item.icon }}</span>
+                    {% endif %}
                     <div class="analytics-attention__body">
                         <strong>{{ item.title }}</strong>
                         <p>{{ item.text }}</p>
@@ -382,11 +368,13 @@
             </div>
         </section>
     </section>
+    </div>
 </section>
 
 {{ analytics_chart_payload|json_script:"analytics-chart-payload" }}
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/pages/analytics.js' %}?v=20260521-module-summary-1" defer></script>
+<script src="{% static 'js/components/employee-form.js' %}?v=20260525-analytics-controls" defer></script>
+<script src="{% static 'js/pages/analytics.js' %}?v=20260526-module-summary" defer></script>
 {% endblock %}

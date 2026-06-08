@@ -11,6 +11,16 @@
         let currentDetailEmployeeId = null;
         const detailRequests = new Map();
         const calendarRowSelector = ".timeline-row[data-employee-id], .year-row[data-employee-id]";
+        const calendarNavigationSources = [
+            "profile",
+            "employees",
+            "applications",
+            "departments",
+            "analytics",
+            "staffing",
+            "notifications",
+            "calendar",
+        ];
 
         function stripModalParams(url) {
             url.searchParams.delete("calendar_modal");
@@ -47,13 +57,19 @@
             return url.pathname + url.search + url.hash;
         }
 
+        function getCalendarNavigationSource() {
+            const url = new URL(window.location.href);
+            const source = url.searchParams.get("from") || "";
+            return calendarNavigationSources.indexOf(source) === -1 ? "calendar" : source;
+        }
+
         function buildDetailLinkedHref(targetUrl, scrollTop) {
             if (!targetUrl) {
                 return "#";
             }
 
             const url = new URL(targetUrl, window.location.href);
-            url.searchParams.set("from", "calendar");
+            url.searchParams.set("from", getCalendarNavigationSource());
             url.searchParams.set("back_url", buildDetailReturnHref(scrollTop));
             url.searchParams.set("back_label", "К графику");
             return url.href;
@@ -303,7 +319,7 @@
                 section.classList.remove("is-collapsed");
                 if (toggle) {
                     toggle.setAttribute("aria-expanded", "true");
-                    toggle.setAttribute("title", "Свернуть");
+                    toggle.removeAttribute("title");
                 }
                 if (body) {
                     body.setAttribute("aria-hidden", "false");
@@ -436,8 +452,13 @@
                         link.dataset.appLink = "";
                         link.dataset.calendarDetailProfileReturn = "";
                         link.dataset.calendarProfileUrl = employee.profile_url;
-                        link.title = "Открыть профиль сотрудника " + employee.name;
                         link.setAttribute("aria-label", "Открыть профиль сотрудника " + employee.name);
+                        setTooltip(
+                            link,
+                            "Профиль сотрудника",
+                            "Открыть профиль сотрудника " + employee.name + ".",
+                            "info"
+                        );
                         link.textContent = employee.name;
                         target.appendChild(link);
                     } else {
@@ -551,10 +572,15 @@
                 link.classList.add("is-hidden");
             }
 
-            link.title = "Открыть профиль сотрудника " + employeeName;
             link.setAttribute(
                 "aria-label",
                 "Открыть профиль сотрудника " + employeeName + (roleLabel ? ". " + roleLabel : "")
+            );
+            setTooltip(
+                link,
+                roleLabel || "Профиль",
+                "Открыть профиль сотрудника " + employeeName + ".",
+                "info"
             );
             link.innerHTML = "";
 
@@ -670,8 +696,13 @@
 
             const stage = document.createElement("span");
             stage.className = "calendar-drawer__entry-stage calendar-drawer__entry-stage--" + (item.stage || "upcoming");
-            stage.title = "Этап: " + item.stage_label;
             stage.setAttribute("aria-label", "Этап: " + item.stage_label);
+            setTooltip(
+                stage,
+                "Этап: " + item.stage_label,
+                "Показывает, на каком этапе находится запись: черновик, план, утверждение или фактическое отсутствие.",
+                item.stage === "approved" ? "planned" : (item.stage === "draft" ? "medium" : "info")
+            );
 
             const icon = document.createElement("span");
             icon.className = "material-icons-sharp";
@@ -713,6 +744,12 @@
                 meta.className = "calendar-drawer__entry-meta";
                 const type = document.createElement("span");
                 type.textContent = (item.source_label ? item.source_label + " • " : "") + item.vacation_type_label;
+                setTooltip(
+                    type,
+                    "Источник",
+                    "Показывает, откуда появилась запись: график, заявка, перенос или ручное действие.",
+                    "info"
+                );
                 const stage = createEntryStage(item);
                 meta.appendChild(type);
                 if (stage) {
@@ -726,8 +763,15 @@
                 side.className = "calendar-drawer__entry-side";
                 const status = document.createElement("span");
                 status.textContent = item.status_label;
+                setTooltip(
+                    status,
+                    "Статус",
+                    "Текущий статус записи или связанной заявки.",
+                    item.status === "approved" ? "planned" : (item.status === "rejected" ? "empty" : "medium")
+                );
                 const days = document.createElement("strong");
                 days.textContent = item.days + " д.";
+                setTooltip(days, "Дней", "Количество календарных дней этой записи.", "info");
                 side.appendChild(status);
                 side.appendChild(days);
 
@@ -739,6 +783,12 @@
                     detailAction.dataset.calendarDetailReturn = "";
                     detailAction.dataset.calendarDetailReturnUrl = item.detail_url;
                     detailAction.textContent = item.detail_label || "Открыть заявку";
+                    setTooltip(
+                        detailAction,
+                        item.detail_label || "Открыть заявку",
+                        "Открывает детали заявки или записи согласования.",
+                        "info"
+                    );
                     side.appendChild(detailAction);
                 }
 
@@ -763,6 +813,12 @@
                     action.dataset.transferModalTitle = item.transfer_modal_title || "";
                     action.dataset.transferModalSubtitle = item.transfer_modal_subtitle || "";
                     action.textContent = item.transfer_action_label || "Запросить перенос";
+                    setTooltip(
+                        action,
+                        item.transfer_action_label || "Запросить перенос",
+                        item.transfer_hint || "Открывает форму запроса переноса выбранного периода.",
+                        "medium"
+                    );
                     side.appendChild(action);
                 }
 
@@ -776,6 +832,12 @@
                     focusAction.dataset.endDate = item.anchor.end_date;
                 }
                 focusAction.textContent = "Показать в графике";
+                setTooltip(
+                    focusAction,
+                    "Показать в графике",
+                    "Подсвечивает эту запись на календарной доске и прокручивает к ней.",
+                    "info"
+                );
                 side.appendChild(focusAction);
 
                 article.appendChild(main);

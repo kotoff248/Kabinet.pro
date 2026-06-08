@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from urllib.parse import parse_qs, urlsplit
 
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
@@ -56,7 +57,10 @@ class EmployeeRegistryTests(EmployeeTestCase):
         self.assertContains(response, 'class="employee-card__role employee-card__role--hr"', html=False)
         self.assertContains(
             response,
-            '<div class="employee-card__role employee-card__role--hr" title="HR" aria-label="HR">'
+            '<div class="employee-card__role employee-card__role--hr" aria-label="HR" '
+            'data-schedule-status-tooltip data-schedule-status-variant="info" '
+            'data-tooltip-title="HR" '
+            'data-tooltip-text="Роль сотрудника определяет доступные разделы и маршрут согласования заявок.">'
             '<span class="material-icons-sharp" aria-hidden="true">manage_accounts</span>'
             '</div>',
             html=True,
@@ -223,6 +227,10 @@ class EmployeeRegistryTests(EmployeeTestCase):
             employees_by_id[self.employee.id]["schedule_status"]["tooltip_text"],
         )
         self.assertIn("calendar_modal=employee_detail", employees_by_id[self.employee.id]["schedule_status"]["calendar_url"])
+        schedule_query = parse_qs(urlsplit(employees_by_id[self.employee.id]["schedule_status"]["calendar_url"]).query)
+        self.assertEqual(schedule_query["from"], ["employees"])
+        self.assertEqual(schedule_query["back_url"], [reverse("employees")])
+        self.assertEqual(schedule_query["back_label"], ["К сотрудникам"])
         self.assertEqual(
             employees_by_id[self.employee.id]["management_badges"],
             [
@@ -386,6 +394,48 @@ class EmployeeRegistryTests(EmployeeTestCase):
         self.assertIn(self.outsider.id, empty_ids)
         self.assertContains(planned_response, 'id="schedule-status"')
         self.assertContains(planned_response, '<option value="planned" selected>График есть</option>', html=False)
+
+    def test_employees_schedule_status_calendar_url_preserves_current_filters(self):
+        self.client.force_login(self.hr_employee.user)
+        today = timezone.localdate()
+        schedule = VacationSchedule.objects.create(
+            year=today.year,
+            status=VacationSchedule.STATUS_APPROVED,
+            created_by=self.hr_employee,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=today.replace(month=9, day=1),
+            end_date=today.replace(month=9, day=14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        response = self.client.get(
+            reverse("employees"),
+            {
+                "department": self.engineering.id,
+                "group": self.engineering_group.id,
+                "schedule_status": "planned",
+            },
+        )
+        employee_row = next(employee for employee in response.context["employees"] if employee["id"] == self.employee.id)
+        query = parse_qs(urlsplit(employee_row["schedule_status"]["calendar_url"]).query)
+
+        self.assertEqual(query["from"], ["employees"])
+        self.assertEqual(query["back_label"], ["К сотрудникам"])
+        self.assertEqual(
+            query["back_url"],
+            [
+                (
+                    f"{reverse('employees')}?department={self.engineering.id}"
+                    f"&group={self.engineering_group.id}&schedule_status=planned"
+                )
+            ],
+        )
 
     def test_employees_page_shows_upcoming_vacation(self):
         self.client.force_login(self.hr_employee.user)

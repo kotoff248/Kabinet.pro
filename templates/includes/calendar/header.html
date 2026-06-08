@@ -1,4 +1,4 @@
-<header class="page-hero calendar-page__header">
+<header class="page-hero calendar-page__header{% if page_header_back_link %} calendar-page__header--with-back{% endif %}">
     <div class="page-hero__main">
         <div class="page-hero__copy">
             <span class="page-eyebrow">Планирование</span>
@@ -7,6 +7,11 @@
                 <p class="calendar-page__subtitle page-hero__subtitle">Обзор отпусков команды с наглядным таймлайном по дням и быстрым доступом к деталям сотрудника.</p>
             </div>
         </div>
+        {% if page_header_back_link %}
+        <div class="page-hero__center">
+            {% include 'includes/page_headers/section_back_link.html' %}
+        </div>
+        {% endif %}
         <div class="page-hero__aside">
             <div class="calendar-header-actions">
                 {% if calendar_preference_collection.can_view %}
@@ -25,19 +30,19 @@
                     {% if calendar_preference_collection.can_manage and calendar_preference_collection.is_open %}
                     <form method="post" action="{{ calendar_preference_collection.finish_url }}" class="calendar-preference-finish-form">
                         {% csrf_token %}
-                        <button type="submit" class="calendar-action-btn calendar-action-btn--finish" title="Завершить сбор пожеланий" aria-label="Завершить сбор пожеланий">
+                        <button type="submit" class="calendar-action-btn calendar-action-btn--finish" aria-label="Завершить сбор пожеланий" data-schedule-status-tooltip data-schedule-status-variant="planned" data-tooltip-title="Завершить сбор пожеланий" data-tooltip-text="Закрывает сбор пожеланий и фиксирует ответы сотрудников для дальнейшего планирования.">
                             <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
                             <span class="calendar-action-btn__label">Завершить сбор</span>
                         </button>
                     </form>
                     {% elif calendar_preference_collection.can_manage and not calendar_preference_collection.collection %}
-                    <button type="button" class="calendar-action-btn calendar-action-btn--preferences" data-modal-open="preference-collection-modal" title="Начать сбор пожеланий" aria-label="Начать сбор пожеланий">
+                    <button type="button" class="calendar-action-btn calendar-action-btn--preferences" data-modal-open="preference-collection-modal" aria-label="Начать сбор пожеланий" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Начать сбор пожеланий" data-tooltip-text="Открывает запуск сбора: сотрудники смогут указать основной и запасной период отпуска.">
                         <span class="material-icons-sharp" aria-hidden="true">fact_check</span>
                         <span class="calendar-action-btn__label">Начать сбор пожеланий</span>
                     </button>
                     {% endif %}
                 {% endif %}
-                <button type="button" class="calendar-action-btn calendar-action-btn--plan" data-modal-open="vacation-modal" title="Запланировать отпуск" aria-label="Запланировать отпуск">
+                <button type="button" class="calendar-action-btn calendar-action-btn--plan" data-modal-open="vacation-modal" aria-label="Запланировать отпуск" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Запланировать отпуск" data-tooltip-text="Открывает форму новой заявки на отпуск с проверкой дней, баланса и риска.">
                     <span class="material-icons-sharp" aria-hidden="true">event_available</span>
                     <span class="calendar-action-btn__label">Запланировать отпуск</span>
                 </button>

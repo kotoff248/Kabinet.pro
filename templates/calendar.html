@@ -4,7 +4,7 @@
 {% block title %}Кабинет.pro - График отпусков{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/calendar/layout.css' %}?v=20260507-fixed-compact-header-actions">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/layout.css' %}?v=20260526-navigation-context">
 <link rel="stylesheet" href="{% static 'css/pages/calendar/controls.css' %}?v=20260516-org-group-filters">
 <link rel="stylesheet" href="{% static 'css/pages/calendar/summary.css' %}?v=20260516-org-group-filters">
 <link rel="stylesheet" href="{% static 'css/pages/calendar/board.css' %}?v=20260516-sticky-glass-lite">
@@ -39,11 +39,11 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/calendar/state.js' %}?v=20260512-planning-sidebar-split" defer></script>
-<script src="{% static 'js/calendar/controls.js' %}?v=20260516-org-group-filters2" defer></script>
-<script src="{% static 'js/calendar/drawer.js' %}?v=20260513-entry-focus" defer></script>
-<script src="{% static 'js/calendar/month-summary.js' %}?v=20260513-conflict-scope-modal" defer></script>
-<script src="{% static 'js/calendar/board.js' %}?v=20260516-collapse-sticky-groups" defer></script>
+<script src="{% static 'js/calendar/state.js' %}?v=20260526-navigation-context" defer></script>
+<script src="{% static 'js/calendar/controls.js' %}?v=20260526-navigation-context" defer></script>
+<script src="{% static 'js/calendar/drawer.js' %}?v=20260526-navigation-context" defer></script>
+<script src="{% static 'js/calendar/month-summary.js' %}?v=20260526-navigation-context" defer></script>
+<script src="{% static 'js/calendar/board.js' %}?v=20260526-navigation-context" defer></script>
 <script src="{% static 'js/calendar/forms.js' %}?v=20260516-request-ai-support" defer></script>
 <script src="{% static 'js/calendar/init.js' %}?v=20260516-request-ai-support" defer></script>
 {% endblock %}

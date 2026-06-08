@@ -9,7 +9,14 @@
     <div class="personal-info__body">
         <div class="employee-summary">
             <div class="employee-summary__identity">
-                <span class="employee-summary__role employee-summary__role--{{ profile_summary.role_variant }}" title="{{ profile_summary.role_label }}" aria-label="{{ profile_summary.role_label }}">
+                <span
+                    class="employee-summary__role employee-summary__role--{{ profile_summary.role_variant }}"
+                    aria-label="{{ profile_summary.role_label }}"
+                    data-schedule-status-tooltip
+                    data-schedule-status-variant="info"
+                    data-tooltip-title="{{ profile_summary.role_label }}"
+                    data-tooltip-text="Роль сотрудника определяет доступные разделы и уровень согласования в системе."
+                >
                     {% if profile_summary.role_icon_type == 'symbol' %}
                     <span class="employee-summary__role-symbol" aria-hidden="true">{{ profile_summary.role_icon }}</span>
                     {% else %}
@@ -108,7 +115,7 @@
         </div>
 
         <dl class="profile-facts profile-facts--summary employee-summary-metrics">
-            <div class="profile-facts__item profile-facts__item--accent">
+            <div class="profile-facts__item profile-facts__item--accent" data-schedule-status-tooltip data-schedule-status-variant="planned" data-tooltip-title="Доступно сейчас" data-tooltip-text="Текущий доступный остаток оплачиваемого отпуска по всем рабочим годам сотрудника.">
                 <dt>
                     <span class="material-icons-sharp" aria-hidden="true">beach_access</span>
                     Доступно сейчас
@@ -116,7 +123,7 @@
                 <dd>{{ profile_summary.available_now_days|floatformat:"-2" }} д.</dd>
             </div>
 
-            <div class="profile-facts__item">
+            <div class="profile-facts__item" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Занято графиком" data-tooltip-text="Оплачиваемые дни, уже зарезервированные в графике отпусков сотрудника.">
                 <dt>
                     <span class="material-icons-sharp" aria-hidden="true">calendar_month</span>
                     Занято графиком
@@ -124,7 +131,7 @@
                 <dd>{{ profile_summary.scheduled_paid_days|floatformat:"-2" }} д.</dd>
             </div>
 
-            <div class="profile-facts__item">
+            <div class="profile-facts__item" data-schedule-status-tooltip data-schedule-status-variant="{% if profile_summary.pending_paid_request_days %}medium{% else %}planned{% endif %}" data-tooltip-title="В ожидании заявок" data-tooltip-text="Оплачиваемые дни по заявкам сотрудника, которые ещё ожидают решения.">
                 <dt>
                     <span class="material-icons-sharp" aria-hidden="true">pending_actions</span>
                     В ожидании заявок
@@ -132,12 +139,12 @@
                 <dd>{{ profile_summary.pending_paid_request_days|floatformat:"-2" }} д.</dd>
             </div>
 
-            <div class="profile-facts__item">
+            <div class="profile-facts__item" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Ближайший отпуск" data-tooltip-text="Самая ближайшая запись отпуска или отсутствия сотрудника по графику и заявкам.">
                 <dt>
                     <span class="material-icons-sharp" aria-hidden="true">event_upcoming</span>
                     Ближайший отпуск
                 </dt>
-                <dd title="{{ profile_summary.upcoming_vacation_label }}">{{ profile_summary.upcoming_vacation_label }}</dd>
+                <dd>{{ profile_summary.upcoming_vacation_label }}</dd>
             </div>
         </dl>
 
@@ -158,27 +165,27 @@
                         <span class="employee-balance-card__label">Рабочий год</span>
                         <strong title="{{ row.period_label }}">{{ row.period_label }}</strong>
                     </div>
-                    <div class="employee-balance-card__metric">
+                    <div class="employee-balance-card__metric" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Право" data-tooltip-text="Количество оплачиваемых дней, начисленных сотруднику за этот рабочий год.">
                         <span class="employee-balance-card__label">Право</span>
                         <strong>{{ row.entitled_days|floatformat:"-2" }} д.</strong>
                     </div>
-                    <div class="employee-balance-card__metric">
+                    <div class="employee-balance-card__metric" data-schedule-status-tooltip data-schedule-status-variant="empty" data-tooltip-title="Использовано" data-tooltip-text="Дни, уже списанные из этого рабочего года по прошедшим или активным оплачиваемым отпускам.">
                         <span class="employee-balance-card__label">Использовано</span>
                         <strong>{{ row.used_days|floatformat:"-2" }} д.</strong>
                     </div>
-                    <div class="employee-balance-card__metric">
+                    <div class="employee-balance-card__metric" data-schedule-status-tooltip data-schedule-status-variant="medium" data-tooltip-title="В резерве" data-tooltip-text="Дни, зарезервированные будущими графиками, заявками или переносами.">
                         <span class="employee-balance-card__label">В резерве</span>
                         <strong>{{ row.reserved_days|floatformat:"-2" }} д.</strong>
                     </div>
-                    <div class="employee-balance-card__metric">
+                    <div class="employee-balance-card__metric" data-schedule-status-tooltip data-schedule-status-variant="{% if row.remaining_days %}planned{% else %}empty{% endif %}" data-tooltip-title="Остаток" data-tooltip-text="Свободный остаток оплачиваемого отпуска по этому рабочему году после списаний и резервов.">
                         <span class="employee-balance-card__label">Остаток</span>
                         <strong>{{ row.remaining_days|floatformat:"-2" }} д.</strong>
                     </div>
-                    <div class="employee-balance-card__metric">
+                    <div class="employee-balance-card__metric" data-schedule-status-tooltip data-schedule-status-variant="info" data-tooltip-title="Использовать до" data-tooltip-text="Рекомендуемый срок, до которого дни этого рабочего года нужно поставить в график.">
                         <span class="employee-balance-card__label">Использовать до</span>
                         <strong>{{ row.must_use_by|date:"j E Y" }}</strong>
                     </div>
-                    <div class="employee-balance-card__status">
+                    <div class="employee-balance-card__status" data-schedule-status-tooltip data-schedule-status-variant="{% if row.status_key == 'expired' %}conflict{% elif row.status_key == 'urgent' %}risk{% else %}planned{% endif %}" data-tooltip-title="Статус рабочего года" data-tooltip-text="Показывает, спокойно ли закрыт рабочий год или дни требуют внимания при планировании.">
                         <span class="employee-balance-card__label">Статус</span>
                         <span class="entitlement-ledger__status entitlement-ledger__status--{{ row.status_key }}">
                             {{ row.status_label }}

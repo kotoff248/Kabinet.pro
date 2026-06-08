@@ -6,8 +6,11 @@
             class="timeline-employee-card__role timeline-employee-card__role--{{ row.role_variant }}"
             href="{{ row.profile_url }}"
             data-app-link
-            title="{{ row.role_label }}"
             aria-label="Открыть профиль сотрудника {{ row.employee_name }}. {{ row.role_label }}"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="info"
+            data-tooltip-title="{{ row.role_label }}"
+            data-tooltip-text="Открыть профиль сотрудника {{ row.employee_name }}."
         >
             {% if row.role_icon_type == 'symbol' %}
             <span class="timeline-employee-card__role-symbol" aria-hidden="true">{{ row.role_icon }}</span>
@@ -18,7 +21,7 @@
         <span class="timeline-employee-card__content">
             <span class="timeline-employee-card__top">
                 <strong>{{ row.employee_name }}{% include "includes/shared/new_hire_badge.html" with badge=row.employee_new_hire_badge only %}</strong>
-                <span class="timeline-employee-card__badge timeline-employee-card__badge--{{ row.status }}">
+                <span class="timeline-employee-card__badge timeline-employee-card__badge--{{ row.status }}" data-schedule-status-tooltip data-schedule-status-variant="{% if row.year_total_days %}info{% else %}empty{% endif %}" data-tooltip-title="Итого за год" data-tooltip-text="Суммарные дни отпусков и отсутствий сотрудника в выбранном году.">
                     {% if row.year_total_days %}
                     {{ row.year_total_days }} д.
                     {% else %}

@@ -108,6 +108,34 @@ class LeaveAnalyticsTests(LeaveTestCase):
         self.assertContains(response, "Модуль 42,00%")
         self.assertContains(response, "лучше проверить")
 
+    def test_employee_attention_item_uses_calendar_role_icon(self):
+        rows = [
+            {
+                "has_conflict": True,
+                "has_high_risk": False,
+                "role_icon": "♛",
+                "role_icon_type": "symbol",
+                "role_variant": "enterprise-head",
+                "employee_name": "Руководитель Предприятия",
+                "issue_description": "Руководитель предприятия и заместитель будут отсутствовать одновременно.",
+                "profile_url": "/employee/1/?from=calendar",
+            }
+        ]
+
+        items = analytics_service._build_attention_items(
+            [],
+            {"low_balance_count": 0},
+            {"attention_count": 0},
+            {"total_pending": 0},
+            rows,
+            2026,
+        )
+
+        self.assertEqual(items[0]["icon"], "♛")
+        self.assertEqual(items[0]["icon_type"], "symbol")
+        self.assertEqual(items[0]["icon_role_variant"], "enterprise-head")
+        self.assertEqual(items[0]["url"], "/employee/1/?from=analytics")
+
     def test_department_head_module_summary_is_limited_to_own_department(self):
         VacationRequest.objects.create(
             employee=self.employee,

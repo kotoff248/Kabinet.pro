@@ -1,6 +1,6 @@
 from datetime import date
 from decimal import Decimal
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from django.urls import reverse
 from django.utils import timezone
@@ -147,6 +147,23 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertNotContains(
             response,
             'data-sidebar-key="employees" aria-label="Сотрудники" title="Сотрудники" aria-current="page"',
+        )
+
+    def test_employee_profile_from_analytics_keeps_analytics_navigation(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employee_profile", args=[self.employee.id]), {"from": "analytics"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "analytics")
+        self.assertContains(response, "К аналитике")
+        self.assertContains(
+            response,
+            'data-sidebar-key="analytics" aria-label="Аналитика" title="Аналитика" aria-current="page"',
+        )
+        self.assertNotContains(
+            response,
+            'data-sidebar-key="calendar" aria-label="График" title="График" aria-current="page"',
         )
 
     def test_employee_profile_uses_explicit_back_link_to_department_group(self):
@@ -401,6 +418,38 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertContains(response, "data-schedule-status-tooltip")
         self.assertContains(response, 'data-tooltip-title="График есть"')
 
+    def test_main_profile_calendar_links_return_to_profile_section(self):
+        self.client.force_login(self.employee.user)
+        today = timezone.localdate()
+        schedule = VacationSchedule.objects.create(
+            year=today.year,
+            status=VacationSchedule.STATUS_APPROVED,
+            created_by=self.hr_employee,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=today.replace(month=4, day=1),
+            end_date=today.replace(month=4, day=14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        response = self.client.get(reverse("main"))
+        entry = response.context["planned_vacations"]["entries"][0]
+        schedule_status = response.context["profile_summary"]["schedule_status"]
+
+        entry_query = parse_qs(urlsplit(entry["calendar_url"]).query)
+        status_query = parse_qs(urlsplit(schedule_status["calendar_url"]).query)
+        self.assertEqual(entry_query["from"], ["profile"])
+        self.assertEqual(entry_query["back_url"], [reverse("main")])
+        self.assertEqual(entry_query["back_label"], ["К профилю"])
+        self.assertEqual(status_query["from"], ["profile"])
+        self.assertEqual(status_query["back_url"], [reverse("main")])
+        self.assertEqual(status_query["back_label"], ["К профилю"])
+
     def test_profile_balance_summary_counts_schedule_and_pending_paid_requests(self):
         year = timezone.localdate().year
         schedule = VacationSchedule.objects.create(
@@ -642,7 +691,7 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertContains(response, "Нужно перенести отпуск.")
         self.assertContains(
             response,
-            f'data-href="{reverse("schedule_change_detail", args=[change_request.id])}?from=profile',
+            f'data-href="{reverse("schedule_change_detail", args=[change_request.id])}?from=employees',
         )
         self.assertContains(response, "back_url=/employee/")
         self.assertContains(response, "back_label=%D0%9A%20%D0%BF%D1%80%D0%BE%D1%84%D0%B8%D0%BB%D1%8E")
@@ -685,7 +734,7 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertContains(response, "Открыть заявку")
         self.assertContains(
             response,
-            f'href="{reverse("vacation_detail", args=[request_obj.id])}?from=profile',
+            f'href="{reverse("vacation_detail", args=[request_obj.id])}?from=employees',
         )
 
     def test_employee_profile_schedule_item_calendar_url_focuses_period(self):
@@ -720,6 +769,12 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertEqual(query["calendar_focus_employee"], [str(self.employee.id)])
         self.assertEqual(query["calendar_focus_start"], ["2027-07-03"])
         self.assertEqual(query["calendar_focus_end"], ["2027-07-10"])
+        self.assertEqual(query["from"], ["employees"])
+        self.assertEqual(
+            query["back_url"],
+            [f"{reverse('employee_profile', args=[self.employee.id])}?from=employees"],
+        )
+        self.assertEqual(query["back_label"], ["К сотруднику"])
 
     def test_employee_profile_approved_request_calendar_url_focuses_period(self):
         request_obj = VacationRequest.objects.create(
@@ -746,6 +801,52 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertEqual(query["calendar_focus_employee"], [str(self.employee.id)])
         self.assertEqual(query["calendar_focus_start"], ["2027-08-04"])
         self.assertEqual(query["calendar_focus_end"], ["2027-08-06"])
+        self.assertEqual(query["from"], ["employees"])
+        self.assertEqual(
+            query["back_url"],
+            [f"{reverse('employee_profile', args=[self.employee.id])}?from=employees"],
+        )
+        self.assertEqual(query["back_label"], ["К сотруднику"])
+
+    def test_employee_profile_from_calendar_keeps_calendar_context_in_schedule_links(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2027, 8, 4),
+            end_date=date(2027, 8, 6),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_APPROVED,
+        )
+        self.client.force_login(self.hr_employee.user)
+        calendar_url = f"{reverse('calendar')}?view=month&year=2027&month=8"
+
+        response = self.client.get(
+            reverse("employee_profile", args=[self.employee.id]),
+            {
+                "from": "calendar",
+                "back_url": calendar_url,
+                "back_label": "К графику",
+            },
+        )
+        entry = next(
+            row
+            for row in response.context["planned_vacations"]["entries"]
+            if row["id"] == f"request-{request_obj.id}"
+        )
+        calendar_query = parse_qs(urlsplit(entry["calendar_url"]).query)
+
+        self.assertEqual(response.context["sidebar_section"], "calendar")
+        self.assertEqual(calendar_query["from"], ["calendar"])
+        self.assertEqual(
+            calendar_query["back_url"],
+            [
+                f"{reverse('employee_profile', args=[self.employee.id])}?"
+                f"{urlencode({'from': 'calendar', 'back_url': calendar_url, 'back_label': 'К графику'})}"
+            ],
+        )
+        self.assertContains(
+            response,
+            f'href="{reverse("vacation_detail", args=[request_obj.id])}?from=calendar',
+        )
 
     def test_employee_profile_schedule_item_created_from_transfer_links_to_transfer_detail(self):
         schedule = VacationSchedule.objects.create(
@@ -782,7 +883,7 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertContains(response, "Открыть перенос")
         self.assertContains(
             response,
-            f'href="{reverse("schedule_change_detail", args=[change_request.id])}?from=profile',
+            f'href="{reverse("schedule_change_detail", args=[change_request.id])}?from=employees',
         )
 
     def test_main_profile_schedule_cards_expose_employee_transfer_action(self):

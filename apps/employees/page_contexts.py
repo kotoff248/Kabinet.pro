@@ -1,7 +1,7 @@
 from collections import Counter
 from datetime import date
 from decimal import Decimal
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from django.db.models import Count, Q
 from django.urls import reverse
@@ -50,6 +50,16 @@ EMPLOYEE_SCHEDULE_STATUS_FILTER_OPTIONS = (
 EMPLOYEE_SCHEDULE_STATUS_FILTER_VALUES = {
     option["value"]
     for option in EMPLOYEE_SCHEDULE_STATUS_FILTER_OPTIONS
+}
+CALENDAR_RETURN_CONTEXT_SOURCES = {
+    "profile",
+    "employees",
+    "applications",
+    "departments",
+    "analytics",
+    "staffing",
+    "notifications",
+    "calendar",
 }
 
 
@@ -343,6 +353,78 @@ def _build_profile_calendar_url(employee_id, start_date, end_date):
         "calendar_focus_end": end_date.isoformat(),
     })
     return f'{reverse("calendar")}?{calendar_query}'
+
+
+def _append_calendar_return_params(calendar_url, *, source, back_url, back_label):
+    if not calendar_url or not source or not back_url or not back_label:
+        return calendar_url
+
+    parsed = urlsplit(calendar_url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query.update(
+        {
+            "from": source,
+            "back_url": back_url,
+            "back_label": back_label,
+        }
+    )
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
+
+
+def _employee_profile_context_url(employee_id, source="", back_url="", back_label=""):
+    profile_url = reverse("employee_profile", args=[employee_id])
+    query = {}
+    if source:
+        query["from"] = source
+    if back_url and back_label:
+        query["back_url"] = back_url
+        query["back_label"] = back_label
+    if query:
+        return f"{profile_url}?{urlencode(query)}"
+    return profile_url
+
+
+def _employees_list_context_url(query_params):
+    if hasattr(query_params, "urlencode"):
+        query_string = query_params.urlencode() if query_params else ""
+    else:
+        query_string = urlencode(query_params) if query_params else ""
+    if query_string:
+        return f"{reverse('employees')}?{query_string}"
+    return reverse("employees")
+
+
+def _apply_calendar_return_context(context, *, source, back_url, back_label):
+    seen_entries = set()
+    planned_vacations = context.get("planned_vacations") or {}
+    for entry in list(planned_vacations.get("entries") or []) + list(planned_vacations.get("initial_entries") or []):
+        if not entry or id(entry) in seen_entries:
+            continue
+        seen_entries.add(id(entry))
+        entry["calendar_url"] = _append_calendar_return_params(
+            entry.get("calendar_url", ""),
+            source=source,
+            back_url=back_url,
+            back_label=back_label,
+        )
+
+    upcoming = planned_vacations.get("upcoming")
+    if upcoming and id(upcoming) not in seen_entries:
+        upcoming["calendar_url"] = _append_calendar_return_params(
+            upcoming.get("calendar_url", ""),
+            source=source,
+            back_url=back_url,
+            back_label=back_label,
+        )
+
+    schedule_status = (context.get("profile_summary") or {}).get("schedule_status") or {}
+    if schedule_status.get("calendar_url"):
+        schedule_status["calendar_url"] = _append_calendar_return_params(
+            schedule_status["calendar_url"],
+            source=source,
+            back_url=back_url,
+            back_label=back_label,
+        )
 
 
 def _serialize_profile_schedule_item(item, current_employee=None, today=None):
@@ -711,11 +793,19 @@ def _build_leave_profile_context(employee, current_employee=None):
 def build_main_profile_context(employee):
     can_edit = can_edit_employee_data(employee)
     context = _build_leave_profile_context(employee, current_employee=employee)
+    _apply_calendar_return_context(
+        context,
+        source="profile",
+        back_url=reverse("main"),
+        back_label="К профилю",
+    )
     context.update(
         {
             "can_edit_employee": can_edit,
             "show_manager_fields": can_edit,
             "sidebar_section": "profile",
+            "employee_profile_detail_source": "profile",
+            "employee_profile_detail_back_label": "К профилю",
         }
     )
     return context
@@ -813,13 +903,30 @@ def build_employee_profile_context(
             "use_remembered_list": False,
         }
     context = _build_leave_profile_context(employee, current_employee=current_employee)
+    navigation_source = "calendar" if source == "preferences" else source or sidebar_section
+    profile_context_url = _employee_profile_context_url(
+        employee.id,
+        navigation_source,
+        (query_params or {}).get("back_url", ""),
+        (query_params or {}).get("back_label", ""),
+    )
+    calendar_source = navigation_source if navigation_source in CALENDAR_RETURN_CONTEXT_SOURCES else sidebar_section
+    if calendar_source in CALENDAR_RETURN_CONTEXT_SOURCES:
+        _apply_calendar_return_context(
+            context,
+            source=calendar_source,
+            back_url=profile_context_url,
+            back_label="К сотруднику",
+        )
     context.update(
         {
             "can_edit_employee": can_edit,
             "can_delete_employee": can_delete_employee(current_employee, employee),
             "show_manager_fields": can_edit,
-            "sidebar_section": "calendar" if source == "preferences" else source or sidebar_section,
+            "sidebar_section": navigation_source,
             "employee_profile_back_link": explicit_back_link or back_links.get(source),
+            "employee_profile_detail_source": navigation_source,
+            "employee_profile_detail_back_label": "К профилю",
         }
     )
     return context
@@ -873,6 +980,15 @@ def build_employees_page_context(current_employee, query_params, session):
         [employee.id for employee in employees_qs],
         timezone.localdate().year,
     )
+    employees_back_url = _employees_list_context_url(query_params)
+    for schedule_status_item in schedule_status_by_employee.values():
+        if schedule_status_item.get("calendar_url"):
+            schedule_status_item["calendar_url"] = _append_calendar_return_params(
+                schedule_status_item["calendar_url"],
+                source="employees",
+                back_url=employees_back_url,
+                back_label="К сотрудникам",
+            )
     if selected_schedule_status != "all":
         employees_qs = [
             employee
