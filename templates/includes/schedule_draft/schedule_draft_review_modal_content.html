@@ -173,7 +173,13 @@
     </p>
     {% endif %}
     {% if feedback.can_submit %}
-    <form method="post" action="{{ feedback.action_url }}" class="schedule-draft-feedback__form">
+    <form method="post"
+          action="{{ feedback.action_url }}"
+          class="schedule-draft-feedback__form"
+          data-feedback-reject-returns-to-manual="{{ feedback.reject_returns_to_manual|yesno:'true,false' }}"
+          data-feedback-employee="{{ employee_name }}"
+          data-feedback-period="{{ period_label }}"
+          data-feedback-days="{{ chargeable_days_label }}">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ current_path }}">
         <input type="text" name="comment" value="{% if feedback.current %}{{ feedback.current.comment }}{% endif %}" maxlength="800" placeholder="Короткий комментарий">
@@ -186,7 +192,7 @@
                 <span class="material-icons-sharp" aria-hidden="true">edit_note</span>
                 <span>Правка</span>
             </button>
-            <button type="submit" name="decision" value="reject" class="schedule-draft-feedback__button schedule-draft-feedback__button--danger{% if feedback.current.decision == 'reject' %} is-active{% endif %}" aria-label="Отклонить" data-schedule-status-tooltip data-schedule-status-variant="conflict" data-tooltip-title="Отклонить" data-tooltip-text="Отклонить рекомендацию и вернуть пункт на доработку.">
+            <button type="submit" name="decision" value="reject" class="schedule-draft-feedback__button schedule-draft-feedback__button--danger{% if feedback.current.decision == 'reject' %} is-active{% endif %}" aria-label="Отклонить" data-schedule-status-tooltip data-schedule-status-variant="conflict" data-tooltip-title="Отклонить" data-tooltip-text="{% if feedback.reject_returns_to_manual %}Снять период с черновика и вернуть дни в незакрытые.{% else %}Отметить для HR, что пункт нужно вернуть на доработку.{% endif %}">
                 <span class="material-icons-sharp" aria-hidden="true">block</span>
                 <span>Отклонить</span>
             </button>

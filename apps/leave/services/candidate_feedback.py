@@ -1,4 +1,8 @@
+from dataclasses import dataclass
+
 from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.utils import timezone
 
 from apps.accounts.services import (
     get_managed_department_id,
@@ -6,7 +10,13 @@ from apps.accounts.services import (
     is_enterprise_head_employee,
     is_hr_employee,
 )
-from apps.leave.models import VacationSchedule, VacationScheduleCandidateFeedback, VacationScheduleItem
+from apps.leave.models import (
+    VacationSchedule,
+    VacationScheduleCandidateFeedback,
+    VacationScheduleItem,
+    VacationScheduleManualSuggestionCache,
+)
+from apps.leave.services.schedule_auto_place_jobs import get_active_schedule_auto_place_job
 
 
 FEEDBACK_COMMENT_MAX_LENGTH = 800
@@ -33,6 +43,13 @@ FEEDBACK_DECISION_META = {
 }
 
 
+@dataclass(frozen=True)
+class ScheduleCandidateFeedbackResult:
+    feedback: VacationScheduleCandidateFeedback
+    item_returned_to_manual: bool = False
+    employee_id: int | None = None
+
+
 def _feedback_role_for_actor(actor):
     if is_hr_employee(actor):
         return VacationScheduleCandidateFeedback.ROLE_HR
@@ -55,6 +72,16 @@ def can_leave_schedule_candidate_feedback(actor, schedule_item):
         employee = getattr(schedule_item, "employee", None)
         return managed_department_id is not None and getattr(employee, "department_id", None) == managed_department_id
     return False
+
+
+def can_return_rejected_schedule_item_to_manual(actor, schedule_item):
+    if schedule_item is None or actor is None:
+        return False
+    return (
+        is_hr_employee(actor)
+        and schedule_item.status == VacationScheduleItem.STATUS_DRAFT
+        and schedule_item.schedule.status == VacationSchedule.STATUS_DRAFT
+    )
 
 
 def _feedback_summary(feedback_entries):
@@ -101,6 +128,7 @@ def build_schedule_candidate_feedback_context(items, actor=None):
             "summary": _feedback_summary([]),
             "current": None,
             "can_submit": can_leave_schedule_candidate_feedback(actor, item),
+            "reject_returns_to_manual": can_return_rejected_schedule_item_to_manual(actor, item),
         }
         for item in items
         if item.id
@@ -128,6 +156,7 @@ def build_schedule_candidate_feedback_context(items, actor=None):
                 "summary": _feedback_summary([]),
                 "current": None,
                 "can_submit": False,
+                "reject_returns_to_manual": False,
             },
         )
         context_by_item[item_id]["summary"] = _feedback_summary(entries)
@@ -136,8 +165,44 @@ def build_schedule_candidate_feedback_context(items, actor=None):
     return context_by_item
 
 
-def submit_schedule_candidate_feedback(*, schedule_item, actor, decision, comment=""):
+def _invalidate_schedule_draft_manual_suggestion_cache(schedule):
+    if schedule is None:
+        return 0
+
+    schedule.manual_suggestion_cache_version = int(schedule.manual_suggestion_cache_version or 0) + 1
+    schedule.manual_suggestion_cache_rebuilt_at = timezone.now()
+    schedule.save(update_fields=["manual_suggestion_cache_version", "manual_suggestion_cache_rebuilt_at"])
+    deleted_count, _ = VacationScheduleManualSuggestionCache.objects.filter(schedule=schedule).delete()
+    return deleted_count
+
+
+def _return_schedule_item_to_manual(schedule_item, actor):
+    active_job = get_active_schedule_auto_place_job(
+        year=schedule_item.schedule.year,
+        schedule=schedule_item.schedule,
+    )
+    if active_job is not None:
+        raise ValidationError("Дождитесь завершения действия «Добрать незакрытые дни», затем повторите отклонение.")
+
+    actor_name = actor.full_name if actor else "HR"
+    schedule_item.status = VacationScheduleItem.STATUS_CANCELLED
+    schedule_item.was_changed_by_manager = True
+    schedule_item.manager_comment = f"Отклонено при проверке рекомендации: {actor_name}."
+    schedule_item.save(update_fields=["status", "was_changed_by_manager", "manager_comment"])
+    _invalidate_schedule_draft_manual_suggestion_cache(schedule_item.schedule)
+
+
+@transaction.atomic
+def submit_schedule_candidate_feedback(*, schedule_item, actor, decision, comment="", return_rejected_item=False):
     if schedule_item is None:
+        raise ValidationError("Пункт черновика не найден.")
+    try:
+        schedule_item = (
+            VacationScheduleItem.objects.select_for_update()
+            .select_related("schedule", "employee")
+            .get(pk=schedule_item.pk)
+        )
+    except VacationScheduleItem.DoesNotExist:
         raise ValidationError("Пункт черновика не найден.")
     if schedule_item.status != VacationScheduleItem.STATUS_DRAFT:
         raise ValidationError("Отзыв можно оставить только по пункту черновика.")
@@ -160,8 +225,8 @@ def submit_schedule_candidate_feedback(*, schedule_item, actor, decision, commen
         schedule_item=schedule_item,
         reviewer=actor,
         defaults={
-            "candidate": schedule_item.selected_candidate,
-            "generation_run": schedule_item.generation_run,
+            "candidate_id": schedule_item.selected_candidate_id,
+            "generation_run_id": schedule_item.generation_run_id,
             "reviewer_role": role,
             "decision": decision,
             "comment": normalized_comment,
@@ -171,4 +236,18 @@ def submit_schedule_candidate_feedback(*, schedule_item, actor, decision, commen
             "explanation_snapshot": schedule_item.ai_explanation,
         },
     )
-    return feedback
+
+    item_returned_to_manual = False
+    if (
+        return_rejected_item
+        and decision == VacationScheduleCandidateFeedback.DECISION_REJECT
+        and can_return_rejected_schedule_item_to_manual(actor, schedule_item)
+    ):
+        _return_schedule_item_to_manual(schedule_item, actor)
+        item_returned_to_manual = True
+
+    return ScheduleCandidateFeedbackResult(
+        feedback=feedback,
+        item_returned_to_manual=item_returned_to_manual,
+        employee_id=schedule_item.employee_id,
+    )

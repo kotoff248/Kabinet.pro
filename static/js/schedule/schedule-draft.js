@@ -7,6 +7,7 @@
     let urgentPreviewRequestId = 0;
     let autoPlacePollTimer = null;
     let pageAutoPlacePollTimer = null;
+    let pendingFeedbackReject = null;
     const manualSuggestionCache = new Map();
     const urgentOptionsCache = new Map();
     const SEARCH_DEBOUNCE_MS = 320;
@@ -1944,6 +1945,91 @@
         updateFeedbackButtons(form, feedback.current ? feedback.current.decision : "");
     }
 
+    function feedbackSubmitDecision(submitter) {
+        if (!submitter || submitter.name !== "decision") {
+            return "";
+        }
+        return submitter.value || "";
+    }
+
+    function feedbackFormData(form, submitter) {
+        const formData = new FormData(form);
+        if (submitter && submitter.name) {
+            formData.set(submitter.name, submitter.value || "");
+        }
+        return formData;
+    }
+
+    function closeModalById(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal && window.appModal && typeof window.appModal.close === "function") {
+            window.appModal.close(modal);
+        }
+    }
+
+    function submitFeedbackForm(form, formData) {
+        setFeedbackSaving(form, true);
+        setFeedbackStatus(form, "Сохраняю отзыв...", "loading");
+        fetch(form.action, {
+            method: "POST",
+            body: formData,
+            credentials: "same-origin",
+            headers: {
+                "Accept": "application/json",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+        })
+            .then(function (response) {
+                return response.json().then(function (payload) {
+                    if (!response.ok || !payload.ok) {
+                        throw new Error(payload.message || "Не удалось сохранить отзыв.");
+                    }
+                    return payload;
+                });
+            })
+            .then(function (payload) {
+                if (payload.item_returned_to_manual && payload.redirect_url) {
+                    setFeedbackStatus(form, payload.message || "Период снят с черновика.", "success");
+                    closeModalById("schedule-draft-feedback-reject-modal");
+                    closeModalById("schedule-draft-review-modal");
+                    navigateTo(payload.redirect_url);
+                    return;
+                }
+                updateFeedbackBlock(form, payload.feedback);
+                setFeedbackStatus(form, payload.message || "Отзыв сохранён.", "success");
+            })
+            .catch(function (error) {
+                setFeedbackStatus(form, error.message || "Не удалось сохранить отзыв.", "error");
+            })
+            .finally(function () {
+                setFeedbackSaving(form, false);
+            });
+    }
+
+    function openFeedbackRejectModal(form, submitter) {
+        const modal = document.getElementById("schedule-draft-feedback-reject-modal");
+        if (!modal || !window.appModal || typeof window.appModal.open !== "function") {
+            return false;
+        }
+
+        pendingFeedbackReject = {
+            form: form,
+            submitter: submitter,
+        };
+        setText(modal.querySelector("[data-feedback-reject-employee]"), form.dataset.feedbackEmployee || "Сотрудник");
+        setText(modal.querySelector("[data-feedback-reject-period]"), form.dataset.feedbackPeriod || "Период");
+        setText(modal.querySelector("[data-feedback-reject-days]"), form.dataset.feedbackDays || "0 д.");
+        window.appModal.open(modal);
+        return true;
+    }
+
+    function shouldConfirmFeedbackReject(form, submitter) {
+        return (
+            feedbackSubmitDecision(submitter) === "reject"
+            && form.dataset.feedbackRejectReturnsToManual === "true"
+        );
+    }
+
     function openReviewModal(trigger) {
         const modal = document.getElementById("schedule-draft-review-modal");
         const content = modal ? modal.querySelector("[data-draft-review-content]") : null;
@@ -2462,40 +2548,33 @@
 
         event.preventDefault();
         const submitter = event.submitter || document.activeElement;
-        const formData = new FormData(form);
-        if (submitter && submitter.name) {
-            formData.set(submitter.name, submitter.value || "");
+        if (shouldConfirmFeedbackReject(form, submitter) && openFeedbackRejectModal(form, submitter)) {
+            return;
         }
 
-        setFeedbackSaving(form, true);
-        setFeedbackStatus(form, "Сохраняю отзыв...", "loading");
-        fetch(form.action, {
-            method: "POST",
-            body: formData,
-            credentials: "same-origin",
-            headers: {
-                "Accept": "application/json",
-                "X-Requested-With": "XMLHttpRequest",
-            },
-        })
-            .then(function (response) {
-                return response.json().then(function (payload) {
-                    if (!response.ok || !payload.ok) {
-                        throw new Error(payload.message || "Не удалось сохранить отзыв.");
-                    }
-                    return payload;
-                });
-            })
-            .then(function (payload) {
-                updateFeedbackBlock(form, payload.feedback);
-                setFeedbackStatus(form, payload.message || "Отзыв сохранён.", "success");
-            })
-            .catch(function (error) {
-                setFeedbackStatus(form, error.message || "Не удалось сохранить отзыв.", "error");
-            })
-            .finally(function () {
-                setFeedbackSaving(form, false);
-            });
+        submitFeedbackForm(form, feedbackFormData(form, submitter));
+    });
+
+    document.addEventListener("click", function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const confirmButton = target ? target.closest("[data-feedback-reject-confirm]") : null;
+        if (!confirmButton || !pendingFeedbackReject) {
+            return;
+        }
+        event.preventDefault();
+
+        const context = pendingFeedbackReject;
+        pendingFeedbackReject = null;
+        if (!context.form || !document.documentElement.contains(context.form)) {
+            return;
+        }
+        submitFeedbackForm(context.form, feedbackFormData(context.form, context.submitter));
+    });
+
+    document.addEventListener("app-modal:close", function (event) {
+        if (event.target && event.target.id === "schedule-draft-feedback-reject-modal") {
+            pendingFeedbackReject = null;
+        }
     });
 
     document.addEventListener("click", function (event) {

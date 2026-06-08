@@ -675,11 +675,12 @@ def schedule_draft_candidate_feedback(request, year, item_id):
         schedule__year=year,
     )
     try:
-        submit_schedule_candidate_feedback(
+        feedback_result = submit_schedule_candidate_feedback(
             schedule_item=schedule_item,
             actor=current_employee,
             decision=request.POST.get("decision", ""),
             comment=request.POST.get("comment", ""),
+            return_rejected_item=is_hr_employee(current_employee),
         )
     except ValidationError as exc:
         error_message = _validation_error_message(exc)
@@ -688,18 +689,31 @@ def schedule_draft_candidate_feedback(request, year, item_id):
         messages.error(request, error_message)
         return redirect(_url_with_fragment(redirect_after_action, f"draft-item-{schedule_item.id}"))
 
+    decision = request.POST.get("decision", "")
+    if feedback_result.item_returned_to_manual:
+        success_message = "Период снят с черновика и возвращён в незакрытые дни."
+        redirect_url = _url_with_fragment(redirect_after_action, f"draft-manual-{feedback_result.employee_id}")
+    elif decision == "reject":
+        success_message = "Отзыв сохранён. HR увидит, что пункт нужно доработать."
+        redirect_url = _url_with_fragment(redirect_after_action, f"draft-item-{schedule_item.id}")
+    else:
+        success_message = "Отзыв по рекомендации сохранён."
+        redirect_url = _url_with_fragment(redirect_after_action, f"draft-item-{schedule_item.id}")
+
     if wants_json:
         feedback_context = build_schedule_candidate_feedback_context([schedule_item], actor=current_employee).get(schedule_item.id, {})
         return JsonResponse(
             {
                 "ok": True,
-                "message": "Отзыв по рекомендации сохранён.",
+                "message": success_message,
                 "feedback": feedback_context,
+                "item_returned_to_manual": feedback_result.item_returned_to_manual,
+                "redirect_url": redirect_url,
             }
         )
 
-    messages.success(request, "Отзыв по рекомендации сохранён.")
-    return redirect(_url_with_fragment(redirect_after_action, f"draft-item-{schedule_item.id}"))
+    messages.success(request, success_message)
+    return redirect(redirect_url)
 
 
 @employee_required

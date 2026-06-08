@@ -517,6 +517,7 @@
 {% include 'includes/shared/app_modal.html' with modal_id='schedule-draft-review-modal' title='Проверка модуля' subtitle='Выбранный период, альтернативы и обратная связь по рекомендации.' body_template='includes/schedule_draft/schedule_draft_review_modal_body.html' dialog_classes='app-modal__dialog--drawer' %}
 {% endif %}
 {% if can_manage_draft and draft_is_editable %}
+{% include 'includes/shared/app_modal.html' with modal_id='schedule-draft-feedback-reject-modal' eyebrow='Проверка' title='Снять период из черновика?' subtitle='Подтвердите возврат дней сотрудника в незакрытые.' aria_label='Закрыть подтверждение отклонения рекомендации' body_template='includes/schedule_draft/schedule_draft_feedback_reject_modal_body.html' %}
 {% for row in manual_rows %}
     {% if row.urgent_closure and row.urgent_closure.can_create and not row.urgent_closure.active_request_url %}
         {% include 'includes/shared/app_modal.html' with modal_id=row.urgent_closure.modal_id title='Закрыть срочный остаток' subtitle='Выберите период, который уйдет руководителю и сотруднику на согласование.' body_template='includes/schedule_draft/schedule_draft_urgent_closure_modal_body.html' %}

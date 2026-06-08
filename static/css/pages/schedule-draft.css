@@ -915,6 +915,55 @@ main:has(.schedule-draft-page){
     color: #cfe9ff;
 }
 
+.schedule-draft-reject-confirm{
+    display: grid;
+    gap: 1rem;
+}
+
+.schedule-draft-reject-confirm__text,
+.schedule-draft-reject-confirm__hint{
+    margin: 0;
+    color: rgba(218, 230, 241, 0.82);
+    font-size: 0.88rem;
+    font-weight: 680;
+    line-height: 1.45;
+}
+
+.schedule-draft-reject-confirm__target{
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.58rem;
+}
+
+.schedule-draft-reject-confirm__target div{
+    display: grid;
+    gap: 0.18rem;
+    min-width: 0;
+    padding: 0.74rem 0.78rem;
+    border-radius: var(--ui-radius-card);
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.095);
+}
+
+.schedule-draft-reject-confirm__target span{
+    color: rgba(198, 214, 228, 0.66);
+    font-size: 0.68rem;
+    font-weight: 820;
+}
+
+.schedule-draft-reject-confirm__target strong{
+    min-width: 0;
+    color: rgba(246, 250, 255, 0.96);
+    font-size: 0.88rem;
+    font-weight: 880;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
+.schedule-draft-reject-confirm__actions{
+    margin-top: 0.1rem;
+}
+
 .schedule-draft-card__position-row{
     display: flex;
     align-items: center;
@@ -3027,5 +3076,9 @@ main:has(.schedule-draft-page){
     .schedule-draft-manual-card__button,
     .schedule-draft-placement-form .app-modal__button{
         width: 100%;
+    }
+
+    .schedule-draft-reject-confirm__target{
+        grid-template-columns: 1fr;
     }
 }

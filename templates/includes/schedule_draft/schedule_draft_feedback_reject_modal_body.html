@@ -1,0 +1,31 @@
+<div class="schedule-draft-reject-confirm">
+    <p class="schedule-draft-reject-confirm__text">
+        Период будет снят с черновика. Дни сотрудника вернутся в незакрытые, а HR сможет подобрать новый вариант вручную или через добор.
+    </p>
+
+    <div class="schedule-draft-reject-confirm__target" aria-label="Отклоняемый период">
+        <div>
+            <span>Сотрудник</span>
+            <strong data-feedback-reject-employee>Сотрудник</strong>
+        </div>
+        <div>
+            <span>Период</span>
+            <strong data-feedback-reject-period>Период</strong>
+        </div>
+        <div>
+            <span>Дни</span>
+            <strong data-feedback-reject-days>0 д.</strong>
+        </div>
+    </div>
+
+    <p class="schedule-draft-reject-confirm__hint">
+        Сам отзыв «Отклонено» сохранится для истории проверки и обучения модуля.
+    </p>
+
+    <div class="app-modal__actions schedule-draft-reject-confirm__actions">
+        <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отмена</button>
+        <button type="button" class="app-modal__button app-modal__button--danger" data-feedback-reject-confirm>
+            Снять период
+        </button>
+    </div>
+</div>
