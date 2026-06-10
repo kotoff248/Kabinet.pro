@@ -174,15 +174,16 @@ def _covered_mandatory_days_by_deadline(mandatory_rows, draft_items):
 
 def _planning_status(*, blocking_days, open_required_days, nearest_deadline, year):
     planning_start, _ = _planning_year_bounds(year)
+    today = timezone.localdate()
     if blocking_days > 0:
-        if nearest_deadline and nearest_deadline < planning_start:
+        if nearest_deadline and nearest_deadline < today:
             return {
                 "key": "overdue",
                 "label": "Срок прошел",
                 "icon": "report",
                 "tone": "blocker",
             }
-        if nearest_deadline and nearest_deadline <= date(year, 1, 31):
+        if nearest_deadline and (nearest_deadline < planning_start or nearest_deadline <= date(year, 1, 31)):
             return {
                 "key": "critical",
                 "label": "Критичный срок",

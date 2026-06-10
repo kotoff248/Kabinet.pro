@@ -74,14 +74,39 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
             ]
         }
 
-        closure_need = detect_previous_year_closure_need(
-            self.employee,
-            2027,
-            planning_need,
-            include_options=False,
-        )
+        with patch("apps.leave.services.urgent_closures.timezone.localdate", return_value=date(2026, 6, 11)):
+            closure_need = detect_previous_year_closure_need(
+                self.employee,
+                2027,
+                planning_need,
+                include_options=False,
+            )
 
         self.assertIsNone(closure_need)
+
+    def test_detect_previous_year_closure_allows_future_deadline_before_planning_year(self):
+        planning_need = {
+            "mandatory_rows": [
+                {
+                    "open_days": Decimal("16.00"),
+                    "must_use_by": date(2026, 7, 1),
+                }
+            ]
+        }
+
+        with patch("apps.leave.services.urgent_closures.timezone.localdate", return_value=date(2026, 6, 11)):
+            closure_need = detect_previous_year_closure_need(
+                self.employee,
+                2027,
+                planning_need,
+                include_options=False,
+            )
+
+        self.assertIsNotNone(closure_need)
+        self.assertEqual(closure_need["required_days"], Decimal("16.00"))
+        self.assertEqual(closure_need["deadline"], date(2026, 7, 1))
+        self.assertEqual(closure_need["closure_year"], 2026)
+        self.assertTrue(closure_need["can_create"])
 
     def test_urgent_closure_options_rank_by_neural_score_after_hard_rules(self):
         def fake_score(features, *, passed_hard_rules=True):

@@ -89,6 +89,20 @@ from apps.leave.services.schedule_changes import create_schedule_change_request
 from apps.leave.services.schedule_items import create_schedule_item_from_paid_vacation_request
 
 
+VACATION_REQUEST_MODEL_FIELDS = {
+    field.name
+    for field in VacationRequest._meta.concrete_fields
+}
+
+
+def _vacation_request_model_fields(payload):
+    return {
+        key: value
+        for key, value in payload.items()
+        if key in VACATION_REQUEST_MODEL_FIELDS
+    }
+
+
 class DemoSeedVacationMixin:
     def _seed_employee_vacations(self, employee):
         if employee.is_service_account:
@@ -2721,7 +2735,7 @@ class DemoSeedVacationMixin:
             reviewed_by=reviewed_by,
             reviewed_at=reviewed_at,
             review_comment=self._review_comment(status, risk_payload) if reviewed_by is not None else "",
-            **risk_payload,
+            **_vacation_request_model_fields(risk_payload),
             **vacation_request_ai_model_fields(ai_support),
             **decision_ai_fields,
         )

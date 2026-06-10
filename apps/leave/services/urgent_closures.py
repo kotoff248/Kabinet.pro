@@ -471,7 +471,7 @@ def detect_previous_year_closure_need(employee, planning_year, planning_need, *,
 
     if required_days <= 0 or deadline is None:
         return None
-    if deadline < planning_start:
+    if deadline < timezone.localdate():
         return None
 
     active_request = (

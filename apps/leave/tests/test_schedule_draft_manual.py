@@ -1085,6 +1085,34 @@ class ScheduleDraftManualTests(LeaveTestCase):
         self.assertContains(response, "Сначала")
         self.assertContains(response, f"03.01.{year}")
 
+    def test_future_previous_year_deadline_is_not_marked_overdue(self):
+        entitlement_rows = [
+            {
+                "period_start": date(2025, 7, 2),
+                "period_end": date(2026, 7, 1),
+                "remaining_days": Decimal("16.00"),
+                "available_from": date(2025, 7, 2),
+                "must_use_by": date(2026, 7, 1),
+            },
+        ]
+
+        with patch(
+            "apps.leave.services.schedule_drafts.planning_need.timezone.localdate",
+            return_value=date(2026, 6, 11),
+        ):
+            planning_need = _build_employee_schedule_planning_need_from_rows(
+                self.employee,
+                2027,
+                [],
+                Decimal("16.00"),
+                Decimal("16.00"),
+                entitlement_rows,
+            )
+
+        self.assertTrue(planning_need["has_blocker"])
+        self.assertEqual(planning_need["nearest_deadline"], date(2026, 7, 1))
+        self.assertEqual(planning_need["status"]["key"], "critical")
+
     def test_schedule_draft_target_separates_year_plan_from_future_reserve(self):
         year = self._year()
         entitlement_rows = [
