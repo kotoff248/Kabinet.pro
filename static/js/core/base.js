@@ -258,6 +258,15 @@ document.addEventListener("DOMContentLoaded", function () {
         );
     }
 
+    function getCalendarContextSectionKey(url) {
+        if (!url || url.pathname !== SECTION_MEMORY.calendar.listPath) {
+            return "";
+        }
+
+        const source = url.searchParams.get("from") || "";
+        return source && source !== "calendar" && SECTION_MEMORY[source] ? source : "";
+    }
+
     function stripPlanningContextParams(url) {
         url.searchParams.delete("from");
         url.searchParams.delete("back_url");
@@ -408,11 +417,17 @@ document.addEventListener("DOMContentLoaded", function () {
             return "";
         }
 
-        return /^\/employee\/\d+\/$/.test(url.pathname)
+        return Boolean(getCalendarContextSectionKey(url))
+            || /^\/employee\/\d+\/$/.test(url.pathname)
             || /^\/applications\/(?:\d+|transfers\/\d+|urgent-closures\/\d+)\/$/.test(url.pathname);
     }
 
     function getContextualSectionKey(url) {
+        const calendarContextSectionKey = getCalendarContextSectionKey(url);
+        if (calendarContextSectionKey) {
+            return calendarContextSectionKey;
+        }
+
         if (!isContextualDetailUrl(url)) {
             return "";
         }
@@ -880,9 +895,12 @@ document.addEventListener("DOMContentLoaded", function () {
         const linkUrl = toSameOriginUrl(link.href);
         if (
             sectionKey === "calendar"
-            && isPlanningContextCalendarUrl(currentUrl)
+            && (isPlanningContextCalendarUrl(currentUrl) || getCalendarContextSectionKey(currentUrl))
             && linkUrl
-            && !isPlanningContextCalendarUrl(linkUrl)
+            && (
+                getCalendarContextSectionKey(currentUrl)
+                || !isPlanningContextCalendarUrl(linkUrl)
+            )
             && !isCurrentPageUrl(linkUrl.href)
         ) {
             return false;

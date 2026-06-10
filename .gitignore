@@ -34,9 +34,23 @@ media/
 *.log
 output/
 
+# Local dissertation and presentation work artifacts
+/outputs/
+/drafts/
+/Дис/
+/презентация/
+/*.docx
+/*.pptx
+/~$*.docx
+/~$*.pptx
+/DIAGRAM_ARROW_RULES.md
+/DISSERTATION_WRITING_NOTES.md
+/Диссертация_фактчекинг_отчет.md
+
 # Local archives and temporary exports
 *.zip
 Archive/
+/_local_archive/
 
 # Local tooling artifacts
 /.downloads/
