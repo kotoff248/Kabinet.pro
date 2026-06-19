@@ -172,7 +172,7 @@ class StaffingRulesPageTests(EmployeeTestCase):
         employee_response = self.client.get(reverse("staffing_rules"))
         self.assertEqual(employee_response.status_code, 302)
 
-    @override_settings(DEBUG=False)
+    @override_settings(DEBUG=False, DEMO_DATA_TOOLS_ENABLED=False)
     def test_demo_reset_button_is_hidden_outside_debug(self):
         self.client.force_login(self.enterprise_head.user)
 
@@ -181,6 +181,16 @@ class StaffingRulesPageTests(EmployeeTestCase):
         self.assertFalse(response.context["can_reset_demo_data"])
         self.assertNotContains(response, 'data-modal-open="staffing-demo-reset-modal"')
         self.assertNotContains(response, 'data-modal-open="staffing-demo-restore-modal"')
+
+    @override_settings(DEBUG=False, DEMO_DATA_TOOLS_ENABLED=True)
+    def test_demo_reset_button_can_be_enabled_without_debug(self):
+        self.client.force_login(self.enterprise_head.user)
+
+        response = self.client.get(reverse("staffing_rules"))
+
+        self.assertTrue(response.context["can_reset_demo_data"])
+        self.assertContains(response, 'data-modal-open="staffing-demo-reset-modal"')
+        self.assertContains(response, 'data-modal-open="staffing-demo-restore-modal"')
 
     @override_settings(DEBUG=True)
     @patch("apps.employees.views.start_demo_data_reset_process")

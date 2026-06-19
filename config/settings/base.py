@@ -43,6 +43,7 @@ def is_insecure_secret_key(value):
 
 DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() in {"1", "true", "yes", "on"}
 SHOW_DEMO_LOGIN_HINTS = env_bool("SHOW_DEMO_LOGIN_HINTS", DEBUG)
+DEMO_DATA_TOOLS_ENABLED = env_bool("DEMO_DATA_TOOLS_ENABLED", DEBUG)
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-dev-only")
 if not DEBUG and is_insecure_secret_key(SECRET_KEY):
     raise RuntimeError("Set a strong DJANGO_SECRET_KEY when DJANGO_DEBUG=false.")

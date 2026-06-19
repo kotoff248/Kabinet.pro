@@ -458,7 +458,10 @@ def _staffing_rules_redirect_url(request, selected_year):
 
 
 def _can_reset_demo_data(employee):
-    return bool(settings.DEBUG and (is_enterprise_head_employee(employee) or is_hr_employee(employee)))
+    return bool(
+        getattr(settings, "DEMO_DATA_TOOLS_ENABLED", settings.DEBUG)
+        and (is_enterprise_head_employee(employee) or is_hr_employee(employee))
+    )
 
 
 def _staffing_rule_or_none(department):
