@@ -296,6 +296,34 @@ class StaffingRulesPageTests(EmployeeTestCase):
         self.assertEqual(payload["stage_label"], "Исторические графики")
         self.assertEqual(payload["login_url"], reverse("login"))
 
+    @override_settings(DEBUG=False, DEMO_DATA_TOOLS_ENABLED=True)
+    def test_demo_reset_status_can_be_enabled_without_debug(self):
+        job = DemoDataResetJob.objects.create(
+            token="enabled-token",
+            seed_value=42,
+            status=DemoDataResetJob.STATUS_RUNNING,
+            progress_percent=55,
+        )
+
+        response = self.client.get(reverse("reset_demo_data_status", args=[job.id]), {"token": "enabled-token"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["progress_percent"], 55)
+
+    @override_settings(DEBUG=False, DEMO_DATA_TOOLS_ENABLED=False)
+    def test_demo_reset_status_is_hidden_when_demo_tools_disabled(self):
+        job = DemoDataResetJob.objects.create(
+            token="disabled-token",
+            seed_value=42,
+            status=DemoDataResetJob.STATUS_RUNNING,
+        )
+
+        response = self.client.get(reverse("reset_demo_data_status", args=[job.id]), {"token": "disabled-token"})
+
+        self.assertEqual(response.status_code, 404)
+
     @override_settings(DEBUG=True)
     def test_demo_restore_without_snapshot_shows_error_and_keeps_session(self):
         self.client.force_login(self.enterprise_head.user)

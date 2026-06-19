@@ -457,9 +457,13 @@ def _staffing_rules_redirect_url(request, selected_year):
     return reverse("staffing_rules")
 
 
+def _demo_data_tools_enabled():
+    return bool(getattr(settings, "DEMO_DATA_TOOLS_ENABLED", settings.DEBUG))
+
+
 def _can_reset_demo_data(employee):
     return bool(
-        getattr(settings, "DEMO_DATA_TOOLS_ENABLED", settings.DEBUG)
+        _demo_data_tools_enabled()
         and (is_enterprise_head_employee(employee) or is_hr_employee(employee))
     )
 
@@ -1202,7 +1206,7 @@ def reset_demo_data(request):
 
 
 def reset_demo_data_status(request, job_id):
-    if not settings.DEBUG:
+    if not _demo_data_tools_enabled():
         return JsonResponse({"ok": False, "message": "Статус пересоздания доступен только в демо-режиме."}, status=404)
 
     token = request.GET.get("token", "")
