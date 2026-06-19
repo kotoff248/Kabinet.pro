@@ -1,0 +1,267 @@
+@font-face {
+    font-family: "Actay";
+    src: url("../../fonts/actay-regular.otf") format("opentype");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Actay Wide";
+    src: url("../../fonts/actaywide-bold.otf") format("opentype");
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+:root {
+    --links-bg-start: #202235;
+    --links-bg-end: #123f5b;
+    --links-card: rgba(27, 34, 54, 0.9);
+    --links-text: #ffffff;
+    --links-muted: #c4cddd;
+    --links-blue: #24b9ff;
+    --links-violet: #925bf4;
+    --links-line: rgba(120, 145, 185, 0.48);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    min-height: 100%;
+    background: var(--links-bg-start);
+}
+
+body.project-links-page {
+    min-height: 100svh;
+    margin: 0;
+    color: var(--links-text);
+    font-family: "Actay", Arial, sans-serif;
+    background:
+        radial-gradient(circle at 80% 12%, rgba(32, 199, 255, 0.2), transparent 34%),
+        radial-gradient(circle at 38% 82%, rgba(146, 91, 244, 0.24), transparent 42%),
+        linear-gradient(115deg, var(--links-bg-start), var(--links-bg-end));
+}
+
+body.project-links-page::before {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: clamp(6px, 0.7vw, 11px);
+    content: "";
+    background: linear-gradient(180deg, #20c7ff 0%, #4b7dff 42%, #925bf4 78%, #20c7ff 100%);
+}
+
+.project-links {
+    display: grid;
+    min-height: 100svh;
+    padding: clamp(40px, 7vw, 78px) clamp(22px, 8vw, 78px) clamp(28px, 5vw, 56px);
+    grid-template-rows: 1fr auto;
+    overflow-x: hidden;
+}
+
+.project-links__panel {
+    width: min(100%, 980px);
+    min-width: 0;
+}
+
+.project-links__brand,
+.project-links__title,
+.project-links__subtitle,
+.project-links__badge,
+.project-link-card,
+.project-links__footer {
+    text-shadow: 0 2px 3px rgba(0, 0, 0, 0.44);
+}
+
+.project-links__brand {
+    margin: 0 0 42px;
+    color: #58baff;
+    font-family: "Actay Wide", "Actay", Arial, sans-serif;
+    font-size: clamp(22px, 2.5vw, 30px);
+    line-height: 1;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.project-links__title {
+    margin: 0;
+    font-family: "Actay Wide", "Actay", Arial, sans-serif;
+    font-size: clamp(38px, 6vw, 72px);
+    line-height: 1.04;
+    letter-spacing: 0;
+}
+
+.project-links__subtitle {
+    max-width: 780px;
+    margin: 18px 0 42px;
+    color: var(--links-muted);
+    font-size: clamp(18px, 2.5vw, 27px);
+    line-height: 1.25;
+}
+
+.project-links__badge {
+    display: inline-grid;
+    min-height: 64px;
+    min-width: min(100%, 440px);
+    padding: 12px 32px;
+    border-radius: 999px;
+    place-items: center;
+    color: #fff;
+    font-family: "Actay Wide", "Actay", Arial, sans-serif;
+    font-size: clamp(21px, 3vw, 32px);
+    line-height: 1;
+    background: linear-gradient(90deg, var(--links-blue), #5888ff 55%, var(--links-violet));
+}
+
+.project-links__cards {
+    display: grid;
+    gap: clamp(24px, 4.5vw, 44px);
+    width: 100%;
+    max-width: 950px;
+    min-width: 0;
+    margin-top: clamp(54px, 8vw, 86px);
+}
+
+.project-link-card {
+    position: relative;
+    display: grid;
+    min-height: 170px;
+    padding: clamp(26px, 4vw, 34px) clamp(24px, 5vw, 48px);
+    border: 2px solid transparent;
+    border-radius: 30px;
+    color: inherit;
+    min-width: 0;
+    text-decoration: none;
+    background:
+        linear-gradient(108deg, rgba(29, 35, 56, 0.94), rgba(26, 40, 64, 0.94)) padding-box,
+        linear-gradient(90deg, var(--card-accent), #5c87ff 54%, #9a5cff) border-box;
+    box-shadow: 0 28px 60px rgba(0, 0, 0, 0.18);
+    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.project-link-card:hover,
+.project-link-card:focus-visible {
+    transform: translateY(-3px);
+    box-shadow: 0 34px 72px rgba(0, 0, 0, 0.24);
+    outline: none;
+}
+
+.project-link-card:focus-visible {
+    border-color: rgba(255, 255, 255, 0.82);
+}
+
+.project-link-card--site {
+    --card-accent: #22c7ff;
+}
+
+.project-link-card--github {
+    --card-accent: #66a4ff;
+}
+
+.project-link-card--disk {
+    --card-accent: #925bf4;
+}
+
+.project-link-card__title {
+    font-family: "Actay Wide", "Actay", Arial, sans-serif;
+    font-size: clamp(27px, 4vw, 42px);
+    line-height: 1.1;
+    overflow-wrap: anywhere;
+}
+
+.project-link-card__meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 18px;
+    margin-top: 24px;
+    color: var(--links-muted);
+    font-size: clamp(13px, 1.8vw, 18px);
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.project-link-card__dot {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: var(--card-accent);
+}
+
+.project-link-card__description {
+    margin-top: 18px;
+    color: #dce3ef;
+    font-size: clamp(17px, 2.2vw, 23px);
+    line-height: 1.28;
+}
+
+.project-link-card__url {
+    margin-top: 22px;
+    color: #7cc7ff;
+    font-size: clamp(15px, 2vw, 21px);
+    line-height: 1.22;
+    overflow-wrap: anywhere;
+}
+
+.project-links__footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    width: min(100%, 1024px);
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 2px solid var(--links-line);
+    color: var(--links-muted);
+    font-size: clamp(14px, 2vw, 18px);
+}
+
+.project-links__footer span:first-child {
+    color: #58baff;
+    font-family: "Actay Wide", "Actay", Arial, sans-serif;
+}
+
+@media (max-width: 640px) {
+    .project-links {
+        padding: 34px 16px 28px 26px;
+    }
+
+    .project-links__brand {
+        margin-bottom: 34px;
+    }
+
+    .project-links__subtitle {
+        margin-bottom: 30px;
+    }
+
+    .project-links__title {
+        font-size: clamp(30px, 10vw, 38px);
+    }
+
+    .project-links__badge {
+        width: 100%;
+        min-width: 0;
+        min-height: 56px;
+    }
+
+    .project-link-card {
+        min-height: 0;
+        padding: 26px 24px;
+        border-radius: 24px;
+    }
+
+    .project-link-card__meta {
+        gap: 14px;
+        margin-top: 20px;
+    }
+
+    .project-link-card__description {
+        margin-top: 16px;
+    }
+
+    .project-links__footer {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}

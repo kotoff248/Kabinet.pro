@@ -260,7 +260,7 @@ def schedule_draft_day_calculation(request, year, employee_id):
         return JsonResponse({"ok": False, "message": "Нет доступа к расчёту дней этого сотрудника."}, status=403)
 
     try:
-        calculation = build_schedule_draft_day_calculation(year=year, employee_id=employee_id)
+        calculation = build_schedule_draft_day_calculation(year=year, employee_id=employee_id, employee=employee)
     except ValidationError as exc:
         return JsonResponse({"ok": False, "message": _validation_error_message(exc)}, status=400)
 

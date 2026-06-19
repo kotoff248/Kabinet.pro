@@ -335,9 +335,6 @@ def _draft_items_for_schedule(schedule):
     )
 
 
-@transaction.atomic
-
-
 def _generic_risk_summary(risk_level):
     if risk_level == VacationRequest.RISK_HIGH:
         return "Высокий риск сохранен при создании черновика."

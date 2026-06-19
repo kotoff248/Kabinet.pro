@@ -49,7 +49,7 @@ from apps.leave.services.preferences import (
     get_paid_leave_available_from,
 )
 from apps.leave.services.planning_cycles import is_active_planning_year
-from apps.leave.services.risk import calculate_vacation_request_risk_with_explanation
+from apps.leave.services.risk import calculate_vacation_request_risk, calculate_vacation_request_risk_with_explanation
 from apps.leave.services.schedule_auto_place_jobs import get_active_schedule_auto_place_job, schedule_auto_place_job_page_payload
 from apps.leave.services.staffing import (
     build_department_staffing_context,
@@ -88,6 +88,7 @@ def _assessment_cache_key(
     max_chargeable_days=None,
     exclude_schedule_item_id=None,
     exclude_schedule_item_ids=None,
+    include_risk_explanation=True,
 ):
     excluded_ids = set(exclude_schedule_item_ids or [])
     if exclude_schedule_item_id is not None:
@@ -99,6 +100,7 @@ def _assessment_cache_key(
         year,
         str(quantize_leave_days(max_chargeable_days)) if max_chargeable_days is not None else "",
         tuple(sorted(excluded_ids)),
+        bool(include_risk_explanation),
         _assessment_placements_cache_key(placements),
     )
 
@@ -151,6 +153,7 @@ def assess_schedule_draft_candidate(
     risk_context=None,
     assessment_cache=None,
     risk_context_cache=None,
+    include_risk_explanation=True,
 ):
     cache_key = None
     if assessment_cache is not None:
@@ -163,6 +166,7 @@ def assess_schedule_draft_candidate(
             max_chargeable_days=max_chargeable_days,
             exclude_schedule_item_id=exclude_schedule_item_id,
             exclude_schedule_item_ids=exclude_schedule_item_ids,
+            include_risk_explanation=include_risk_explanation,
         )
         cached_assessment = assessment_cache.get(cache_key)
         if cached_assessment is not None:
@@ -241,7 +245,12 @@ def assess_schedule_draft_candidate(
     )
     if risk_context is None and risk_context_cache is not None:
         risk_context = _cached_risk_context(employee, start_date, end_date, risk_context_cache)
-    risk_payload = calculate_vacation_request_risk_with_explanation(
+    risk_calculator = (
+        calculate_vacation_request_risk_with_explanation
+        if include_risk_explanation
+        else calculate_vacation_request_risk
+    )
+    risk_payload = risk_calculator(
         employee=employee,
         start_date=start_date,
         end_date=end_date,
@@ -252,7 +261,7 @@ def assess_schedule_draft_candidate(
         **(risk_context or {}),
     )
     explanation = risk_payload.get("risk_explanation") or {}
-    has_conflict = bool(explanation.get("is_conflict"))
+    has_conflict = bool(risk_payload.get("is_conflict") or explanation.get("is_conflict"))
     if risk_payload.get("balance_after_request") is not None and risk_payload["balance_after_request"] < Decimal("0"):
         return finish({
             "can_place": False,

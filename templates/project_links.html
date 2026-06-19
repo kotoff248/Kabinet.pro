@@ -1,0 +1,40 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ссылки на проект Kabinet.pro</title>
+    <link rel="stylesheet" href="{% static 'css/pages/project-links.css' %}">
+</head>
+<body class="project-links-page">
+    <main class="project-links" aria-labelledby="project-links-title">
+        <section class="project-links__panel">
+            <p class="project-links__brand">Kabinet.pro</p>
+            <h1 class="project-links__title" id="project-links-title">Ссылки на проект</h1>
+            <p class="project-links__subtitle">Материалы выпускной квалификационной работы</p>
+
+            <div class="project-links__badge">Проектные ссылки</div>
+
+            <div class="project-links__cards" aria-label="Основные ссылки проекта">
+                {% for link in project_links %}
+                <a class="project-link-card project-link-card--{{ link.variant }}" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">
+                    <span class="project-link-card__title">{{ link.title }}</span>
+                    <span class="project-link-card__meta">
+                        <span class="project-link-card__dot" aria-hidden="true"></span>
+                        <span>{{ link.label }}</span>
+                    </span>
+                    <span class="project-link-card__description">{{ link.description }}</span>
+                    <span class="project-link-card__url">{{ link.url }}</span>
+                </a>
+                {% endfor %}
+            </div>
+        </section>
+
+        <footer class="project-links__footer" aria-hidden="true">
+            <span>Kabinet.pro</span>
+            <span>Ссылки на проект</span>
+        </footer>
+    </main>
+</body>
+</html>

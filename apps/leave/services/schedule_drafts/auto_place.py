@@ -73,6 +73,7 @@ def _iter_auto_candidate_payloads_for_target(
     exclude_schedule_item_ids=None,
     assessment_cache=None,
     risk_context_cache=None,
+    include_risk_explanation=True,
 ):
     target_days = _decimal_to_whole_days(target_days)
     if target_days <= 0:
@@ -110,6 +111,7 @@ def _iter_auto_candidate_payloads_for_target(
             exclude_schedule_item_ids=exclude_schedule_item_ids,
             assessment_cache=assessment_cache,
             risk_context_cache=risk_context_cache,
+            include_risk_explanation=include_risk_explanation,
         )
         if not assessment["can_place"]:
             continue
@@ -139,6 +141,7 @@ def _iter_auto_candidate_payloads_for_need(
     exclude_schedule_item_ids=None,
     assessment_cache=None,
     risk_context_cache=None,
+    include_risk_explanation=True,
 ):
     yielded_count = 0
     for option_days in _auto_target_day_options(target_days):
@@ -155,6 +158,7 @@ def _iter_auto_candidate_payloads_for_need(
             exclude_schedule_item_ids=exclude_schedule_item_ids,
             assessment_cache=assessment_cache,
             risk_context_cache=risk_context_cache,
+            include_risk_explanation=include_risk_explanation,
         ):
             yield candidate
             yielded_count += 1
@@ -228,6 +232,7 @@ def _iter_adjacent_topup_candidate_payloads(
     exclude_schedule_item_ids=None,
     assessment_cache=None,
     risk_context_cache=None,
+    include_risk_explanation=True,
 ):
     target_days = _decimal_to_whole_days(target_days)
     if target_days <= 0:
@@ -275,6 +280,7 @@ def _iter_adjacent_topup_candidate_payloads(
                 exclude_schedule_item_ids=exclude_schedule_item_ids,
                 assessment_cache=assessment_cache,
                 risk_context_cache=risk_context_cache,
+                include_risk_explanation=include_risk_explanation,
             )
             if assessment["can_place"]:
                 yield {

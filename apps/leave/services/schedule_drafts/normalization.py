@@ -182,6 +182,29 @@ def _merge_comment_for_items(items):
     return "Соседние части объединены системой в один непрерывный отпуск."
 
 
+def _selected_candidate_kind(item):
+    selected_candidate = getattr(item, "selected_candidate", None)
+    return getattr(selected_candidate, "kind", "") or ""
+
+
+def _contains_employee_preference_item(items):
+    preference_kinds = {
+        VacationScheduleCandidate.KIND_PRIMARY_PREFERENCE,
+        VacationScheduleCandidate.KIND_BACKUP_PREFERENCE,
+    }
+    return any(_selected_candidate_kind(item) in preference_kinds for item in items)
+
+
+def _should_merge_adjacent_draft_group(items):
+    preference_kinds = {
+        VacationScheduleCandidate.KIND_PRIMARY_PREFERENCE,
+        VacationScheduleCandidate.KIND_BACKUP_PREFERENCE,
+    }
+    if not _contains_employee_preference_item(items):
+        return True
+    return all(_selected_candidate_kind(item) in preference_kinds for item in items)
+
+
 def _merge_adjacent_employee_draft_items(schedule, employee, draft_items_by_employee, placements):
     items = sorted(
         [
@@ -212,6 +235,11 @@ def _merge_adjacent_employee_draft_items(schedule, employee, draft_items_by_empl
 
         if len(group) == 1:
             merged_items.append(group[0])
+            index = cursor
+            continue
+
+        if not _should_merge_adjacent_draft_group(group):
+            merged_items.extend(group)
             index = cursor
             continue
 

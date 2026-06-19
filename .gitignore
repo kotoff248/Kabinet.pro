@@ -37,6 +37,8 @@ output/
 # Local dissertation and presentation work artifacts
 /outputs/
 /drafts/
+/*.mp4
+/Qr-коды/
 /Дис/
 /презентация/
 /*.docx

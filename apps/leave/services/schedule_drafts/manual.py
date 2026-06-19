@@ -678,32 +678,36 @@ def _persist_manual_candidate_package(generation_run, schedule, package, *, deci
         else:
             candidate_decision = VacationScheduleCandidate.DECISION_REJECTED
 
-        stored_candidate = VacationScheduleCandidate.objects.create(
-            generation_run=generation_run,
-            schedule=schedule,
-            employee=candidate.employee,
-            start_date=candidate.start_date,
-            end_date=candidate.end_date,
-            vacation_type="paid",
-            chargeable_days=int(candidate.metadata.get("chargeable_days") or 0),
-            kind=candidate.kind,
-            source=candidate.source,
-            passed_hard_rules=passed,
-            block_reason_key=(candidate.metadata.get("block_reason_key") or blocked_key or "")[:80],
-            block_reason=candidate.metadata.get("block_reason") or blocked_reason,
-            risk_score=int(candidate.metadata.get("risk_score") or 0),
-            risk_level=candidate.metadata.get("risk_level") or VacationScheduleItem.RISK_LOW,
-            features=_generation_candidate_features(candidate),
-            score=_candidate_scoring_decimal(candidate, "scoring_score"),
-            confidence=_candidate_scoring_decimal(candidate, "scoring_confidence"),
-            model_version=candidate.metadata.get("scoring_model_version") or DRAFT_GENERATION_HYBRID_MODEL_VERSION,
-            explanation=candidate.metadata.get("scoring_explanation") or _candidate_explanation(candidate, candidate_decision),
-            decision=candidate_decision,
-            decision_rank=(decision_rank * 10) + order,
-            selected_at=selected_at if candidate_decision == VacationScheduleCandidate.DECISION_SELECTED else None,
+        candidate_records.append(
+            VacationScheduleCandidate(
+                generation_run=generation_run,
+                schedule=schedule,
+                employee=candidate.employee,
+                start_date=candidate.start_date,
+                end_date=candidate.end_date,
+                vacation_type="paid",
+                chargeable_days=int(candidate.metadata.get("chargeable_days") or 0),
+                kind=candidate.kind,
+                source=candidate.source,
+                passed_hard_rules=passed,
+                block_reason_key=(candidate.metadata.get("block_reason_key") or blocked_key or "")[:80],
+                block_reason=candidate.metadata.get("block_reason") or blocked_reason,
+                risk_score=int(candidate.metadata.get("risk_score") or 0),
+                risk_level=candidate.metadata.get("risk_level") or VacationScheduleItem.RISK_LOW,
+                features=_generation_candidate_features(candidate),
+                score=_candidate_scoring_decimal(candidate, "scoring_score"),
+                confidence=_candidate_scoring_decimal(candidate, "scoring_confidence"),
+                model_version=candidate.metadata.get("scoring_model_version") or DRAFT_GENERATION_HYBRID_MODEL_VERSION,
+                explanation=candidate.metadata.get("scoring_explanation") or _candidate_explanation(candidate, candidate_decision),
+                decision=candidate_decision,
+                decision_rank=(decision_rank * 10) + order,
+                selected_at=selected_at if candidate_decision == VacationScheduleCandidate.DECISION_SELECTED else None,
+            )
         )
+
+    candidate_records = VacationScheduleCandidate.objects.bulk_create(candidate_records)
+    for candidate, stored_candidate in zip(candidates, candidate_records):
         candidate.stored_candidate = stored_candidate
-        candidate_records.append(stored_candidate)
 
     passed_package = bool(candidates) and all(_candidate_passed_hard_rules(candidate) for candidate in candidates)
     if not passed_package:
@@ -736,7 +740,7 @@ def _persist_manual_candidate_package(generation_run, schedule, package, *, deci
     period_records = []
     for order, (candidate, candidate_record) in enumerate(zip(candidates, candidate_records), start=1):
         period_records.append(
-            VacationScheduleCandidatePackagePeriod.objects.create(
+            VacationScheduleCandidatePackagePeriod(
                 candidate_package=package_record,
                 candidate=candidate_record,
                 start_date=candidate.start_date,
@@ -751,6 +755,7 @@ def _persist_manual_candidate_package(generation_run, schedule, package, *, deci
                 order=order,
             )
         )
+    period_records = VacationScheduleCandidatePackagePeriod.objects.bulk_create(period_records)
     package.stored_package = package_record
     return package_record, candidate_records, period_records
 
@@ -790,7 +795,7 @@ def place_manual_schedule_draft_items(*, year, employee_id, periods, actor):
     suggestion_packages = _manual_candidate_packages(
         context,
         context_employee,
-        limit=MANUAL_DRAFT_MAX_PACKAGE_SUGGESTIONS,
+        limit=MANUAL_DRAFT_VISIBLE_PACKAGE_SUGGESTIONS,
     )
     selected_key = tuple((period["start_date"], period["end_date"]) for period in preview["periods"])
     selected_package = next(
@@ -883,7 +888,7 @@ def place_manual_schedule_draft_items(*, year, employee_id, periods, actor):
             period_record.schedule_item = covering_item
             period_record.save(update_fields=["schedule_item"])
 
-    unresolved_count = build_schedule_draft_page_context(year)["draft_summary"]["manual"]
+    unresolved_count = build_schedule_draft_summary_context(year)["draft_summary"]["manual"]
     _finish_schedule_generation_run(generation_run, manual_count=unresolved_count)
     _invalidate_schedule_draft_manual_suggestion_cache(schedule)
     return {

@@ -1,5 +1,5 @@
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 
@@ -18,6 +18,35 @@ from apps.core.services.notifications import (
     normalize_notification_filter,
 )
 from apps.employees.services import update_context_with_departments
+
+
+PROJECT_LINKS = (
+    {
+        "label": "Демонстрационная страница",
+        "title": "Страница Kabinet.pro",
+        "description": "Веб-страница проекта для просмотра и демонстрации работы системы.",
+        "url": "http://186.246.2.151/",
+        "variant": "site",
+    },
+    {
+        "label": "Репозиторий",
+        "title": "GitHub-репозиторий",
+        "description": "Исходный код и структура проекта Kabinet.pro.",
+        "url": "https://github.com/kotoff248/Kabinet.pro",
+        "variant": "github",
+    },
+    {
+        "label": "Материалы ВКР",
+        "title": "Яндекс.Диск",
+        "description": "Пояснительная записка, изображения, презентация и дополнительные материалы.",
+        "url": "https://disk.yandex.ru/d/bOAT3kEPEL7J8g",
+        "variant": "disk",
+    },
+)
+
+
+def project_links(request):
+    return HttpResponse(render_to_string("project_links.html", {"project_links": PROJECT_LINKS}))
 
 
 def _build_notifications_payload(request, current_employee, selected_filter):

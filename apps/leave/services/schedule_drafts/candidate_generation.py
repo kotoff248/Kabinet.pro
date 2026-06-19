@@ -339,6 +339,7 @@ def _assess_generation_candidate_hard_rules(
     exclude_schedule_item_ids=None,
     assessment_cache=None,
     risk_context_cache=None,
+    include_risk_explanation=True,
 ):
     assessment = assess_schedule_draft_candidate(
         candidate.employee,
@@ -351,6 +352,7 @@ def _assess_generation_candidate_hard_rules(
         exclude_schedule_item_ids=exclude_schedule_item_ids,
         assessment_cache=assessment_cache,
         risk_context_cache=risk_context_cache,
+        include_risk_explanation=include_risk_explanation,
     )
     return _apply_hard_rule_assessment(candidate, assessment)
 
@@ -739,34 +741,42 @@ def _finish_schedule_generation_run(generation_run, *, manual_count=0):
 def _persist_generation_candidates(generation_run, schedule, candidates, *, selected_candidate=None):
     selected_candidate_record = None
     selected_at = timezone.now()
+    candidate_records = []
+    candidate_decisions = []
     for decision_rank, candidate in enumerate(candidates, start=1):
         if "scoring_score" not in candidate.metadata or "scoring_confidence" not in candidate.metadata:
             _apply_candidate_scoring(candidate)
         decision = _candidate_decision(candidate, selected_candidate)
-        stored_candidate = VacationScheduleCandidate.objects.create(
-            generation_run=generation_run,
-            schedule=schedule,
-            employee=candidate.employee,
-            start_date=candidate.start_date,
-            end_date=candidate.end_date,
-            vacation_type="paid",
-            chargeable_days=int(candidate.metadata.get("chargeable_days") or 0),
-            kind=candidate.kind,
-            source=candidate.source,
-            passed_hard_rules=_candidate_passed_hard_rules(candidate),
-            block_reason_key=(candidate.metadata.get("block_reason_key") or "")[:80],
-            block_reason=candidate.metadata.get("block_reason") or "",
-            risk_score=int(candidate.metadata.get("risk_score") or 0),
-            risk_level=candidate.metadata.get("risk_level") or VacationScheduleItem.RISK_LOW,
-            features=_generation_candidate_features(candidate),
-            score=_candidate_scoring_decimal(candidate, "scoring_score"),
-            confidence=_candidate_scoring_decimal(candidate, "scoring_confidence"),
-            model_version=candidate.metadata.get("scoring_model_version") or DRAFT_GENERATION_HYBRID_MODEL_VERSION,
-            explanation=candidate.metadata.get("scoring_explanation") or _candidate_explanation(candidate, decision),
-            decision=decision,
-            decision_rank=decision_rank,
-            selected_at=selected_at if decision == VacationScheduleCandidate.DECISION_SELECTED else None,
+        candidate_decisions.append(decision)
+        candidate_records.append(
+            VacationScheduleCandidate(
+                generation_run=generation_run,
+                schedule=schedule,
+                employee=candidate.employee,
+                start_date=candidate.start_date,
+                end_date=candidate.end_date,
+                vacation_type="paid",
+                chargeable_days=int(candidate.metadata.get("chargeable_days") or 0),
+                kind=candidate.kind,
+                source=candidate.source,
+                passed_hard_rules=_candidate_passed_hard_rules(candidate),
+                block_reason_key=(candidate.metadata.get("block_reason_key") or "")[:80],
+                block_reason=candidate.metadata.get("block_reason") or "",
+                risk_score=int(candidate.metadata.get("risk_score") or 0),
+                risk_level=candidate.metadata.get("risk_level") or VacationScheduleItem.RISK_LOW,
+                features=_generation_candidate_features(candidate),
+                score=_candidate_scoring_decimal(candidate, "scoring_score"),
+                confidence=_candidate_scoring_decimal(candidate, "scoring_confidence"),
+                model_version=candidate.metadata.get("scoring_model_version") or DRAFT_GENERATION_HYBRID_MODEL_VERSION,
+                explanation=candidate.metadata.get("scoring_explanation") or _candidate_explanation(candidate, decision),
+                decision=decision,
+                decision_rank=decision_rank,
+                selected_at=selected_at if decision == VacationScheduleCandidate.DECISION_SELECTED else None,
+            )
         )
+
+    created_records = VacationScheduleCandidate.objects.bulk_create(candidate_records)
+    for candidate, stored_candidate, decision in zip(candidates, created_records, candidate_decisions):
         candidate.stored_candidate = stored_candidate
         if decision == VacationScheduleCandidate.DECISION_SELECTED:
             selected_candidate_record = stored_candidate
@@ -836,7 +846,16 @@ def _auto_generation_candidates_from_payloads(
     ]
 
 
-def _build_auto_generation_candidates(context, employee, current_items, planning_need):
+def _build_auto_generation_candidates(
+    context,
+    employee,
+    current_items,
+    planning_need,
+    *,
+    candidates_per_strategy=AUTO_DRAFT_MAX_CANDIDATES_PER_STRATEGY,
+    max_candidates=AUTO_DRAFT_MAX_CANDIDATES_PER_EMPLOYEE,
+    include_risk_explanation=True,
+):
     candidates = []
     if not planning_need["needs_manual_attention"]:
         return candidates
@@ -857,10 +876,11 @@ def _build_auto_generation_candidates(context, employee, current_items, planning
                 urgent=urgent,
                 allow_short_parts=allow_short_parts,
                 max_chargeable_days=max_chargeable_days,
-                limit=AUTO_DRAFT_MAX_CANDIDATES_PER_STRATEGY,
+                limit=candidates_per_strategy,
                 exclude_schedule_item_ids=context.excluded_schedule_item_ids,
                 assessment_cache=context.assessment_cache,
                 risk_context_cache=context.risk_context_cache,
+                include_risk_explanation=include_risk_explanation,
             )
         )
         candidates.extend(
@@ -884,10 +904,11 @@ def _build_auto_generation_candidates(context, employee, current_items, planning
                 target_days,
                 latest_end,
                 max_chargeable_days=max_chargeable_days,
-                limit=AUTO_DRAFT_MAX_CANDIDATES_PER_STRATEGY,
+                limit=candidates_per_strategy,
                 exclude_schedule_item_ids=context.excluded_schedule_item_ids,
                 assessment_cache=context.assessment_cache,
                 risk_context_cache=context.risk_context_cache,
+                include_risk_explanation=include_risk_explanation,
             )
         )
         candidates.extend(
@@ -908,6 +929,7 @@ def _build_auto_generation_candidates(context, employee, current_items, planning
             employee,
             planning_need,
             metadata={"auto_place_preference_seed": True},
+            include_risk_explanation=include_risk_explanation,
         )
         if backup_candidate is not None:
             nearest_deadline = planning_need.get("nearest_deadline")
@@ -934,7 +956,7 @@ def _build_auto_generation_candidates(context, employee, current_items, planning
                 kind=DRAFT_CANDIDATE_AUTO_URGENT,
                 comment="Автоматически распределено: срочный остаток отпуска до срока.",
             ):
-                return _dedupe_generation_candidates(candidates)[:AUTO_DRAFT_MAX_CANDIDATES_PER_EMPLOYEE]
+                return _dedupe_generation_candidates(candidates)[:max_candidates]
 
             if add_topup_candidates(
                 target_days=current_year_blocking_days,
@@ -942,7 +964,7 @@ def _build_auto_generation_candidates(context, employee, current_items, planning
                 max_chargeable_days=open_required_days,
                 comment="Автоматически продлено: срочный остаток закрыт соседней частью отпуска.",
             ):
-                return _dedupe_generation_candidates(candidates)[:AUTO_DRAFT_MAX_CANDIDATES_PER_EMPLOYEE]
+                return _dedupe_generation_candidates(candidates)[:max_candidates]
 
             if add_period_candidates(
                 target_days=current_year_blocking_days,
@@ -952,7 +974,7 @@ def _build_auto_generation_candidates(context, employee, current_items, planning
                 kind=DRAFT_CANDIDATE_AUTO_URGENT,
                 comment="Автоматически распределено: короткий срочный остаток до срока.",
             ):
-                return _dedupe_generation_candidates(candidates)[:AUTO_DRAFT_MAX_CANDIDATES_PER_EMPLOYEE]
+                return _dedupe_generation_candidates(candidates)[:max_candidates]
 
             if planning_need["annual_remaining_days"] > 0:
                 if planning_need["annual_remaining_days"] < MIN_CONTINUOUS_PAID_LEAVE_DAYS and add_topup_candidates(
@@ -961,7 +983,7 @@ def _build_auto_generation_candidates(context, employee, current_items, planning
                     max_chargeable_days=open_required_days,
                     comment="Автоматически продлено: автодобор выполнен, срочный остаток остался на ручную проверку.",
                 ):
-                    return _dedupe_generation_candidates(candidates)[:AUTO_DRAFT_MAX_CANDIDATES_PER_EMPLOYEE]
+                    return _dedupe_generation_candidates(candidates)[:max_candidates]
 
                 if add_period_candidates(
                     target_days=planning_need["annual_remaining_days"],
@@ -971,8 +993,8 @@ def _build_auto_generation_candidates(context, employee, current_items, planning
                     kind=DRAFT_CANDIDATE_AUTO,
                     comment="Автоматически распределено: автодобор выполнен, срочный остаток остался на ручную проверку.",
                 ):
-                    return _dedupe_generation_candidates(candidates)[:AUTO_DRAFT_MAX_CANDIDATES_PER_EMPLOYEE]
-            return _dedupe_generation_candidates(candidates)[:AUTO_DRAFT_MAX_CANDIDATES_PER_EMPLOYEE]
+                    return _dedupe_generation_candidates(candidates)[:max_candidates]
+            return _dedupe_generation_candidates(candidates)[:max_candidates]
 
         target_after_previous_year_closure = quantize_leave_days(
             max(open_required_days - previous_year_closure_days, Decimal("0.00"))
@@ -987,7 +1009,7 @@ def _build_auto_generation_candidates(context, employee, current_items, planning
             kind=DRAFT_CANDIDATE_AUTO,
             comment="Автоматически распределено: автодобор при отдельном срочном остатке.",
         )
-        return _dedupe_generation_candidates(candidates)[:AUTO_DRAFT_MAX_CANDIDATES_PER_EMPLOYEE]
+        return _dedupe_generation_candidates(candidates)[:max_candidates]
 
     if open_required_days < MIN_CONTINUOUS_PAID_LEAVE_DAYS and add_topup_candidates(
         target_days=open_required_days,
@@ -995,7 +1017,7 @@ def _build_auto_generation_candidates(context, employee, current_items, planning
         max_chargeable_days=open_required_days,
         comment="Автоматически продлено: короткий остаток объединен с соседним отпуском.",
     ):
-        return _dedupe_generation_candidates(candidates)[:AUTO_DRAFT_MAX_CANDIDATES_PER_EMPLOYEE]
+        return _dedupe_generation_candidates(candidates)[:max_candidates]
 
     add_period_candidates(
         target_days=open_required_days,
@@ -1005,7 +1027,7 @@ def _build_auto_generation_candidates(context, employee, current_items, planning
         kind=DRAFT_CANDIDATE_AUTO,
         comment="Автоматически распределено: добивка по пожеланию сотрудника.",
     )
-    return _dedupe_generation_candidates(candidates)[:AUTO_DRAFT_MAX_CANDIDATES_PER_EMPLOYEE]
+    return _dedupe_generation_candidates(candidates)[:max_candidates]
 
 
 def _select_auto_generation_candidate(context, employee, current_items, planning_need):

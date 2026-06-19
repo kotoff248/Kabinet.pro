@@ -9,7 +9,6 @@ from urllib.parse import urlencode
 
 from django.core.exceptions import ValidationError
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db import transaction
 from django.db.models import Avg
 from django.urls import reverse
 from django.utils import timezone
@@ -91,7 +90,16 @@ def build_schedule_draft_urgent_closure_options(*, year, employee_id):
     return urgent_closure
 
 
-def _manual_package_target_candidates(context, employee, current_items, planning_need):
+def _manual_package_target_candidates(
+    context,
+    employee,
+    current_items,
+    planning_need,
+    *,
+    candidates_per_strategy=AUTO_DRAFT_MAX_CANDIDATES_PER_STRATEGY,
+    seed_limit=None,
+    include_risk_explanation=True,
+):
     _, planning_end = _planning_year_bounds(context.year)
     open_required_days = planning_need["open_required_days"]
     if open_required_days <= 0:
@@ -112,10 +120,21 @@ def _manual_package_target_candidates(context, employee, current_items, planning
         employee,
         planning_need,
         metadata={"manual_package_seed": True},
+        include_risk_explanation=include_risk_explanation,
     )
     if backup_candidate is not None:
         candidates.append(backup_candidate)
-    candidates.extend(_build_auto_generation_candidates(context, employee, current_items, planning_need))
+    candidates.extend(
+        _build_auto_generation_candidates(
+            context,
+            employee,
+            current_items,
+            planning_need,
+            candidates_per_strategy=candidates_per_strategy,
+            max_candidates=max(candidates_per_strategy * 3, candidates_per_strategy),
+            include_risk_explanation=include_risk_explanation,
+        )
+    )
     for target in target_days:
         if target <= 0:
             continue
@@ -129,10 +148,11 @@ def _manual_package_target_candidates(context, employee, current_items, planning
                 urgent=urgent,
                 allow_short_parts=target < MIN_CONTINUOUS_PAID_LEAVE_DAYS,
                 max_chargeable_days=target,
-                limit=AUTO_DRAFT_MAX_CANDIDATES_PER_STRATEGY,
+                limit=candidates_per_strategy,
                 exclude_schedule_item_ids=context.excluded_schedule_item_ids,
                 assessment_cache=context.assessment_cache,
                 risk_context_cache=context.risk_context_cache,
+                include_risk_explanation=include_risk_explanation,
             )
         )
         candidates.extend(
@@ -146,14 +166,17 @@ def _manual_package_target_candidates(context, employee, current_items, planning
             )
         )
     ranked_candidates = _rank_generation_candidates(_dedupe_generation_candidates(candidates))
-    return sorted(
+    ranked_candidates = sorted(
         ranked_candidates,
         key=lambda candidate: 1 if candidate.metadata.get("is_preference_candidate") else 0,
         reverse=True,
     )
+    if seed_limit is not None:
+        return ranked_candidates[:seed_limit]
+    return ranked_candidates
 
 
-def _backup_preference_candidate(context, employee, planning_need, *, metadata=None):
+def _backup_preference_candidate(context, employee, planning_need, *, metadata=None, include_risk_explanation=True):
     pair = context.preference_pair_by_employee.get(employee.id) or {}
     preference = pair.get(VacationPreference.PRIORITY_BACKUP)
     if not preference or not preference.start_date or not preference.end_date:
@@ -206,6 +229,7 @@ def _backup_preference_candidate(context, employee, planning_need, *, metadata=N
         exclude_schedule_item_ids=context.excluded_schedule_item_ids,
         assessment_cache=context.assessment_cache,
         risk_context_cache=context.risk_context_cache,
+        include_risk_explanation=include_risk_explanation,
     )
 
 
@@ -242,7 +266,14 @@ def _manual_package_context_after_candidate(context, employee, current_items, ca
     return next_context, next_items
 
 
-def _build_manual_candidate_package_from_seed(context, employee, seed_candidate):
+def _build_manual_candidate_package_from_seed(
+    context,
+    employee,
+    seed_candidate,
+    *,
+    candidates_per_strategy=AUTO_DRAFT_MAX_CANDIDATES_PER_STRATEGY,
+    include_risk_explanation=True,
+):
     candidates = [seed_candidate]
     current_context = context
     current_items = list(context.draft_items_by_employee.get(employee.id, []))
@@ -275,10 +306,11 @@ def _build_manual_candidate_package_from_seed(context, employee, seed_candidate)
                 urgent=bool(planning_need.get("has_blocker")),
                 allow_short_parts=True,
                 max_chargeable_days=planning_need["open_required_days"],
-                limit=AUTO_DRAFT_MAX_CANDIDATES_PER_STRATEGY,
+                limit=candidates_per_strategy,
                 exclude_schedule_item_ids=current_context.excluded_schedule_item_ids,
                 assessment_cache=current_context.assessment_cache,
                 risk_context_cache=current_context.risk_context_cache,
+                include_risk_explanation=include_risk_explanation,
             )
         )
         next_candidates = _rank_generation_candidates(
@@ -349,24 +381,54 @@ def _rank_manual_candidate_packages(packages):
     return sorted(packages, key=package_rank, reverse=True)
 
 
-def _manual_candidate_packages(context, employee, limit=MANUAL_DRAFT_MAX_PACKAGE_SUGGESTIONS, *, planning_need=None, current_items=None):
+def _manual_candidate_packages(
+    context,
+    employee,
+    limit=MANUAL_DRAFT_MAX_PACKAGE_SUGGESTIONS,
+    *,
+    planning_need=None,
+    current_items=None,
+    candidates_per_strategy=AUTO_DRAFT_MAX_CANDIDATES_PER_STRATEGY,
+    seed_multiplier=None,
+    include_risk_explanation=True,
+):
     current_items = list(context.draft_items_by_employee.get(employee.id, []) if current_items is None else current_items)
     planning_need = planning_need or _current_employee_planning_need(context, employee)
+    if seed_multiplier is None:
+        seed_limit = None
+        package_build_limit = int(limit or 1) * 2
+    else:
+        seed_limit = max(1, min(MANUAL_DRAFT_MAX_PACKAGE_SUGGESTIONS, int(limit or 1) * max(1, int(seed_multiplier or 1))))
+        package_build_limit = seed_limit
     seeds = [
         candidate
-        for candidate in _manual_package_target_candidates(context, employee, current_items, planning_need)
+        for candidate in _manual_package_target_candidates(
+            context,
+            employee,
+            current_items,
+            planning_need,
+            candidates_per_strategy=candidates_per_strategy,
+            seed_limit=seed_limit,
+            include_risk_explanation=include_risk_explanation,
+        )
         if _candidate_passed_hard_rules(candidate)
     ]
     packages = []
     seen = set()
     for seed in seeds:
-        package = _build_manual_candidate_package_from_seed(context, employee, seed)
+        package = _build_manual_candidate_package_from_seed(
+            context,
+            employee,
+            seed,
+            candidates_per_strategy=candidates_per_strategy,
+            include_risk_explanation=include_risk_explanation,
+        )
         key = _manual_package_key(package)
         if not key or key in seen:
             continue
         seen.add(key)
         packages.append(package)
-        if len(packages) >= limit * 2:
+        if len(packages) >= package_build_limit:
             break
     return _rank_manual_candidate_packages(packages)[:limit]
 
@@ -493,6 +555,7 @@ def _manual_suggestion_payload_from_context(
             employee,
             planning_need,
             metadata={"manual_package_seed": True},
+            include_risk_explanation=False,
         )
     )
     packages = _manual_candidate_packages(
@@ -500,6 +563,9 @@ def _manual_suggestion_payload_from_context(
         employee,
         limit=package_limit,
         planning_need=planning_need,
+        candidates_per_strategy=MANUAL_DRAFT_SUGGESTION_CANDIDATES_PER_STRATEGY,
+        seed_multiplier=MANUAL_DRAFT_SUGGESTION_SEED_MULTIPLIER,
+        include_risk_explanation=False,
     )
     visible_packages = packages[:limit]
     return {
@@ -611,11 +677,50 @@ def _ensure_manual_suggestion_cache_version(schedule):
     return schedule.manual_suggestion_cache_version
 
 
+def _build_manual_suggestion_context_for_employee(schedule, employee_id):
+    eligible_employees = list(get_eligible_preference_employees(schedule.year))
+    employee = next((candidate for candidate in eligible_employees if candidate.id == employee_id), None)
+    if employee is None:
+        raise ValidationError("Сотрудник не найден в сборе пожеланий за этот год.")
+
+    draft_items = _draft_items_for_schedule(schedule)
+    grouped_items = _draft_items_by_employee(draft_items)
+    preference_pair_by_employee = get_employee_preference_pair_map([employee.id], schedule.year)
+    preference_state_by_employee = get_employee_preference_state_map([employee.id], schedule.year)
+    planning_need_by_employee = build_employee_schedule_planning_need_map(
+        [employee],
+        schedule.year,
+        draft_items_by_employee=grouped_items,
+        preference_pair_by_employee=preference_pair_by_employee,
+        preference_state_by_employee=preference_state_by_employee,
+    )
+    planning_static_by_employee = {
+        current_employee_id: {
+            "available_days": planning_need["available_days"],
+            "plan_available_days": planning_need["plan_available_days"],
+            "entitlement_rows": planning_need["entitlement_rows"],
+        }
+        for current_employee_id, planning_need in planning_need_by_employee.items()
+    }
+    context = DraftGenerationContext(
+        year=schedule.year,
+        schedule=schedule,
+        eligible_employees=[employee],
+        draft_items_by_employee=grouped_items,
+        preference_pair_by_employee=preference_pair_by_employee,
+        preference_state_by_employee=preference_state_by_employee,
+        placements=_current_placements_from_items(draft_items),
+        planning_need_by_employee=planning_need_by_employee,
+        planning_static_by_employee=planning_static_by_employee,
+    )
+    return context, employee, planning_need_by_employee[employee.id]
+
+
 def _build_schedule_draft_manual_suggestion_cache_for_employee(schedule, employee_id, *, package_limit=MANUAL_DRAFT_MAX_PACKAGE_SUGGESTIONS):
     if schedule is None:
         return None
 
-    context = _build_draft_generation_context(schedule.year, schedule)
+    context, employee, planning_need = _build_manual_suggestion_context_for_employee(schedule, employee_id)
     employee = next((candidate for candidate in context.eligible_employees if candidate.id == employee_id), None)
     if employee is None:
         raise ValidationError("Сотрудник не найден в сборе пожеланий за этот год.")
@@ -663,10 +768,9 @@ def _manual_suggestion_cache_covers_limit(cache, limit):
     return int(payload.get("cache_package_limit") or 0) >= int(limit or 0)
 
 
-@transaction.atomic
 def build_schedule_draft_manual_suggestions(*, year, employee_id, limit=MANUAL_DRAFT_VISIBLE_PACKAGE_SUGGESTIONS):
     limit = max(1, min(int(limit or MANUAL_DRAFT_VISIBLE_PACKAGE_SUGGESTIONS), MANUAL_DRAFT_MAX_PACKAGE_SUGGESTIONS))
-    schedule = VacationSchedule.objects.select_for_update().filter(
+    schedule = VacationSchedule.objects.filter(
         year=year,
         status=VacationSchedule.STATUS_DRAFT,
     ).first()
@@ -684,7 +788,7 @@ def build_schedule_draft_manual_suggestions(*, year, employee_id, limit=MANUAL_D
             package_limit=limit,
         )
     if cache is None:
-        context = _build_draft_generation_context(year, schedule)
+        context, employee, planning_need = _build_manual_suggestion_context_for_employee(schedule, employee_id)
         employee = next((candidate for candidate in context.eligible_employees if candidate.id == employee_id), None)
         if employee is None:
             raise ValidationError("Сотрудник не найден в сборе пожеланий за этот год.")

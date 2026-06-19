@@ -594,17 +594,22 @@ def build_schedule_day_calculation_payload(employee, year, planning_need):
     }
 
 
-def build_schedule_draft_day_calculation(*, year, employee_id):
+def build_schedule_draft_day_calculation(*, year, employee_id, employee=None):
     schedule = VacationSchedule.objects.filter(year=year, status__in=DRAFT_VIEW_SCHEDULE_STATUSES).first()
     if schedule is None:
         raise ValidationError("Черновик графика за этот год не найден.")
-    employee = next(
-        (candidate for candidate in get_eligible_preference_employees(year) if candidate.id == employee_id),
-        None,
-    )
+    if employee is None:
+        employee = next(
+            (candidate for candidate in get_eligible_preference_employees(year) if candidate.id == employee_id),
+            None,
+        )
     if employee is None:
         raise ValidationError("Сотрудник не найден в черновике графика за этот год.")
 
-    draft_items = [item for item in _draft_items_for_schedule(schedule) if item.employee_id == employee.id]
+    draft_items = list(
+        schedule.items.select_related("selected_candidate")
+        .filter(employee_id=employee.id, status__in=_draft_view_item_statuses(schedule))
+        .order_by("start_date", "end_date", "id")
+    )
     planning_need = build_employee_schedule_planning_need(employee, year, draft_items=draft_items)
     return build_schedule_day_calculation_payload(employee, year, planning_need)

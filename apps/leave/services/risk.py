@@ -266,6 +266,7 @@ def _calculate_vacation_request_risk(
         risk_payload = {
             "risk_score": 25,
             "risk_level": VacationRequest.RISK_LOW,
+            "is_conflict": False,
             "department_load_level": department_load_level,
             "overlapping_absences_count": 0,
             "remaining_staff_count": 0,
@@ -411,6 +412,7 @@ def _calculate_vacation_request_risk(
     risk_payload = {
         "risk_score": risk_score,
         "risk_level": risk_level,
+        "is_conflict": hard_conflict,
         "department_load_level": department_load_level,
         "overlapping_absences_count": overlapping_absences_count,
         "remaining_staff_count": remaining_staff_count,
