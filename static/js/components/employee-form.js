@@ -14,6 +14,8 @@ function initEmployeeFormPage() {
 
     const employeeSelects = Array.from(document.querySelectorAll("[data-employee-select]"));
     const employeeForms = Array.from(document.querySelectorAll("[data-employee-form]"));
+    const initializedSelects = new Set();
+    const initializedForms = new Set();
 
     if (!employeeSelects.length && !employeeForms.length) {
         return;
@@ -86,11 +88,16 @@ function initEmployeeFormPage() {
         });
     }
 
-    function syncEmployeeSelect(selectWrapper) {
+    function isInsideClosedModal(element) {
+        return Boolean(element && element.closest(".app-modal:not(.is-open)"));
+    }
+
+    function syncEmployeeSelect(selectWrapper, options) {
         if (!selectWrapper) {
             return;
         }
 
+        const settings = options || {};
         const parts = getSelectParts(selectWrapper);
         if (!parts.nativeSelect || !parts.trigger || !parts.valueNode) {
             return;
@@ -114,7 +121,7 @@ function initEmployeeFormPage() {
         parts.trigger.setAttribute("aria-expanded", selectWrapper.classList.contains("is-open") ? "true" : "false");
         selectWrapper.classList.toggle("is-disabled", parts.nativeSelect.disabled || forcedDisabled);
 
-        if (parts.menu) {
+        if (parts.menu && (settings.syncMenu || selectWrapper.classList.contains("is-open"))) {
             parts.menu.querySelectorAll("[data-employee-select-option]").forEach(function (optionButton) {
                 const isSelected = optionButton.dataset.value === parts.nativeSelect.value;
                 optionButton.classList.toggle("is-selected", isSelected);
@@ -258,6 +265,7 @@ function initEmployeeFormPage() {
         closeEmployeeSelects(selectWrapper);
         selectWrapper.classList.add("is-open");
         parts.trigger.setAttribute("aria-expanded", "true");
+        syncEmployeeSelect(selectWrapper, { syncMenu: true });
 
         if (isFloatingSelect(selectWrapper) && !parts.menu.classList.contains("employee-select__menu--floating")) {
             const placeholder = document.createComment("employee-select-menu-anchor");
@@ -296,19 +304,24 @@ function initEmployeeFormPage() {
     }
 
     function repositionOpenSelects() {
-        employeeSelects.forEach(function (selectWrapper) {
+        initializedSelects.forEach(function (selectWrapper) {
             if (selectWrapper.classList.contains("is-open") && isFloatingSelect(selectWrapper)) {
                 positionFloatingMenu(selectWrapper);
             }
         });
     }
 
-    employeeSelects.forEach(function (selectWrapper) {
+    function initEmployeeSelect(selectWrapper) {
+        if (!selectWrapper || initializedSelects.has(selectWrapper)) {
+            return;
+        }
+
         const parts = getSelectParts(selectWrapper);
         if (!parts.trigger || !parts.nativeSelect || !parts.menu) {
             return;
         }
 
+        initializedSelects.add(selectWrapper);
         syncEmployeeSelect(selectWrapper);
 
         parts.trigger.addEventListener("click", function (event) {
@@ -325,12 +338,16 @@ function initEmployeeFormPage() {
             openEmployeeSelect(selectWrapper);
         }, { signal: signal });
 
-        parts.menu.querySelectorAll("[data-employee-select-option]").forEach(function (optionButton) {
-            optionButton.addEventListener("click", function (event) {
-                event.stopPropagation();
-                selectEmployeeOption(selectWrapper, optionButton);
-            }, { signal: signal });
-        });
+        parts.menu.addEventListener("click", function (event) {
+            const target = event.target instanceof Element ? event.target : null;
+            const optionButton = target ? target.closest("[data-employee-select-option]") : null;
+            if (!optionButton || !parts.menu.contains(optionButton)) {
+                return;
+            }
+
+            event.stopPropagation();
+            selectEmployeeOption(selectWrapper, optionButton);
+        }, { signal: signal });
 
         parts.nativeSelect.addEventListener("change", function () {
             syncEmployeeSelect(selectWrapper);
@@ -340,9 +357,14 @@ function initEmployeeFormPage() {
             }
             syncFormSubmitState(parts.nativeSelect.closest("[data-employee-form]"));
         }, { signal: signal });
-    });
+    }
 
-    employeeForms.forEach(function (form) {
+    function initEmployeeForm(form) {
+        if (!form || initializedForms.has(form)) {
+            return;
+        }
+
+        initializedForms.add(form);
         ["input", "change"].forEach(function (eventName) {
             form.addEventListener(eventName, function () {
                 syncFormSubmitState(form);
@@ -351,22 +373,42 @@ function initEmployeeFormPage() {
 
         syncPositionSelectForForm(form);
         syncFormSubmitState(form);
-    });
+    }
 
-    document.addEventListener("click", function (event) {
-        const optionButton = event.target.closest(".employee-select__menu--floating [data-employee-select-option]");
-        if (!optionButton) {
+    function initEmployeeControls(scope, options) {
+        const settings = options || {};
+        const root = scope || document;
+        const selectCandidates = root.matches && root.matches("[data-employee-select]")
+            ? [root]
+            : Array.from(root.querySelectorAll("[data-employee-select]"));
+        const formCandidates = root.matches && root.matches("[data-employee-form]")
+            ? [root]
+            : Array.from(root.querySelectorAll("[data-employee-form]"));
+
+        selectCandidates.forEach(function (selectWrapper) {
+            if (!settings.includeClosedModals && isInsideClosedModal(selectWrapper)) {
+                return;
+            }
+            initEmployeeSelect(selectWrapper);
+        });
+
+        formCandidates.forEach(function (form) {
+            if (!settings.includeClosedModals && isInsideClosedModal(form)) {
+                return;
+            }
+            initEmployeeForm(form);
+        });
+    }
+
+    initEmployeeControls(document);
+
+    document.addEventListener("app-modal:open", function (event) {
+        const modal = event.target instanceof Element ? event.target : null;
+        if (!modal) {
             return;
         }
-
-        const menu = optionButton.closest(".employee-select__menu--floating");
-        if (!menu || !menu.__ownerSelectWrapper) {
-            return;
-        }
-
-        event.stopPropagation();
-        selectEmployeeOption(menu.__ownerSelectWrapper, optionButton);
-    }, { capture: true, signal: signal });
+        initEmployeeControls(modal, { includeClosedModals: true });
+    }, { signal: signal });
 
     document.addEventListener("click", function (event) {
         if (!event.target.closest("[data-employee-select]") && !event.target.closest(".employee-select__menu--floating")) {

@@ -1752,6 +1752,13 @@
         order: 2;
     }
 
+    .staffing-shell-page .staffing-row,
+    .staffing-shell-page .staffing-rule-row,
+    .staffing-shell-page .staffing-workload-month{
+        contain: none;
+        content-visibility: visible;
+    }
+
     .staffing-page .page-hero{
         height: auto;
         min-height: 0;
