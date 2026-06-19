@@ -1743,6 +1743,15 @@
 }
 
 @media (max-width: 992px){
+    .staffing-shell-page .page-main{
+        order: -1;
+        padding-top: 0;
+    }
+
+    .staffing-shell-page .app-sidebar{
+        order: 2;
+    }
+
     .staffing-page .page-hero{
         height: auto;
         min-height: 0;
