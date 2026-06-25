@@ -575,7 +575,15 @@
                 "X-Requested-With": "XMLHttpRequest",
             },
         }).then(function (response) {
-            return response.json().then(function (payload) {
+            const contentType = response.headers.get("content-type") || "";
+            if (contentType.indexOf("application/json") === -1) {
+                return response.text().then(function () {
+                    throw new Error("Сервер вернул страницу вместо JSON. Обновите страницу и попробуйте снова.");
+                });
+            }
+            return response.json().catch(function () {
+                throw new Error("Не удалось разобрать ответ сервера.");
+            }).then(function (payload) {
                 if (!response.ok || payload.ok === false) {
                     throw new Error(payload.message || "Не удалось загрузить данные.");
                 }

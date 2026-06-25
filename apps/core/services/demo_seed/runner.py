@@ -237,6 +237,9 @@ class DemoVacationSeedRunner(
         self.demo_baseline_snapshot = capture_demo_baseline_snapshot(
             planning_year=self.schedule_end_year + 1,
             seed_value=seed_value,
+            preset=self.demo_preset,
+            employee_count=self.total_employee_count,
+            history_years=history_years,
         )
         ensure_active_planning_cycle(self.schedule_end_year + 1, actor=hr_team[0])
         self._progress(

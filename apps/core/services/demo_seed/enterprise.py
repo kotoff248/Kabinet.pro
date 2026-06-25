@@ -188,17 +188,6 @@ class DemoSeedEnterpriseMixin:
             timezone.get_current_timezone(),
         )
 
-    def _create_staffing_rules(self, departments):
-        for department, spec in zip(departments, self.department_specs):
-            rule_spec = spec["staffing_rule"]
-            self.staffing_rules[department.id] = DepartmentStaffingRule.objects.create(
-                department=department,
-                min_staff_required=rule_spec["min_staff_required"],
-                max_absent=rule_spec["max_absent"],
-                criticality_level=rule_spec["criticality_level"],
-                substitution_group=rule_spec["substitution_group"],
-            )
-
     def _month_end_date(self, year, month):
         if month == 12:
             return date(year, 12, 31)
@@ -210,6 +199,80 @@ class DemoSeedEnterpriseMixin:
             is_active_employee=True,
             date_joined__lte=as_of_date,
         ).exclude(role__in=Employees.SERVICE_ROLES).count()
+
+    def _staffing_demo_reserve(self, staff_count):
+        staff_count = int(staff_count or 0)
+        if staff_count <= 1:
+            return 0
+        if staff_count <= 4:
+            return 1
+        return max(2, round(staff_count * 0.25))
+
+    def _balanced_demo_staffing_limits(self, staff_count, min_staff_required, max_absent, *, allow_zero_min=False):
+        staff_count = int(staff_count or 0)
+        if staff_count <= 0:
+            return 0, 0
+
+        desired_min = max(0, int(min_staff_required or 0))
+        desired_max_absent = max(1, int(max_absent or 1))
+        reserve = min(staff_count, self._staffing_demo_reserve(staff_count))
+        feasible_min = max(staff_count - reserve, 0)
+        balanced_min = min(desired_min, feasible_min)
+        if desired_min > 0 and not allow_zero_min:
+            balanced_min = max(1, balanced_min)
+        allowed_absent = max(staff_count - balanced_min, 1 if staff_count > 1 else 0)
+        balanced_max_absent = min(desired_max_absent, allowed_absent)
+        return balanced_min, balanced_max_absent
+
+    def _department_group_active_count_on(self, department, production_group, as_of_date):
+        return Employees.objects.filter(
+            department=department,
+            employee_position__production_group=production_group,
+            is_active_employee=True,
+            date_joined__lte=as_of_date,
+        ).exclude(role__in=Employees.SERVICE_ROLES).count()
+
+    def _normalize_current_coverage_rules(self, departments):
+        as_of_date = date(self.schedule_end_year, 12, 31)
+        for department in departments:
+            coverage_rules = DepartmentCoverageRule.objects.filter(department=department).select_related("production_group")
+            for coverage_rule in coverage_rules:
+                group_count = self._department_group_active_count_on(
+                    department,
+                    coverage_rule.production_group,
+                    as_of_date,
+                )
+                min_staff_required, max_absent = self._balanced_demo_staffing_limits(
+                    group_count,
+                    coverage_rule.min_staff_required,
+                    coverage_rule.max_absent,
+                    allow_zero_min=coverage_rule.min_staff_required == 0,
+                )
+                if (
+                    coverage_rule.min_staff_required != min_staff_required
+                    or coverage_rule.max_absent != max_absent
+                ):
+                    coverage_rule.min_staff_required = min_staff_required
+                    coverage_rule.max_absent = max_absent
+                    coverage_rule.save(update_fields=["min_staff_required", "max_absent"])
+
+    def _create_staffing_rules(self, departments):
+        self._normalize_current_coverage_rules(departments)
+        for department, spec in zip(departments, self.department_specs):
+            rule_spec = spec["staffing_rule"]
+            active_count = self._department_active_count_on(department, date(self.schedule_end_year, 12, 31))
+            min_staff_required, max_absent = self._balanced_demo_staffing_limits(
+                active_count,
+                rule_spec["min_staff_required"],
+                rule_spec["max_absent"],
+            )
+            self.staffing_rules[department.id] = DepartmentStaffingRule.objects.create(
+                department=department,
+                min_staff_required=min_staff_required,
+                max_absent=max_absent,
+                criticality_level=rule_spec["criticality_level"],
+                substitution_group=rule_spec["substitution_group"],
+            )
 
     def _scale_staffing_metric(self, final_value, active_count, final_count, *, minimum=1):
         if final_count <= 0 or active_count <= 0:
@@ -238,7 +301,7 @@ class DemoSeedEnterpriseMixin:
             final_count,
             minimum=1,
         )
-        return min_staff_required, max_absent
+        return self._balanced_demo_staffing_limits(active_count, min_staff_required, max_absent)
 
     def _create_department_workload(self, departments):
         for department, spec in zip(departments, self.department_specs):

@@ -97,11 +97,11 @@ VACATION_REQUEST_MODEL_FIELDS = {
     for field in VacationRequest._meta.concrete_fields
 }
 
-HR_POLICY_NEAR_BEST_GAP = 8.0
-HR_POLICY_CLOSE_BEST_GAP = 4.0
-HR_POLICY_MIN_LIVE_CHOICE_SCORE = 70.0
-HR_POLICY_LIVE_CHOICE_PROBABILITY = 0.42
-HR_POLICY_MAX_LIVE_CANDIDATES = 4
+HR_POLICY_NEAR_BEST_GAP = 10.0
+HR_POLICY_CLOSE_BEST_GAP = 5.0
+HR_POLICY_MIN_LIVE_CHOICE_SCORE = 58.0
+HR_POLICY_LIVE_CHOICE_PROBABILITY = 0.55
+HR_POLICY_MAX_LIVE_CANDIDATES = 5
 
 
 def _vacation_request_model_fields(payload):
@@ -1113,7 +1113,7 @@ class DemoSeedVacationMixin:
         window_start = max(date(year, 1, 1), add_months_safe(employee.date_joined, 6))
         if year == self.schedule_end_year:
             window_start = max(window_start, self.today + timedelta(days=14))
-        window_end = min(date(year, 12, 20), item.end_date)
+        window_end = date(year, 12, 20)
         if window_start > window_end:
             return False
 
@@ -2172,32 +2172,41 @@ class DemoSeedVacationMixin:
         target_days = Decimal(str(target_chargeable_days or duration or chargeable_days or 1))
         coverage_score = self._ratio_score(chargeable_days, target_days)
         length_days = Decimal((end_date - start_date).days + 1)
-        length_score = max(self._ratio_score(length_days, Decimal(anchor)) for anchor in (7, 14, 21, 28))
-        balance_score = float(coverage_score * Decimal("0.72") + Decimal(str(length_score)) * Decimal("0.28"))
+        over_plan_control = self._over_plan_control(chargeable_days, target_days)
+        need_score = float(coverage_score * Decimal("0.72") + over_plan_control * Decimal("0.28"))
 
         load_level = self._policy_load_level(employee, start_date, end_date)
         overlap_count = self._department_overlap_count(employee, start_date, end_date)
-        risk_score = self._estimated_policy_risk_score(employee, load_level, overlap_count)
-        staffing_score = max(0.0, 1.0 - risk_score / 100.0)
-        staffing_score = max(staffing_score, 0.0)
-
+        staffing_score = self._policy_staffing_stability_score(employee, start_date, end_date, load_level, overlap_count)
+        load_density_score = self._policy_load_density_score(employee, start_date, end_date, load_level, overlap_count)
         preference_score = self._preference_score_for_policy_period(employee, start_date, end_date, source=source)
         urgency_score = self._urgency_score_for_policy_period(start_date, end_date, deadline=deadline)
-        load_pressure = ((load_level - Decimal("1.00")) / Decimal("4.00")) * Decimal("0.62")
-        load_pressure += Decimal(overlap_count) / Decimal("12.00")
-        load_score = float(max(Decimal("0.00"), Decimal("1.00") - load_pressure))
-        calendar_score = self._calendar_quality_score(start_date, end_date, chargeable_days, load_level)
+        calendar_score = self._policy_calendar_profile_score(start_date, end_date)
+        period_shape_score = self._policy_period_shape_score(start_date, end_date, chargeable_days, length_days)
         noise = self._policy_noise(employee, start_date, end_date)
 
         return (
-            balance_score * 25.0
-            + staffing_score * 20.0
-            + preference_score * 18.0
-            + urgency_score * 15.0
-            + load_score * 10.0
-            + calendar_score * 7.0
+            staffing_score * 22.0
+            + preference_score * 20.0
+            + need_score * 18.0
+            + calendar_score * 14.0
+            + urgency_score * 10.0
+            + period_shape_score * 8.0
+            + load_density_score * 5.0
             + noise
         )
+
+    def _policy_clamp(self, value, lower=0.0, upper=1.0):
+        return max(lower, min(upper, float(value)))
+
+    def _over_plan_control(self, value, target):
+        target = Decimal(target or 1)
+        if target <= 0:
+            return Decimal("0.00")
+        value = Decimal(value or 0)
+        if value <= target:
+            return Decimal("1.00")
+        return max(Decimal("0.00"), Decimal("1.00") - min((value - target) / target, Decimal("1.00")))
 
     def _ratio_score(self, value, target):
         target = Decimal(target or 1)
@@ -2205,6 +2214,57 @@ class DemoSeedVacationMixin:
             return Decimal("0.00")
         value = Decimal(value or 0)
         return max(Decimal("0.00"), Decimal("1.00") - min(abs(value - target) / target, Decimal("1.00")))
+
+    def _policy_staffing_stability_score(self, employee, start_date, end_date, load_level, overlap_count):
+        department = getattr(employee, "department", None)
+        if employee.department_id is None or department is None:
+            return 0.68
+
+        workload = self.department_workload.get((employee.department_id, start_date.year, start_date.month))
+        required_staff = float(getattr(workload, "min_staff_required", 1) or 1)
+        active_count = float(max(self._department_active_count_on(department, end_date), 1))
+        remaining_staff = max(active_count - float(overlap_count) - 1.0, 0.0)
+        staff_margin = remaining_staff - required_staff
+
+        margin_score = self._policy_clamp((staff_margin + 1.0) / 5.0)
+        no_shortage_score = 1.0 if staff_margin >= 0 else 0.0
+        remaining_ratio_score = self._policy_clamp((remaining_staff / max(required_staff, 1.0)) / 2.0)
+        load_control_score = self._policy_clamp(1.0 - (float(load_level) - 1.0) / 4.0)
+        substitution_score = 1.0 if staff_margin >= 2 else (0.65 if staff_margin >= 0 else 0.25)
+        role_sensitivity_score = 0.76 if employee.role in {Employees.ROLE_DEPARTMENT_HEAD, Employees.ROLE_ENTERPRISE_HEAD} else 1.0
+
+        return (
+            margin_score * 0.30
+            + no_shortage_score * 0.22
+            + remaining_ratio_score * 0.20
+            + load_control_score * 0.12
+            + substitution_score * 0.10
+            + role_sensitivity_score * 0.06
+        )
+
+    def _policy_load_density_score(self, employee, start_date, end_date, load_level, overlap_count):
+        workload = self.department_workload.get((employee.department_id, start_date.year, start_date.month))
+        max_absent = float(getattr(workload, "max_absent", 4) or 4)
+        overlap_score = self._policy_clamp(1.0 - float(overlap_count) / max(max_absent, 1.0))
+        load_score = self._policy_clamp(1.0 - (float(load_level) - 1.0) / 4.0)
+        month_count = (end_date.year - start_date.year) * 12 + end_date.month - start_date.month + 1
+        month_span_score = self._policy_clamp(1.0 - max(month_count - 1.0, 0.0) / 3.0)
+        return overlap_score * 0.46 + load_score * 0.34 + month_span_score * 0.20
+
+    def _policy_calendar_profile_score(self, start_date, end_date):
+        mid_month = (start_date.month + end_date.month) / 2.0
+        mid_year_score = self._policy_clamp(1.0 - min(abs(mid_month - 6.5) / 5.5, 1.0))
+        single_month_score = 1.0 if start_date.month == end_date.month else 0.68
+        summer_score = 1.0 if start_date.month in {6, 7, 8} or end_date.month in {6, 7, 8} else 0.62
+        year_edge_score = self._policy_clamp(min(start_date.timetuple().tm_yday, max(366 - end_date.timetuple().tm_yday, 0)) / 90.0)
+        return mid_year_score * 0.34 + single_month_score * 0.28 + summer_score * 0.22 + year_edge_score * 0.16
+
+    def _policy_period_shape_score(self, start_date, end_date, chargeable_days, length_days):
+        length_score = max(self._ratio_score(length_days, Decimal(anchor)) for anchor in (7, 14, 21, 28))
+        calendar_days = Decimal((end_date - start_date).days + 1)
+        paid_ratio = min(chargeable_days / max(calendar_days, Decimal("1.00")), Decimal("1.00"))
+        short_control = Decimal("1.00") if chargeable_days >= Decimal("7.00") else chargeable_days / Decimal("7.00")
+        return float(length_score * Decimal("0.48") + paid_ratio * Decimal("0.32") + short_control * Decimal("0.20"))
 
     def _policy_load_level(self, employee, start_date, end_date):
         levels = []
@@ -2218,16 +2278,6 @@ class DemoSeedVacationMixin:
             else:
                 cursor = date(cursor.year, cursor.month + 1, 1)
         return Decimal(str(sum(levels) / len(levels))) if levels else Decimal("3.00")
-
-    def _estimated_policy_risk_score(self, employee, load_level, overlap_count):
-        role_boost = 8 if employee.role in {Employees.ROLE_DEPARTMENT_HEAD, Employees.ROLE_ENTERPRISE_HEAD} else 0
-        risk_score = (
-            12
-            + self._schedule_load_risk_boost(int(round(float(load_level))))
-            + role_boost
-            + min(overlap_count * 6, 30)
-        )
-        return min(max(risk_score, 0), 96)
 
     def _preference_score_for_policy_period(self, employee, start_date, end_date, *, source=""):
         preferences = self._employee_preferences_for_policy_window(employee, start_date, end_date)
@@ -2254,13 +2304,6 @@ class DemoSeedVacationMixin:
             remaining_days = max((deadline - end_date).days, 0)
             return max(0.45, 1.0 - min(remaining_days / 120.0, 0.55))
         return 0.0
-
-    def _calendar_quality_score(self, start_date, end_date, chargeable_days, load_level):
-        calendar_days = Decimal((end_date - start_date).days + 1)
-        paid_ratio = min(chargeable_days / max(calendar_days, Decimal("1.00")), Decimal("1.00"))
-        single_month = Decimal("1.00") if start_date.month == end_date.month else Decimal("0.62")
-        load_fit = max(Decimal("0.00"), Decimal("1.00") - (load_level - Decimal("1.00")) / Decimal("4.00"))
-        return float(paid_ratio * Decimal("0.36") + single_month * Decimal("0.24") + load_fit * Decimal("0.40"))
 
     def _policy_noise(self, employee, start_date, end_date):
         digest = hashlib.sha1(f"{employee.id}:{start_date}:{end_date}:hr-policy".encode()).digest()

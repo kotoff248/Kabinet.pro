@@ -1,4 +1,5 @@
 import json
+import logging
 import secrets
 from decimal import Decimal
 
@@ -88,6 +89,9 @@ from apps.leave.views.common import (
     _urgent_closure_option_json,
     _urgent_closure_preview_json,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def _can_view_schedule_draft_item(current_employee, schedule_item):
@@ -323,6 +327,15 @@ def manual_schedule_draft_suggestions(request, year, employee_id):
         return JsonResponse({"ok": False, "message": _validation_error_message(exc)}, status=400)
     except (TypeError, ValueError):
         return JsonResponse({"ok": False, "message": "Некорректный лимит предложений."}, status=400)
+    except Exception as exc:
+        logger.exception("Failed to build manual schedule draft suggestions.")
+        return JsonResponse(
+            {
+                "ok": False,
+                "message": f"Не удалось подобрать даты модулем: {exc}",
+            },
+            status=500,
+        )
 
     return JsonResponse(
         {

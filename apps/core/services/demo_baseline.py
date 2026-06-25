@@ -152,10 +152,13 @@ def _serialize_urgent_closures(planning_year):
 
 
 @transaction.atomic
-def capture_demo_baseline_snapshot(*, planning_year, seed_value=None):
+def capture_demo_baseline_snapshot(*, planning_year, seed_value=None, preset="", employee_count=None, history_years=None):
     payload = {
         "schema_version": SNAPSHOT_SCHEMA_VERSION,
         "captured_at": _serialize_datetime(timezone.now()),
+        "preset": preset or "",
+        "employee_count": employee_count,
+        "history_years": history_years,
         "staffing": _serialize_staffing_payload(),
         "urgent_closures": _serialize_urgent_closures(planning_year),
     }
@@ -168,6 +171,15 @@ def capture_demo_baseline_snapshot(*, planning_year, seed_value=None):
         },
     )
     return snapshot
+
+
+def _snapshot_matches_expected(snapshot, *, expected_preset=None, expected_employee_count=None):
+    payload = snapshot.payload or {}
+    if expected_preset and payload.get("preset") != expected_preset:
+        return False
+    if expected_employee_count is not None and payload.get("employee_count") != int(expected_employee_count):
+        return False
+    return True
 
 
 def _delete_notifications_by_prefixes(prefixes):
@@ -434,7 +446,7 @@ def _restore_urgent_closures(planning_year, payload):
 
 
 @transaction.atomic
-def reset_demo_to_baseline(*, actor=None, ignore_reset_job_id=None):
+def reset_demo_to_baseline(*, actor=None, ignore_reset_job_id=None, expected_preset=None, expected_employee_count=None):
     if not try_demo_data_mutation_lock():
         raise DemoBaselineResetInProgressError
     mark_stale_demo_data_reset_jobs_failed()
@@ -450,6 +462,12 @@ def reset_demo_to_baseline(*, actor=None, ignore_reset_job_id=None):
         snapshot = DemoBaselineSnapshot.objects.select_for_update().get(key=INITIAL_DEMO_STATE_KEY)
     except DemoBaselineSnapshot.DoesNotExist as exc:
         raise DemoBaselineMissingError from exc
+    if not _snapshot_matches_expected(
+        snapshot,
+        expected_preset=expected_preset,
+        expected_employee_count=expected_employee_count,
+    ):
+        raise DemoBaselineMissingError
 
     planning_year = snapshot.planning_year
     payload = snapshot.payload or {}
