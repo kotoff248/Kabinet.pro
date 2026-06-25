@@ -1,12 +1,12 @@
 {
   "class_balance": {
-    "rejected": 89,
-    "rejected_preference": 12,
-    "selected_agree": 317,
+    "rejected": 84,
+    "rejected_preference": 11,
+    "selected_agree": 234,
     "selected_needs_change": 4,
-    "selected_reject": 4
+    "selected_reject": 6
   },
-  "examples_count": 426,
+  "examples_count": 339,
   "feature_schema_version": 1,
   "input_names": [
     "auto_candidate",
@@ -45,45 +45,46 @@
   "kind": "tabular_mlp",
   "metrics": {
     "test": {
-      "avoid_accuracy": 0.98,
-      "count": 50,
-      "prefer_accuracy": 0.96,
-      "score_accuracy_0_5": 0.84,
-      "score_mae": 0.039293,
-      "score_rmse": 0.058282
+      "avoid_accuracy": 0.963636,
+      "count": 55,
+      "prefer_accuracy": 0.872727,
+      "score_accuracy_0_5": 0.8,
+      "score_mae": 0.049983,
+      "score_rmse": 0.068329
     },
     "train": {
-      "avoid_accuracy": 0.961165,
-      "count": 309,
-      "prefer_accuracy": 0.938511,
-      "score_accuracy_0_5": 0.87055,
-      "score_mae": 0.042936,
-      "score_rmse": 0.067204
+      "avoid_accuracy": 0.946721,
+      "count": 244,
+      "prefer_accuracy": 0.893443,
+      "score_accuracy_0_5": 0.844262,
+      "score_mae": 0.0488,
+      "score_rmse": 0.074268
     },
     "training_loss": {
-      "best": 0.483028,
-      "first": 0.678386,
-      "last": 0.483028
+      "best": 0.4948,
+      "first": 0.676141,
+      "last": 0.4948
     },
     "val": {
-      "avoid_accuracy": 0.970149,
-      "count": 67,
-      "prefer_accuracy": 0.955224,
-      "score_accuracy_0_5": 0.850746,
-      "score_mae": 0.036966,
-      "score_rmse": 0.059783
+      "avoid_accuracy": 0.95,
+      "count": 40,
+      "prefer_accuracy": 0.85,
+      "score_accuracy_0_5": 0.725,
+      "score_mae": 0.055321,
+      "score_rmse": 0.075652
     }
   },
-  "source_fingerprint": "ae4c6e1f33562b43828fbeb3553278085f2bec7bc7f600da9fe812d911fee1fd",
+  "source_fingerprint": "4130bb47124e41e1e55a3480a532f46dc92d5f25b67d9773dcdee7b450ea2c33",
   "source_schedule_ids": [
     1,
     2,
-    3
+    3,
+    4
   ],
   "split_counts": {
-    "test": 50,
-    "train": 309,
-    "val": 67
+    "test": 55,
+    "train": 244,
+    "val": 40
   },
   "target_heads": [
     "score",
@@ -91,7 +92,7 @@
     "prefer",
     "avoid"
   ],
-  "trained_at": "2026-06-25T10:48:06.239112+00:00",
+  "trained_at": "2026-06-25T16:38:39.649917+00:00",
   "training": {
     "epochs": 250,
     "lr": 0.01,
@@ -100,6 +101,7 @@
   },
   "version": "vacation-candidate-mlp-v2",
   "years": [
+    2023,
     2024,
     2025,
     2026
