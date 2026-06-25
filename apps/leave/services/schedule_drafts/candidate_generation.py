@@ -113,7 +113,63 @@ def _low_workload_months_for_employee(employee, year):
     return {month for month, load_level in workloads if load_level == lowest_load}
 
 
-def _candidate_start_dates(year, employee, start_bound, latest_end, *, urgent=False, target_days=None, low_workload_months=None):
+def _candidate_quarter(value):
+    return (value.month - 1) // 3
+
+
+def _spread_start_dates_by_quarter(starts, sort_key):
+    grouped = {}
+    for value in sorted(set(starts), key=sort_key):
+        grouped.setdefault(_candidate_quarter(value), []).append(value)
+
+    bucket_order = sorted(grouped, key=lambda bucket: sort_key(grouped[bucket][0]))
+    result = []
+    while bucket_order:
+        next_order = []
+        for bucket in bucket_order:
+            values = grouped[bucket]
+            if values:
+                result.append(values.pop(0))
+            if values:
+                next_order.append(bucket)
+        bucket_order = next_order
+    return result
+
+
+def _preference_neighbor_start_dates(pair, start_bound, latest_end, target_days=None):
+    pair = pair or {}
+    starts = set()
+    offsets = (0, *AUTO_DRAFT_LOCAL_SEARCH_OFFSETS)
+    target_days = _decimal_to_whole_days(target_days)
+
+    for priority in (VacationPreference.PRIORITY_PRIMARY, VacationPreference.PRIORITY_BACKUP):
+        preference = pair.get(priority)
+        if not preference:
+            continue
+        bases = [getattr(preference, "start_date", None)]
+        if target_days and getattr(preference, "end_date", None):
+            bases.append(_start_date_for_chargeable_days(preference.end_date, target_days, start_bound))
+        for base in bases:
+            if not base:
+                continue
+            for offset in offsets:
+                candidate = base + timedelta(days=offset)
+                if start_bound <= candidate <= latest_end:
+                    starts.add(candidate)
+    return starts
+
+
+def _candidate_start_dates(
+    year,
+    employee,
+    start_bound,
+    latest_end,
+    *,
+    urgent=False,
+    target_days=None,
+    low_workload_months=None,
+    preference_pair=None,
+):
     if start_bound > latest_end:
         return []
 
@@ -140,6 +196,8 @@ def _candidate_start_dates(year, employee, start_bound, latest_end, *, urgent=Fa
             if start_bound <= candidate <= latest_end:
                 starts.add(candidate)
 
+    starts.update(_preference_neighbor_start_dates(preference_pair, start_bound, latest_end, target_days))
+
     for month in range(1, 13):
         last_day = calendar.monthrange(year, month)[1]
         for day in AUTO_DRAFT_ANCHOR_DAYS:
@@ -156,7 +214,9 @@ def _candidate_start_dates(year, employee, start_bound, latest_end, *, urgent=Fa
         backward_distance = (preferred_month - value.month) % 12
         return (1, min(forward_distance, backward_distance), value.day, value)
 
-    return sorted(starts, key=sort_key)
+    if urgent:
+        return sorted(starts, key=sort_key)
+    return _spread_start_dates_by_quarter(starts, sort_key)
 
 
 def _auto_target_day_options(target_days):
@@ -861,6 +921,7 @@ def _build_auto_generation_candidates(
         return candidates
 
     _, planning_end = _planning_year_bounds(context.year)
+    preference_pair = context.preference_pair_by_employee.get(employee.id)
     open_required_days = planning_need["open_required_days"]
     if open_required_days <= 0:
         return candidates
@@ -881,6 +942,7 @@ def _build_auto_generation_candidates(
                 assessment_cache=context.assessment_cache,
                 risk_context_cache=context.risk_context_cache,
                 include_risk_explanation=include_risk_explanation,
+                preference_pair=preference_pair,
             )
         )
         candidates.extend(

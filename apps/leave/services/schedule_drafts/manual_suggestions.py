@@ -153,6 +153,7 @@ def _manual_package_target_candidates(
                 assessment_cache=context.assessment_cache,
                 risk_context_cache=context.risk_context_cache,
                 include_risk_explanation=include_risk_explanation,
+                preference_pair=context.preference_pair_by_employee.get(employee.id),
             )
         )
         candidates.extend(
@@ -311,6 +312,7 @@ def _build_manual_candidate_package_from_seed(
                 assessment_cache=current_context.assessment_cache,
                 risk_context_cache=current_context.risk_context_cache,
                 include_risk_explanation=include_risk_explanation,
+                preference_pair=current_context.preference_pair_by_employee.get(employee.id),
             )
         )
         next_candidates = _rank_generation_candidates(

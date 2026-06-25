@@ -368,6 +368,7 @@ def _build_department_rework_package_from_seed(context, employee, seed_candidate
                 max_chargeable_days=remaining_days,
                 limit=AUTO_DRAFT_MAX_CANDIDATES_PER_STRATEGY,
                 exclude_schedule_item_ids=current_context.excluded_schedule_item_ids,
+                preference_pair=current_context.preference_pair_by_employee.get(employee.id),
             )
         )
         next_candidates = _rank_generation_candidates(

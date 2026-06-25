@@ -197,6 +197,43 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         for day in (4, 11, 18, 25, 28):
             self.assertIn(date(year, 1, day), starts)
 
+    def test_candidate_start_dates_spread_early_choices_across_quarters(self):
+        year = self._year()
+
+        starts = _candidate_start_dates(
+            year,
+            self.employee,
+            date(year, 1, 1),
+            date(year, 12, 31),
+            low_workload_months=set(),
+        )
+
+        early_quarters = {(value.month - 1) // 3 for value in starts[:4]}
+        self.assertEqual(len(early_quarters), 4)
+
+    def test_candidate_start_dates_include_preference_neighbors(self):
+        year = self._year()
+        preference = VacationPreference(
+            employee=self.employee,
+            year=year,
+            priority=VacationPreference.PRIORITY_PRIMARY,
+            start_date=date(year, 7, 10),
+            end_date=date(year, 7, 23),
+        )
+
+        starts = _candidate_start_dates(
+            year,
+            self.employee,
+            date(year, 1, 1),
+            date(year, 12, 31),
+            low_workload_months=set(),
+            preference_pair={VacationPreference.PRIORITY_PRIMARY: preference},
+        )
+
+        self.assertIn(date(year, 7, 3), starts)
+        self.assertIn(date(year, 7, 10), starts)
+        self.assertIn(date(year, 7, 17), starts)
+
     def test_candidate_start_dates_prioritize_low_workload_months(self):
         year = self._year()
         DepartmentWorkload.objects.create(

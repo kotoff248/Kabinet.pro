@@ -74,6 +74,7 @@ def _iter_auto_candidate_payloads_for_target(
     assessment_cache=None,
     risk_context_cache=None,
     include_risk_explanation=True,
+    preference_pair=None,
 ):
     target_days = _decimal_to_whole_days(target_days)
     if target_days <= 0:
@@ -91,6 +92,7 @@ def _iter_auto_candidate_payloads_for_target(
         latest_end,
         urgent=urgent,
         target_days=target_days,
+        preference_pair=preference_pair,
     ):
         end_date = _end_date_for_chargeable_days(start_date, target_days, latest_end)
         if end_date is None:
@@ -142,6 +144,7 @@ def _iter_auto_candidate_payloads_for_need(
     assessment_cache=None,
     risk_context_cache=None,
     include_risk_explanation=True,
+    preference_pair=None,
 ):
     yielded_count = 0
     for option_days in _auto_target_day_options(target_days):
@@ -159,6 +162,7 @@ def _iter_auto_candidate_payloads_for_need(
             assessment_cache=assessment_cache,
             risk_context_cache=risk_context_cache,
             include_risk_explanation=include_risk_explanation,
+            preference_pair=preference_pair,
         ):
             yield candidate
             yielded_count += 1
