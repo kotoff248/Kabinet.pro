@@ -38,22 +38,33 @@ class DemoVacationSeedRunner(
         self._last_progress_percent = 0
 
     @transaction.atomic
-    def run(self, *, seed_value, history_years=DEFAULT_SCHEDULE_HISTORY_YEARS, fast=False, progress_job_id=None):
+    def run(
+        self,
+        *,
+        seed_value,
+        history_years=DEFAULT_SCHEDULE_HISTORY_YEARS,
+        fast=False,
+        progress_job_id=None,
+        preset="",
+        employee_counts=None,
+    ):
         self.rng = random.Random(seed_value)
         self.today = timezone.localdate()
-        self.context = DemoSeedContext(
-            seed_value=seed_value,
-            history_years=history_years,
-            fast_mode=fast,
-            progress_job_id=progress_job_id,
-            today=self.today,
-            rng=self.rng,
-        )
         self.fast_mode = fast
         if self.fast_mode:
             history_years = min(max(1, history_years), FAST_SCHEDULE_HISTORY_YEARS)
         else:
             history_years = max(1, history_years)
+        self.demo_preset = preset or ("fast" if self.fast_mode else "full")
+        self.demo_employee_counts = list(employee_counts) if employee_counts else None
+        self.context = DemoSeedContext(
+            seed_value=seed_value,
+            history_years=history_years,
+            fast_mode=self.fast_mode,
+            progress_job_id=progress_job_id,
+            today=self.today,
+            rng=self.rng,
+        )
         self.schedule_end_year = self.today.year
         self.schedule_start_year = self.schedule_end_year - history_years
         self.enterprise_start_year = self.schedule_end_year - DEFAULT_SCHEDULE_HISTORY_YEARS
@@ -75,6 +86,7 @@ class DemoVacationSeedRunner(
         self._calendar_year_paid_days_cache = {}
         self._active_request_periods_by_employee = {}
         self._active_schedule_item_periods_by_employee = {}
+        self._department_active_periods_by_year = {}
         self.progress_job_id = progress_job_id
 
         previous_sync_state = set_vacation_metric_sync_enabled(False)

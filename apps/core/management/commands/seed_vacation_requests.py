@@ -3,7 +3,13 @@ from django.core.management.base import BaseCommand, CommandError
 from apps.core.models import DemoDataResetJob
 from apps.core.services.demo_reset_jobs import update_demo_data_reset_job_progress
 from apps.core.services.demo_seed import DemoVacationSeedRunner
-from apps.core.services.demo_seed.constants import DEFAULT_SCHEDULE_HISTORY_YEARS
+from apps.core.services.demo_seed.constants import (
+    DEFAULT_SCHEDULE_HISTORY_YEARS,
+    DEMO_SEED_PRESET_FAST,
+    DEMO_SEED_PRESET_FULL,
+    DEMO_SEED_PRESET_STANDARD,
+    DEMO_SEED_PRESETS,
+)
 
 
 class Command(BaseCommand):
@@ -29,9 +35,15 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--seed-value", type=int, default=42)
         parser.add_argument(
+            "--preset",
+            choices=[DEMO_SEED_PRESET_STANDARD, DEMO_SEED_PRESET_FAST, DEMO_SEED_PRESET_FULL],
+            default=DEMO_SEED_PRESET_STANDARD,
+            help="Preset size for demo data: standard, fast, or full research dataset.",
+        )
+        parser.add_argument(
             "--history-years",
             type=int,
-            default=DEFAULT_SCHEDULE_HISTORY_YEARS,
+            default=None,
             help="How many full years before the current year to include in vacation history.",
         )
         parser.add_argument(
@@ -59,10 +71,19 @@ class Command(BaseCommand):
             )
 
         self.progress_job_id = options.get("progress_job_id")
+        preset = options["preset"]
+        if options["fast"]:
+            preset = DEMO_SEED_PRESET_FAST
+        preset_spec = DEMO_SEED_PRESETS[preset]
+        history_years = options["history_years"]
+        if history_years is None:
+            history_years = preset_spec.get("history_years", DEFAULT_SCHEDULE_HISTORY_YEARS)
         self._seed_runner = DemoVacationSeedRunner(stdout=self.stdout, style=self.style)
         return self._seed_runner.run(
             seed_value=options["seed_value"],
-            history_years=options["history_years"],
-            fast=options["fast"],
+            history_years=history_years,
+            fast=preset == DEMO_SEED_PRESET_FAST,
             progress_job_id=options.get("progress_job_id"),
+            preset=preset,
+            employee_counts=preset_spec.get("employee_counts"),
         )

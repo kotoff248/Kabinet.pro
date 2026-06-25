@@ -39,15 +39,19 @@ from apps.leave.models import (
     VacationScheduleItem,
     VacationUrgentClosureRequest,
 )
+from apps.leave.services.dates import add_months_safe
 
 
 class DemoSeedEnterpriseMixin:
     def _build_department_specs(self):
         specs = deepcopy(DEPARTMENT_SPECS)
-        if not self.fast_mode:
+        employee_counts = getattr(self, "demo_employee_counts", None)
+        if employee_counts is None and self.fast_mode:
+            employee_counts = FAST_EMPLOYEE_COUNTS
+        if employee_counts is None:
             return specs
 
-        for spec, employee_count in zip(specs, FAST_EMPLOYEE_COUNTS):
+        for spec, employee_count in zip(specs, employee_counts):
             spec["employee_count"] = employee_count
             spec["recent_hires"] = 1 if employee_count >= 4 else 0
         return specs
@@ -341,6 +345,10 @@ class DemoSeedEnterpriseMixin:
                 continue
             start_year = max(self.schedule_start_year, employee.date_joined.year)
             for year in range(start_year, self.schedule_end_year + 1):
+                eligible_start = max(date(year, 1, 1), add_months_safe(employee.date_joined, 6))
+                eligible_end = date(year, 12, 20)
+                if eligible_start > eligible_end:
+                    continue
                 if self.rng.random() < 0.22:
                     VacationPreference.objects.create(
                         employee=employee,
@@ -354,9 +362,9 @@ class DemoSeedEnterpriseMixin:
                 remainder_policy = remainder_policies[policy_index % len(remainder_policies)]
                 policy_index += 1
                 primary_candidates = (
-                    [14, 21, 28]
+                    [14, 14, 21, 21, 28]
                     if remainder_policy == VacationPreference.REMAINDER_AUTO
-                    else [21, 28, 35, 42]
+                    else [14, 21, 21, 28, 28, 35]
                 )
                 primary_duration = self.rng.choice(primary_candidates)
                 backup_duration = self.rng.choice(
@@ -365,25 +373,77 @@ class DemoSeedEnterpriseMixin:
                 preference_comments = preference_comments_by_policy.get(remainder_policy) or preference_comments_by_policy[
                     VacationPreference.REMAINDER_AUTO
                 ]
+                department_months = [
+                    workload
+                    for workload in self.department_workload.values()
+                    if workload.department_id == employee.department_id and workload.year == year
+                ]
+                eligible_months = [
+                    month
+                    for month in range(eligible_start.month, eligible_end.month + 1)
+                    if date(year, month, 1) <= eligible_end and self._month_end_date(year, month) >= eligible_start
+                ]
+                safe_months = [
+                    workload.month
+                    for workload in department_months
+                    if workload.load_level <= 3 and workload.month in eligible_months
+                ] or [month for month in [2, 3, 4, 6, 9, 10, 11] if month in eligible_months] or eligible_months
+                quiet_months = [
+                    workload.month
+                    for workload in department_months
+                    if workload.load_level <= 2 and workload.month in eligible_months
+                ] or safe_months
+                conflict_months = [
+                    workload.month
+                    for workload in department_months
+                    if workload.load_level >= 4 and workload.month in eligible_months
+                ]
+                ordinary_months = [month for month in [2, 3, 4, 6, 7, 8, 9, 10, 11] if month in eligible_months] or eligible_months
                 used_months = set()
                 for priority, duration in [
                     (VacationPreference.PRIORITY_PRIMARY, primary_duration),
                     (VacationPreference.PRIORITY_BACKUP, backup_duration),
                 ]:
-                    high_load_months = [
-                        workload.month
-                        for workload in self.department_workload.values()
-                        if workload.department_id == employee.department_id
-                        and workload.year == year
-                        and workload.load_level >= 4
-                    ]
-                    month_pool = high_load_months if high_load_months and self.rng.random() < 0.36 else [2, 3, 4, 6, 7, 8, 9, 10, 11]
+                    if priority == VacationPreference.PRIORITY_PRIMARY:
+                        if conflict_months and self.rng.random() < 0.18:
+                            month_pool = conflict_months
+                        elif self.rng.random() < 0.72:
+                            month_pool = safe_months
+                        else:
+                            month_pool = ordinary_months
+                    else:
+                        if self.rng.random() < 0.76:
+                            month_pool = quiet_months
+                        elif self.rng.random() < 0.90:
+                            month_pool = safe_months
+                        else:
+                            month_pool = ordinary_months
                     month_pool = [month for month in month_pool if month not in used_months] or month_pool
                     month = self.rng.choice(month_pool)
+                    month_first = date(year, month, 1)
+                    month_last = self._month_end_date(year, month)
+                    valid_start = max(month_first, eligible_start)
+                    valid_end = min(month_last, eligible_end)
+                    if valid_start > valid_end:
+                        continue
+                    latest_start_for_full_duration = eligible_end - timedelta(days=duration - 1)
+                    latest_start_for_min_duration = eligible_end - timedelta(days=13)
+                    if valid_start <= latest_start_for_full_duration:
+                        latest_valid_start = min(valid_end, latest_start_for_full_duration)
+                    else:
+                        latest_valid_start = min(valid_end, latest_start_for_min_duration)
+                    if valid_start > latest_valid_start:
+                        continue
+                    earliest_day = valid_start.day
+                    latest_day = min(10, latest_valid_start.day)
+                    if earliest_day > latest_day:
+                        latest_day = latest_valid_start.day
+                    if earliest_day > latest_day:
+                        continue
                     used_months.add(month)
-                    start_day = self.rng.randint(1, 10)
+                    start_day = self.rng.randint(earliest_day, latest_day)
                     start_date = date(year, month, start_day)
-                    end_date = min(start_date + timedelta(days=duration - 1), date(year, 12, 31))
+                    end_date = min(start_date + timedelta(days=duration - 1), eligible_end)
                     VacationPreference.objects.create(
                         employee=employee,
                         year=year,

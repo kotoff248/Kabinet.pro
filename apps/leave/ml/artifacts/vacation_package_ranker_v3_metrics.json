@@ -1,12 +1,11 @@
 {
   "class_balance": {
-    "blocked": 495,
-    "rejected_package": 208,
-    "selected_package_agree": 432,
-    "selected_package_needs_change": 3,
-    "selected_package_reject": 60
+    "blocked": 94,
+    "rejected_package": 61,
+    "selected_package_agree": 82,
+    "selected_package_reject": 12
   },
-  "examples_count": 1198,
+  "examples_count": 249,
   "feature_schema_version": 1,
   "input_names": [
     "auto_source",
@@ -47,39 +46,45 @@
   "kind": "package_tabular_mlp",
   "metrics": {
     "test": {
-      "avoid_accuracy": 0.735751,
-      "count": 193,
-      "prefer_accuracy": 0.73057,
-      "score_accuracy_0_5": 0.797927,
-      "score_mae": 0.083993,
-      "score_rmse": 0.116366
+      "avoid_accuracy": 0.810811,
+      "count": 37,
+      "prefer_accuracy": 0.783784,
+      "score_accuracy_0_5": 0.918919,
+      "score_mae": 0.06635,
+      "score_rmse": 0.09333
     },
     "train": {
-      "avoid_accuracy": 0.788599,
-      "count": 842,
-      "prefer_accuracy": 0.792162,
-      "score_accuracy_0_5": 0.840855,
-      "score_mae": 0.073314,
-      "score_rmse": 0.101987
+      "avoid_accuracy": 0.760234,
+      "count": 171,
+      "prefer_accuracy": 0.77193,
+      "score_accuracy_0_5": 0.812865,
+      "score_mae": 0.071467,
+      "score_rmse": 0.096705
     },
     "training_loss": {
-      "best": 0.492738,
-      "first": 0.685456,
-      "last": 0.492738
+      "best": 0.493953,
+      "first": 0.687177,
+      "last": 0.493953
     },
     "val": {
-      "avoid_accuracy": 0.809816,
-      "count": 163,
-      "prefer_accuracy": 0.822086,
-      "score_accuracy_0_5": 0.846626,
-      "score_mae": 0.070402,
-      "score_rmse": 0.10034
+      "avoid_accuracy": 0.707317,
+      "count": 41,
+      "prefer_accuracy": 0.682927,
+      "score_accuracy_0_5": 0.780488,
+      "score_mae": 0.093232,
+      "score_rmse": 0.131398
     }
   },
+  "source_fingerprint": "3dff46db911e8ad3697f5f1d6352d3a6e9890bf36e50131844eb5462c6fdbe7b",
+  "source_schedule_ids": [
+    1,
+    2,
+    3
+  ],
   "split_counts": {
-    "test": 193,
-    "train": 842,
-    "val": 163
+    "test": 37,
+    "train": 171,
+    "val": 41
   },
   "target_heads": [
     "score",
@@ -87,17 +92,15 @@
     "prefer",
     "avoid"
   ],
+  "trained_at": "2026-06-25T06:51:26.372531+00:00",
   "training": {
-    "epochs": 180,
+    "epochs": 250,
     "lr": 0.01,
     "min_examples": 20,
     "seed": 42
   },
   "version": "vacation-package-ranker-v3",
   "years": [
-    2021,
-    2022,
-    2023,
     2024,
     2025,
     2026

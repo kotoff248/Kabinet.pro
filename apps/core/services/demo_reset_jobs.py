@@ -13,6 +13,26 @@ from apps.core.services.demo_locks import try_demo_data_mutation_lock
 
 
 RESET_JOB_TOKEN_BYTES = 32
+DEMO_SEED_PRESET_STANDARD = "standard"
+DEMO_SEED_PRESET_FAST = "fast"
+DEMO_SEED_PRESET_FULL = "full"
+DEMO_RESET_PRESETS = {
+    DEMO_SEED_PRESET_STANDARD: {
+        "label": "Обычная демо-база",
+        "history_years": 2,
+        "employee_count": 50,
+    },
+    DEMO_SEED_PRESET_FAST: {
+        "label": "Быстрая демо-база",
+        "history_years": 2,
+        "employee_count": 25,
+    },
+    DEMO_SEED_PRESET_FULL: {
+        "label": "Полная исследовательская база",
+        "history_years": 5,
+        "employee_count": 100,
+    },
+}
 ACTIVE_DEMO_RESET_JOB_STATUSES = (
     DemoDataResetJob.STATUS_QUEUED,
     DemoDataResetJob.STATUS_RUNNING,
@@ -23,18 +43,49 @@ class DemoDataResetInProgressError(Exception):
     pass
 
 
-def create_demo_data_reset_job(*, seed_value):
+def _demo_data_reset_preset_meta(preset):
+    preset = preset if preset in DEMO_RESET_PRESETS else DEMO_SEED_PRESET_STANDARD
+    spec = DEMO_RESET_PRESETS[preset]
+    return {
+        "preset": preset,
+        "label": spec["label"],
+        "history_years": int(spec["history_years"]),
+        "calendar_years": int(spec["history_years"]) + 1,
+        "employee_count": int(spec["employee_count"]),
+    }
+
+
+def demo_data_reset_preset_options():
+    return [
+        _demo_data_reset_preset_meta(DEMO_SEED_PRESET_STANDARD),
+        _demo_data_reset_preset_meta(DEMO_SEED_PRESET_FAST),
+    ]
+
+
+def normalize_demo_data_reset_preset(value):
+    if value == DEMO_SEED_PRESET_FAST:
+        return DEMO_SEED_PRESET_FAST
+    if value == DEMO_SEED_PRESET_FULL:
+        return DEMO_SEED_PRESET_FULL
+    return DEMO_SEED_PRESET_STANDARD
+
+
+def create_demo_data_reset_job(*, seed_value, preset=DEMO_SEED_PRESET_STANDARD):
+    meta = _demo_data_reset_preset_meta(preset)
     return DemoDataResetJob.objects.create(
         token=secrets.token_urlsafe(RESET_JOB_TOKEN_BYTES),
         seed_value=seed_value,
+        preset=meta["preset"],
+        history_years=meta["history_years"],
+        employee_count=meta["employee_count"],
         progress_percent=0,
         stage_label="Ожидает запуска",
-        message="Подготовка фонового пересоздания демо-данных.",
+        message=f"Подготовка фонового пересоздания: {meta['label']}.",
     )
 
 
 @transaction.atomic
-def get_or_create_demo_data_reset_job(*, seed_value):
+def get_or_create_demo_data_reset_job(*, seed_value, preset=DEMO_SEED_PRESET_STANDARD):
     if not try_demo_data_mutation_lock():
         raise DemoDataResetInProgressError
 
@@ -46,7 +97,7 @@ def get_or_create_demo_data_reset_job(*, seed_value):
     if active_job is not None:
         return active_job, False
 
-    return create_demo_data_reset_job(seed_value=seed_value), True
+    return create_demo_data_reset_job(seed_value=seed_value, preset=preset), True
 
 
 def start_demo_data_reset_process(job):
@@ -60,6 +111,10 @@ def start_demo_data_reset_process(job):
         "--confirm-reset",
         "--seed-value",
         str(job.seed_value),
+        "--preset",
+        job.preset,
+        "--history-years",
+        str(job.history_years),
         "--progress-job-id",
         str(job.id),
     ]
@@ -162,12 +217,47 @@ def update_demo_data_reset_job_progress(
             cursor.execute(sql, params)
 
 
+def _job_timing_payload(job):
+    now = timezone.now()
+    started_at = job.started_at
+    finished_at = job.finished_at
+    elapsed_seconds = None
+    estimated_total_seconds = None
+    estimated_remaining_seconds = None
+
+    if started_at:
+        end_at = finished_at or now
+        elapsed_seconds = max(0, int((end_at - started_at).total_seconds()))
+        progress = int(job.progress_percent or 0)
+        if job.status == DemoDataResetJob.STATUS_RUNNING and 1 <= progress < 100:
+            estimated_total_seconds = max(elapsed_seconds, int(elapsed_seconds * 100 / progress))
+            estimated_remaining_seconds = max(0, estimated_total_seconds - elapsed_seconds)
+        elif job.status == DemoDataResetJob.STATUS_SUCCEEDED:
+            estimated_total_seconds = elapsed_seconds
+            estimated_remaining_seconds = 0
+
+    return {
+        "elapsed_seconds": elapsed_seconds,
+        "estimated_total_seconds": estimated_total_seconds,
+        "estimated_remaining_seconds": estimated_remaining_seconds,
+    }
+
+
 def demo_data_reset_job_payload(job):
+    preset_meta = _demo_data_reset_preset_meta(job.preset)
+    status_url = f"{reverse('reset_demo_data_status', args=[job.id])}?token={job.token}"
     return {
         "ok": True,
         "job_id": job.id,
+        "token": job.token,
+        "status_url": status_url,
         "status": job.status,
         "seed_value": job.seed_value,
+        "preset": job.preset,
+        "preset_label": preset_meta["label"],
+        "history_years": int(job.history_years or preset_meta["history_years"]),
+        "calendar_years": int(job.history_years or preset_meta["history_years"]) + 1,
+        "employee_count": int(job.employee_count or preset_meta["employee_count"]),
         "progress_percent": int(job.progress_percent or 0),
         "stage_label": job.stage_label,
         "message": job.message,
@@ -178,4 +268,5 @@ def demo_data_reset_job_payload(job):
         "started_at": job.started_at.isoformat() if job.started_at else "",
         "finished_at": job.finished_at.isoformat() if job.finished_at else "",
         "login_url": reverse("login"),
+        **_job_timing_payload(job),
     }

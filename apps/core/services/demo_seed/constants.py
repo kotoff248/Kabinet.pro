@@ -446,8 +446,30 @@ HR_COUNT = 2
 ENTERPRISE_HEAD_COUNT = 1
 ACTIVE_STATUSES = {VacationRequest.STATUS_APPROVED, VacationRequest.STATUS_PENDING}
 DEFAULT_SCHEDULE_HISTORY_YEARS = 5
+STANDARD_SCHEDULE_HISTORY_YEARS = 2
 FAST_SCHEDULE_HISTORY_YEARS = 2
+STANDARD_EMPLOYEE_COUNTS = [15, 12, 6, 9, 8]
 FAST_EMPLOYEE_COUNTS = [8, 6, 4, 4, 3]
+DEMO_SEED_PRESET_STANDARD = "standard"
+DEMO_SEED_PRESET_FAST = "fast"
+DEMO_SEED_PRESET_FULL = "full"
+DEMO_SEED_PRESETS = {
+    DEMO_SEED_PRESET_STANDARD: {
+        "label": "Обычная демо-база",
+        "history_years": STANDARD_SCHEDULE_HISTORY_YEARS,
+        "employee_counts": STANDARD_EMPLOYEE_COUNTS,
+    },
+    DEMO_SEED_PRESET_FAST: {
+        "label": "Быстрая демо-база",
+        "history_years": FAST_SCHEDULE_HISTORY_YEARS,
+        "employee_counts": FAST_EMPLOYEE_COUNTS,
+    },
+    DEMO_SEED_PRESET_FULL: {
+        "label": "Полная исследовательская база",
+        "history_years": DEFAULT_SCHEDULE_HISTORY_YEARS,
+        "employee_counts": None,
+    },
+}
 MAX_REALISTIC_AVAILABLE_DAYS = 104
 PAID_OPERATIONAL_GAP_RANGE = (14, 30)
 SPECIAL_REQUEST_TARGET_RANGE = (18, 28)

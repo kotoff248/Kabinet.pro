@@ -360,7 +360,7 @@ class _HistoricalScheduleMLTraceBuilder:
             preference.end_date,
             schedule.year,
             placements,
-            max_chargeable_days=max(Decimal(item.chargeable_days or 0), Decimal("1.00")),
+            max_chargeable_days=_alternative_max_chargeable_days(item, total_days, preference.start_date, preference.end_date),
             exclude_schedule_item_id=item.id,
             risk_context=self._risk_context(schedule, item.employee, preference.start_date, preference.end_date),
         )
@@ -375,7 +375,7 @@ class _HistoricalScheduleMLTraceBuilder:
                 end_date,
                 schedule.year,
                 placements,
-                max_chargeable_days=max(Decimal(item.chargeable_days or 0), Decimal("1.00")),
+                max_chargeable_days=_alternative_max_chargeable_days(item, total_days, start_date, end_date),
                 exclude_schedule_item_id=item.id,
                 risk_context=self._risk_context(schedule, item.employee, start_date, end_date),
             )
@@ -436,7 +436,12 @@ class _HistoricalScheduleMLTraceBuilder:
             change_request.new_end_date,
             schedule.year,
             placements,
-            max_chargeable_days=max(Decimal(item.chargeable_days or 0), Decimal("1.00")),
+            max_chargeable_days=_alternative_max_chargeable_days(
+                item,
+                total_days,
+                change_request.new_start_date,
+                change_request.new_end_date,
+            ),
             exclude_schedule_item_id=item.id,
             risk_context=self._risk_context(schedule, item.employee, change_request.new_start_date, change_request.new_end_date),
         )
@@ -530,10 +535,12 @@ class _HistoricalScheduleMLTraceBuilder:
             )
             self.stats["selected_packages"] += 1
 
+            chunk_event_keys = {_historical_decision_event_key(schedule, item_chunk[0].employee, item) for item in item_chunk}
             rejected = [
                 candidate
                 for candidate in employee_candidates
                 if candidate.decision == VacationScheduleCandidate.DECISION_REJECTED
+                and _stored_candidate_event_key(candidate) in chunk_event_keys
             ][: len(chunk)]
             if rejected:
                 _create_candidate_package(
@@ -551,6 +558,7 @@ class _HistoricalScheduleMLTraceBuilder:
                 candidate
                 for candidate in employee_candidates
                 if candidate.decision == VacationScheduleCandidate.DECISION_BLOCKED
+                and _stored_candidate_event_key(candidate) in chunk_event_keys
             ][: len(chunk)]
             if blocked:
                 _create_candidate_package(
@@ -693,6 +701,25 @@ def _group_trace_days(items):
     return quantize_leave_days(sum((Decimal(item.chargeable_days or 0) for item in items), Decimal("0.00")))
 
 
+def _historical_decision_event_key(schedule, employee, item):
+    return f"{schedule.id}:{employee.id}:{item.id}"
+
+
+def _stored_candidate_event_key(candidate):
+    features = candidate.features if isinstance(candidate.features, dict) else {}
+    return features.get("historical_decision_event_key") or ""
+
+
+def _alternative_max_chargeable_days(item, total_days, start_date, end_date):
+    alternative_days = Decimal(get_chargeable_leave_days(start_date, end_date, "paid") or 0)
+    return max(
+        quantize_leave_days(total_days or Decimal("0.00")),
+        Decimal(item.chargeable_days or 0),
+        alternative_days,
+        Decimal("1.00"),
+    )
+
+
 def _selected_candidate_kind(item, pair):
     if item.source in {VacationScheduleItem.SOURCE_MANUAL, VacationScheduleItem.SOURCE_TRANSFER}:
         return VacationScheduleCandidate.KIND_MANUAL, None, "Ручное решение"
@@ -757,6 +784,8 @@ def _candidate_metadata(
     return {
         "historical_seed_trace": True,
         "historical_decision_source": TRACE_MODEL_SOURCE,
+        "historical_decision_event_key": _historical_decision_event_key(schedule, employee, item),
+        "historical_schedule_item_id": item.id,
         "historical_outcome": outcome,
         "planning_year": schedule.year,
         "available_days": target_days,
@@ -1038,10 +1067,17 @@ def _package_source(candidates):
 
 
 def _package_features(candidates, package_kind):
+    event_keys = sorted(
+        key
+        for candidate in candidates
+        for key in [_stored_candidate_event_key(candidate)]
+        if key
+    )
     return _json_safe_generation_value(
         {
             "feature_schema_version": TRACE_FEATURE_SCHEMA_VERSION,
             "historical_seed_trace": True,
+            "historical_package_event_key": "|".join(event_keys),
             "package_kind": package_kind,
             "periods_count": len(candidates),
             "periods": [

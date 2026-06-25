@@ -1,0 +1,17 @@
+<div class="demo-reset-status" data-demo-reset-banner hidden>
+    <div class="demo-reset-status__bar" aria-hidden="true">
+        <span data-demo-reset-banner-bar></span>
+    </div>
+    <div class="demo-reset-status__content">
+        <span class="demo-reset-status__icon material-icons-sharp" aria-hidden="true">database</span>
+        <div class="demo-reset-status__text">
+            <strong data-demo-reset-banner-title>Пересоздание демо-данных</strong>
+            <span data-demo-reset-banner-message>Ожидаем статус фоновой операции.</span>
+        </div>
+        <span class="demo-reset-status__percent" data-demo-reset-banner-percent>0%</span>
+        <a href="{% url 'login' %}" class="demo-reset-status__login" data-demo-reset-banner-login hidden>Войти заново</a>
+        <button type="button" class="demo-reset-status__close" data-demo-reset-banner-close hidden aria-label="Скрыть статус">
+            <span class="material-icons-sharp" aria-hidden="true">close</span>
+        </button>
+    </div>
+</div>

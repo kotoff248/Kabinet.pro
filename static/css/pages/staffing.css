@@ -602,6 +602,76 @@
     gap: 0.75rem;
 }
 
+.staffing-demo-reset__mode-list{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.staffing-demo-reset__mode-card{
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 5rem;
+    padding: 0.92rem 1rem;
+    border: 1px solid rgba(125, 211, 252, 0.18);
+    border-radius: var(--ui-radius-panel-inner);
+    background:
+        linear-gradient(135deg, rgba(14, 165, 233, 0.10), rgba(139, 92, 246, 0.07)),
+        rgba(18, 20, 28, 0.34);
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.staffing-demo-reset__mode-card:hover{
+    transform: translateY(-1px);
+    border-color: rgba(125, 211, 252, 0.36);
+}
+
+.staffing-demo-reset__mode-card input{
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.staffing-demo-reset__mode-card:has(input:checked){
+    border-color: rgba(94, 234, 212, 0.42);
+    background:
+        linear-gradient(135deg, rgba(14, 165, 233, 0.18), rgba(94, 234, 212, 0.10)),
+        rgba(255, 255, 255, 0.045);
+}
+
+.staffing-demo-reset__mode-icon{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: var(--ui-radius-control);
+    background: rgba(14, 165, 233, 0.14);
+    color: #7dd3fc;
+}
+
+.staffing-demo-reset__mode-content{
+    display: grid;
+    gap: 0.24rem;
+    min-width: 0;
+}
+
+.staffing-demo-reset__mode-content strong{
+    color: #ffffff;
+    font-weight: 850;
+}
+
+.staffing-demo-reset__mode-content small{
+    color: rgba(205, 218, 236, 0.75);
+    font-weight: 650;
+    line-height: 1.35;
+}
+
 .staffing-demo-reset__facts article{
     display: grid;
     gap: 0.28rem;
@@ -689,11 +759,20 @@
 }
 
 .staffing-demo-reset__progress-message,
+.staffing-demo-reset__progress-eta,
 .staffing-demo-reset__result p{
     margin: 0;
     color: rgba(226, 235, 248, 0.84);
     font-weight: 650;
     line-height: 1.45;
+}
+
+.staffing-demo-reset__progress-eta[hidden]{
+    display: none;
+}
+
+.staffing-demo-reset__progress-eta{
+    color: rgba(191, 239, 255, 0.78);
 }
 
 .staffing-demo-reset__result.is-error{
@@ -1877,6 +1956,11 @@
     }
 
     .staffing-workload__months{
+        grid-template-columns: 1fr;
+    }
+
+    .staffing-demo-reset__mode-list,
+    .staffing-demo-reset__facts{
         grid-template-columns: 1fr;
     }
 

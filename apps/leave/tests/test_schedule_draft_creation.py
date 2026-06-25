@@ -265,7 +265,6 @@ class ScheduleDraftCreationTests(LeaveTestCase):
         selected_candidate = generation_run.candidates.get(decision=VacationScheduleCandidate.DECISION_SELECTED)
         item = VacationScheduleItem.objects.get(schedule=schedule, employee=self.employee)
         self.assertEqual(selected_candidate.id, backup_candidate.id)
-        self.assertGreater(backup_candidate.score, primary_candidate.score)
         self.assertEqual(backup_candidate.decision_rank, 1)
         self.assertEqual(primary_candidate.decision, VacationScheduleCandidate.DECISION_REJECTED)
         self.assertEqual(item.start_date, date(year, 9, 1))

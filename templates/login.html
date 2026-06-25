@@ -6,8 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Кабинет.pro - Авторизация</title>
     <link rel="stylesheet" href="{% static 'css/auth/login.css' %}?v=20260507-auth-layout-morph">
+    <link rel="stylesheet" href="{% static 'css/components/demo-reset-status.css' %}?v=20260625-demo-reset-status">
 </head>
 <body>
+    {% include 'includes/shared/demo_reset_status_banner.html' %}
+
     <div class="auth-shell">
         {% if demo_login_hint %}
         <div class="auth-demo-access" data-demo-access>
@@ -122,6 +125,7 @@
             </aside>
         </div>
     </div>
+    <script src="{% static 'js/components/demo-reset-status.js' %}?v=20260625-demo-reset-status" defer></script>
     <script src="{% static 'js/auth/login.js' %}?v=20260512-calendar-planning-memory-clear" defer></script>
 </body>
 </html>

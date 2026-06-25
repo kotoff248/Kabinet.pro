@@ -1,24 +1,45 @@
 <div class="staffing-demo-reset">
     <p class="staffing-demo-reset__text">
         Будут заново созданы сотрудники, отделы, графики отпусков, заявки, переносы, уведомления и пользователи.
-        Текущий вход завершится, потому что пользователи тоже пересоздаются.
+        Текущий вход завершится, потому что демо-пользователи тоже пересоздаются.
     </p>
 
+    <div class="staffing-demo-reset__mode-list" aria-label="Размер демо-базы">
+        {% for option in demo_data_reset_preset_options %}
+        <label class="staffing-demo-reset__mode-card">
+            <input
+                type="radio"
+                name="demo_mode"
+                value="{{ option.preset }}"
+                form="staffing-demo-reset-form"
+                {% if option.preset == 'standard' %}checked{% endif %}
+            >
+            <span class="staffing-demo-reset__mode-icon material-icons-sharp" aria-hidden="true">
+                {% if option.preset == 'fast' %}bolt{% else %}database{% endif %}
+            </span>
+            <span class="staffing-demo-reset__mode-content">
+                <strong>{{ option.label }}</strong>
+                <small>{{ option.employee_count }} сотрудников, {{ option.calendar_years }} календарных года</small>
+            </span>
+        </label>
+        {% endfor %}
+    </div>
+
     <div class="staffing-demo-reset__facts" aria-label="Что произойдёт после пересоздания демо-данных">
-        <article>
-            <span class="material-icons-sharp" aria-hidden="true">database</span>
-            <strong>Полная демо-база</strong>
-            <small>Запуск без fast-режима, с новым случайным seed.</small>
-        </article>
         <article>
             <span class="material-icons-sharp" aria-hidden="true">password</span>
             <strong>Пароль 1234</strong>
             <small>Демо-пользователи снова будут входить с общим паролем.</small>
         </article>
+        <article>
+            <span class="material-icons-sharp" aria-hidden="true">timeline</span>
+            <strong>Начальный снимок</strong>
+            <small>После генерации сохранится точка для быстрого сброса.</small>
+        </article>
     </div>
 
     <p class="staffing-demo-reset__warning">
-        Это действие предназначено только для демонстрационной базы и необратимо заменит текущие демо-данные.
+        Это действие необратимо заменит текущие демо-данные. Для защиты обычно достаточно обычной или быстрой базы.
     </p>
 
     <div class="staffing-demo-reset__progress" data-demo-reset-progress hidden>
@@ -32,6 +53,7 @@
         <p class="staffing-demo-reset__progress-message" data-demo-reset-message>
             Пересоздание запускается в фоне.
         </p>
+        <p class="staffing-demo-reset__progress-eta" data-demo-reset-eta hidden></p>
     </div>
 
     <div class="staffing-demo-reset__result" data-demo-reset-result hidden>
@@ -41,7 +63,13 @@
         </a>
     </div>
 
-    <form method="post" action="{% url 'reset_demo_data' %}" class="staffing-demo-reset__form" data-demo-reset-form>
+    <form
+        id="staffing-demo-reset-form"
+        method="post"
+        action="{% url 'reset_demo_data' %}"
+        class="staffing-demo-reset__form"
+        data-demo-reset-form
+    >
         {% csrf_token %}
         <div class="app-modal__actions staffing-delete-modal__actions">
             <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close data-demo-reset-cancel>Отменить</button>

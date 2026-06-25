@@ -1,3 +1,5 @@
+import calendar
+import hashlib
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -337,14 +339,65 @@ class DemoSeedVacationMixin:
         periods = self._active_schedule_item_periods_by_employee.get(item.employee_id)
         if periods is not None:
             periods.append((item.id, item.start_date, item.end_date))
+        department_id = getattr(item.employee, "department_id", None)
+        if department_id:
+            cache = getattr(self, "_department_active_periods_by_year", {})
+            for year in range(item.start_date.year, item.end_date.year + 1):
+                department_periods = cache.get((department_id, year))
+                if department_periods is not None:
+                    department_periods.append((item.id, item.employee_id, item.start_date, item.end_date))
 
     def _remove_schedule_item_from_active_period_cache(self, item):
         periods = self._active_schedule_item_periods_by_employee.get(item.employee_id)
-        if periods is None:
-            return
-        self._active_schedule_item_periods_by_employee[item.employee_id] = [
-            period for period in periods if period[0] != item.id
-        ]
+        if periods is not None:
+            self._active_schedule_item_periods_by_employee[item.employee_id] = [
+                period for period in periods if period[0] != item.id
+            ]
+        department_id = getattr(item.employee, "department_id", None)
+        if department_id:
+            cache = getattr(self, "_department_active_periods_by_year", {})
+            for year in range(item.start_date.year, item.end_date.year + 1):
+                department_periods = cache.get((department_id, year))
+                if department_periods is not None:
+                    cache[(department_id, year)] = [
+                        period for period in department_periods if period[0] != item.id
+                    ]
+
+    def _department_active_schedule_periods(self, employee, year):
+        department_id = getattr(employee, "department_id", None)
+        if not department_id:
+            return []
+        cache = getattr(self, "_department_active_periods_by_year", None)
+        if cache is None:
+            self._department_active_periods_by_year = {}
+            cache = self._department_active_periods_by_year
+        key = (department_id, year)
+        if key not in cache:
+            year_start = date(year, 1, 1)
+            year_end = date(year, 12, 31)
+            cache[key] = list(
+                VacationScheduleItem.objects.filter(
+                    employee__department_id=department_id,
+                    status__in=VacationScheduleItem.ACTIVE_STATUSES,
+                    start_date__lte=year_end,
+                    end_date__gte=year_start,
+                ).values_list("id", "employee_id", "start_date", "end_date")
+            )
+        return cache[key]
+
+    def _department_overlap_count(self, employee, start_date, end_date):
+        if not getattr(employee, "department_id", None):
+            return 0
+        seen = set()
+        count = 0
+        for year in range(start_date.year, end_date.year + 1):
+            for item_id, employee_id, current_start, current_end in self._department_active_schedule_periods(employee, year):
+                if item_id in seen or employee_id == employee.id:
+                    continue
+                if not (end_date < current_start or start_date > current_end):
+                    seen.add(item_id)
+                    count += 1
+        return count
 
     def _remaining_paid_budget_for_demo(self, employee):
         try:
@@ -797,14 +850,26 @@ class DemoSeedVacationMixin:
                     end_date__gte=window_start,
                 ).values_list("start_date", "end_date")
             )
-            slot = self._find_free_chargeable_paid_slot(
+            slot = self._select_hr_policy_paid_slot(
+                employee,
                 occupied_periods,
                 window_start,
                 window_end,
                 days_to_place,
                 gap_periods=paid_periods,
                 min_gap_days=0,
+                target_chargeable_days=days_to_place,
+                deadline=deadline,
             )
+            if slot is None:
+                slot = self._find_free_chargeable_paid_slot(
+                    occupied_periods,
+                    window_start,
+                    window_end,
+                    days_to_place,
+                    gap_periods=paid_periods,
+                    min_gap_days=0,
+                )
             if slot is None:
                 continue
 
@@ -1619,6 +1684,335 @@ class DemoSeedVacationMixin:
             return None
         return self.rng.choice(eligible)
 
+    def _select_hr_policy_paid_slot(
+        self,
+        employee,
+        occupied_periods,
+        window_start,
+        window_end,
+        duration,
+        *,
+        gap_periods=None,
+        min_gap_days=0,
+        target_chargeable_days=None,
+        deadline=None,
+    ):
+        if window_start > window_end:
+            return None
+
+        candidates = []
+        for start_date, end_date, source in self._iter_hr_policy_candidate_periods(
+            employee,
+            window_start,
+            window_end,
+            duration,
+            target_chargeable_days=target_chargeable_days,
+        ):
+            if not self._hr_policy_candidate_allowed(
+                employee,
+                occupied_periods,
+                start_date,
+                end_date,
+                gap_periods=gap_periods,
+                min_gap_days=min_gap_days,
+                target_chargeable_days=target_chargeable_days,
+            ):
+                continue
+            score = self._score_hr_policy_slot(
+                employee,
+                start_date,
+                end_date,
+                duration=duration,
+                target_chargeable_days=target_chargeable_days,
+                deadline=deadline,
+                source=source,
+            )
+            candidates.append((score, start_date, end_date))
+
+        if not candidates:
+            return None
+
+        _, start_date, end_date = max(
+            candidates,
+            key=lambda item: (item[0], -item[1].toordinal(), -item[2].toordinal()),
+        )
+        return start_date, end_date
+
+    def _iter_hr_policy_candidate_periods(
+        self,
+        employee,
+        window_start,
+        window_end,
+        duration,
+        *,
+        target_chargeable_days=None,
+    ):
+        seen = set()
+
+        def emit(start_date, end_date, source):
+            if start_date < window_start or end_date > window_end:
+                return
+            key = (start_date, end_date)
+            if key in seen:
+                return
+            seen.add(key)
+            yield start_date, end_date, source
+
+        def add(start_date, source):
+            if start_date < window_start:
+                start_date = window_start
+            if target_chargeable_days is None:
+                end_date = start_date + timedelta(days=duration - 1)
+            else:
+                end_date = self._end_date_for_chargeable_days(start_date, window_end, target_chargeable_days)
+                if end_date is None:
+                    return
+            key = (start_date, end_date)
+            if key in seen or end_date > window_end:
+                return
+            seen.add(key)
+            yield start_date, end_date, source
+
+        for preference in self._employee_preferences_for_policy_window(employee, window_start, window_end):
+            if not preference.start_date or not preference.end_date:
+                continue
+            if target_chargeable_days is None:
+                yield from emit(preference.start_date, preference.end_date, f"preference_exact:{preference.priority}")
+            elif get_chargeable_leave_days(preference.start_date, preference.end_date, "paid") == int(target_chargeable_days):
+                yield from emit(preference.start_date, preference.end_date, f"preference_exact:{preference.priority}")
+            yield from add(preference.start_date, f"preference:{preference.priority}")
+            if target_chargeable_days is None and preference.start_date <= window_end:
+                preferred_duration = (preference.end_date - preference.start_date).days + 1
+                if preferred_duration != duration:
+                    yield from add(preference.start_date, f"preference_month:{preference.priority}")
+
+        month_rows = self._policy_month_candidates(employee, window_start, window_end)
+        preferred_days = [1, 4, 8, 11, 15, 18, 22, 25]
+        for year, month, _load_level in month_rows:
+            month_last_day = calendar.monthrange(year, month)[1]
+            for day in preferred_days:
+                if day > month_last_day:
+                    continue
+                yield from add(date(year, month, day), "workload_month")
+
+        latest_start = window_end - timedelta(days=max(duration, 1) - 1)
+        if latest_start < window_start:
+            latest_start = window_start
+        span_days = max((latest_start - window_start).days, 0)
+        for index in range(18):
+            if span_days <= 0:
+                start_date = window_start
+            else:
+                digest = hashlib.sha1(
+                    f"{employee.id}:{window_start}:{window_end}:{duration}:{target_chargeable_days}:{index}".encode()
+                ).digest()
+                offset = int.from_bytes(digest[:4], "big") % (span_days + 1)
+                start_date = window_start + timedelta(days=offset)
+            yield from add(start_date, "deterministic_fallback")
+
+    def _employee_preferences_for_policy_window(self, employee, window_start, window_end):
+        cache = getattr(self, "_vacation_preferences_by_employee_year", None)
+        if cache is None:
+            self._vacation_preferences_by_employee_year = {}
+            cache = self._vacation_preferences_by_employee_year
+
+        preferences = []
+        for year in range(window_start.year, window_end.year + 1):
+            key = (employee.id, year)
+            if key not in cache:
+                cache[key] = list(
+                    VacationPreference.objects.filter(
+                        employee=employee,
+                        year=year,
+                        status=VacationPreference.STATUS_FILLED,
+                        start_date__isnull=False,
+                        end_date__isnull=False,
+                    ).order_by("priority", "id")
+                )
+            preferences.extend(cache[key])
+        return [
+            preference
+            for preference in preferences
+            if preference.end_date >= window_start and preference.start_date <= window_end
+        ]
+
+    def _policy_month_candidates(self, employee, window_start, window_end):
+        months = []
+        cursor = date(window_start.year, window_start.month, 1)
+        end_month = date(window_end.year, window_end.month, 1)
+        while cursor <= end_month:
+            workload = self.department_workload.get((employee.department_id, cursor.year, cursor.month))
+            load_level = workload.load_level if workload is not None else 3
+            months.append((cursor.year, cursor.month, load_level))
+            if cursor.month == 12:
+                cursor = date(cursor.year + 1, 1, 1)
+            else:
+                cursor = date(cursor.year, cursor.month + 1, 1)
+
+        if not months:
+            return []
+        safe = [row for row in months if row[2] <= 3]
+        peak = [row for row in months if row[2] >= 4]
+        ordered = sorted(safe, key=lambda row: (row[2], row[1])) + sorted(peak, key=lambda row: (row[2], row[1]))
+        return ordered or months
+
+    def _end_date_for_chargeable_days(self, start_date, window_end, target_chargeable_days):
+        target_chargeable_days = int(target_chargeable_days)
+        if target_chargeable_days <= 0:
+            return None
+        max_span = target_chargeable_days + 20
+        end_date = start_date
+        while end_date <= window_end and (end_date - start_date).days + 1 <= max_span:
+            chargeable_days = get_chargeable_leave_days(start_date, end_date, "paid")
+            if chargeable_days == target_chargeable_days:
+                return end_date
+            if chargeable_days > target_chargeable_days:
+                return None
+            end_date += timedelta(days=1)
+        return None
+
+    def _hr_policy_candidate_allowed(
+        self,
+        employee,
+        occupied_periods,
+        start_date,
+        end_date,
+        *,
+        gap_periods=None,
+        min_gap_days=0,
+        target_chargeable_days=None,
+    ):
+        if start_date > end_date:
+            return False
+        if self.schedule_by_year.get(start_date.year) is None:
+            return False
+        if self._period_overlaps(occupied_periods, start_date, end_date):
+            return False
+        if self._period_overlaps_with_gap(gap_periods or [], start_date, end_date, min_gap_days):
+            return False
+
+        chargeable_days = get_chargeable_leave_days(start_date, end_date, "paid")
+        if chargeable_days <= 0:
+            return False
+        if target_chargeable_days is not None and int(chargeable_days) != int(target_chargeable_days):
+            return False
+
+        workload = self.department_workload.get((employee.department_id, start_date.year, start_date.month))
+        if workload is not None:
+            overlap_count = self._department_overlap_count(employee, start_date, end_date)
+            if workload.max_absent and overlap_count + 1 > workload.max_absent:
+                return False
+        return True
+
+    def _score_hr_policy_slot(
+        self,
+        employee,
+        start_date,
+        end_date,
+        *,
+        duration,
+        target_chargeable_days=None,
+        deadline=None,
+        source="",
+    ):
+        chargeable_days = Decimal(get_chargeable_leave_days(start_date, end_date, "paid"))
+        target_days = Decimal(str(target_chargeable_days or duration or chargeable_days or 1))
+        coverage_score = self._ratio_score(chargeable_days, target_days)
+        length_days = Decimal((end_date - start_date).days + 1)
+        length_score = max(self._ratio_score(length_days, Decimal(anchor)) for anchor in (7, 14, 21, 28))
+        balance_score = float(coverage_score * Decimal("0.72") + Decimal(str(length_score)) * Decimal("0.28"))
+
+        load_level = self._policy_load_level(employee, start_date, end_date)
+        overlap_count = self._department_overlap_count(employee, start_date, end_date)
+        risk_score = self._estimated_policy_risk_score(employee, load_level, overlap_count)
+        staffing_score = max(0.0, 1.0 - risk_score / 100.0)
+        staffing_score = max(staffing_score, 0.0)
+
+        preference_score = self._preference_score_for_policy_period(employee, start_date, end_date, source=source)
+        urgency_score = self._urgency_score_for_policy_period(start_date, end_date, deadline=deadline)
+        load_pressure = ((load_level - Decimal("1.00")) / Decimal("4.00")) * Decimal("0.62")
+        load_pressure += Decimal(overlap_count) / Decimal("12.00")
+        load_score = float(max(Decimal("0.00"), Decimal("1.00") - load_pressure))
+        calendar_score = self._calendar_quality_score(start_date, end_date, chargeable_days, load_level)
+        noise = self._policy_noise(employee, start_date, end_date)
+
+        return (
+            balance_score * 25.0
+            + staffing_score * 20.0
+            + preference_score * 18.0
+            + urgency_score * 15.0
+            + load_score * 10.0
+            + calendar_score * 7.0
+            + noise
+        )
+
+    def _ratio_score(self, value, target):
+        target = Decimal(target or 1)
+        if target <= 0:
+            return Decimal("0.00")
+        value = Decimal(value or 0)
+        return max(Decimal("0.00"), Decimal("1.00") - min(abs(value - target) / target, Decimal("1.00")))
+
+    def _policy_load_level(self, employee, start_date, end_date):
+        levels = []
+        cursor = date(start_date.year, start_date.month, 1)
+        end_month = date(end_date.year, end_date.month, 1)
+        while cursor <= end_month:
+            workload = self.department_workload.get((employee.department_id, cursor.year, cursor.month))
+            levels.append(workload.load_level if workload is not None else 3)
+            if cursor.month == 12:
+                cursor = date(cursor.year + 1, 1, 1)
+            else:
+                cursor = date(cursor.year, cursor.month + 1, 1)
+        return Decimal(str(sum(levels) / len(levels))) if levels else Decimal("3.00")
+
+    def _estimated_policy_risk_score(self, employee, load_level, overlap_count):
+        role_boost = 8 if employee.role in {Employees.ROLE_DEPARTMENT_HEAD, Employees.ROLE_ENTERPRISE_HEAD} else 0
+        risk_score = (
+            12
+            + self._schedule_load_risk_boost(int(round(float(load_level))))
+            + role_boost
+            + min(overlap_count * 6, 30)
+        )
+        return min(max(risk_score, 0), 96)
+
+    def _preference_score_for_policy_period(self, employee, start_date, end_date, *, source=""):
+        preferences = self._employee_preferences_for_policy_window(employee, start_date, end_date)
+        if not preferences:
+            return 0.45
+        for preference in preferences:
+            if preference.start_date == start_date and preference.end_date == end_date:
+                return 1.0 if preference.priority == VacationPreference.PRIORITY_PRIMARY else 0.82
+        for preference in preferences:
+            if preference.start_date.month == start_date.month and preference.start_date.year == start_date.year:
+                return 0.58 if preference.priority == VacationPreference.PRIORITY_PRIMARY else 0.48
+        if source.startswith("preference"):
+            return 0.40
+        return 0.22
+
+    def _urgency_score_for_policy_period(self, start_date, end_date, *, deadline=None):
+        if deadline is None:
+            if start_date.month >= 10:
+                return 0.68
+            if start_date.month <= 3:
+                return 0.42
+            return 0.56
+        if end_date <= deadline:
+            remaining_days = max((deadline - end_date).days, 0)
+            return max(0.45, 1.0 - min(remaining_days / 120.0, 0.55))
+        return 0.0
+
+    def _calendar_quality_score(self, start_date, end_date, chargeable_days, load_level):
+        calendar_days = Decimal((end_date - start_date).days + 1)
+        paid_ratio = min(chargeable_days / max(calendar_days, Decimal("1.00")), Decimal("1.00"))
+        single_month = Decimal("1.00") if start_date.month == end_date.month else Decimal("0.62")
+        load_fit = max(Decimal("0.00"), Decimal("1.00") - (load_level - Decimal("1.00")) / Decimal("4.00"))
+        return float(paid_ratio * Decimal("0.36") + single_month * Decimal("0.24") + load_fit * Decimal("0.40"))
+
+    def _policy_noise(self, employee, start_date, end_date):
+        digest = hashlib.sha1(f"{employee.id}:{start_date}:{end_date}:hr-policy".encode()).digest()
+        return (int.from_bytes(digest[:2], "big") / 65535.0) * 3.0
+
     def _create_paid_leave_block(
         self,
         employee,
@@ -1630,7 +2024,8 @@ class DemoSeedVacationMixin:
         min_gap_days=0,
         allow_transfer=True,
     ):
-        slot = self._find_free_slot(
+        slot = self._select_hr_policy_paid_slot(
+            employee,
             occupied_periods,
             window_start,
             window_end,
@@ -1638,6 +2033,15 @@ class DemoSeedVacationMixin:
             gap_periods=paid_periods,
             min_gap_days=min_gap_days,
         )
+        if slot is None:
+            slot = self._find_free_slot(
+                occupied_periods,
+                window_start,
+                window_end,
+                duration,
+                gap_periods=paid_periods,
+                min_gap_days=min_gap_days,
+            )
         if slot is None:
             return 0
 

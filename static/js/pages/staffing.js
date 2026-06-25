@@ -46,6 +46,7 @@ function initDemoDataReset(signal) {
     const progressPercent = document.querySelector("[data-demo-reset-percent]");
     const progressBar = document.querySelector("[data-demo-reset-bar]");
     const progressMessage = document.querySelector("[data-demo-reset-message]");
+    const progressEta = document.querySelector("[data-demo-reset-eta]");
     const result = document.querySelector("[data-demo-reset-result]");
     const resultMessage = document.querySelector("[data-demo-reset-result-message]");
     const loginLink = document.querySelector("[data-demo-reset-login]");
@@ -86,6 +87,32 @@ function initDemoDataReset(signal) {
         if (progressMessage) {
             progressMessage.textContent = payload.message || "Пересоздание выполняется в фоне.";
         }
+        if (progressEta) {
+            const seconds = Number(payload.estimated_remaining_seconds);
+            if (Number.isFinite(seconds) && seconds > 0) {
+                progressEta.textContent = "Осталось примерно " + formatDuration(seconds) + ".";
+                setHidden(progressEta, false);
+            } else {
+                setHidden(progressEta, true);
+            }
+        }
+        if (window.KabinetDemoResetStatus && typeof window.KabinetDemoResetStatus.track === "function" && payload.status_url) {
+            window.KabinetDemoResetStatus.track(payload);
+        }
+    }
+
+    function formatDuration(seconds) {
+        const rounded = Math.max(1, Math.round(Number(seconds) || 0));
+        if (rounded < 60) {
+            return rounded + " сек.";
+        }
+        const minutes = Math.round(rounded / 60);
+        if (minutes < 60) {
+            return minutes + " мин.";
+        }
+        const hours = Math.floor(minutes / 60);
+        const tailMinutes = minutes % 60;
+        return tailMinutes ? hours + " ч " + tailMinutes + " мин." : hours + " ч";
     }
 
     function showResult(message, options) {

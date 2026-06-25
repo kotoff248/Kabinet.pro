@@ -36,8 +36,10 @@ from apps.core.services.demo_baseline import (
 from apps.core.models import DemoDataResetJob
 from apps.core.services.demo_reset_jobs import (
     DemoDataResetInProgressError,
+    demo_data_reset_preset_options,
     demo_data_reset_job_payload,
     get_or_create_demo_data_reset_job,
+    normalize_demo_data_reset_preset,
     start_demo_data_reset_process,
 )
 from apps.employees.models import (
@@ -1155,6 +1157,7 @@ def staffing_rules(request):
             "enterprise_deputy_candidates": list(active_employees),
             "current_enterprise_deputy": current_enterprise_deputy,
             "can_reset_demo_data": _can_reset_demo_data(current_employee),
+            "demo_data_reset_preset_options": demo_data_reset_preset_options(),
         }
     )
     return render(request, "staffing.html", context)
@@ -1172,7 +1175,8 @@ def reset_demo_data(request):
 
     try:
         seed_value = secrets.randbelow(DEMO_SEED_MAX_VALUE) + 1
-        job, created = get_or_create_demo_data_reset_job(seed_value=seed_value)
+        preset = normalize_demo_data_reset_preset(request.POST.get("demo_mode"))
+        job, created = get_or_create_demo_data_reset_job(seed_value=seed_value, preset=preset)
         if created:
             start_demo_data_reset_process(job)
     except DemoDataResetInProgressError:

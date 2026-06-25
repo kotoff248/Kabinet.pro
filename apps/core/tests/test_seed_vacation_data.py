@@ -350,6 +350,11 @@ class SeedVacationDataCommandTests(TestCase):
         self.assertEqual(selected_candidate.features["feature_schema_version"], 1)
         self.assertTrue(selected_candidate.features["candidate_passed_hard_rules"])
         self.assertIn("period_chargeable_days", selected_candidate.features)
+        self.assertIn("historical_decision_event_key", selected_candidate.features)
+        self.assertEqual(
+            selected_candidate.features.get("historical_schedule_item_id"),
+            selected_candidate.features.get("schedule_item_id"),
+        )
         selected_staffing_candidates = list(
             VacationScheduleCandidate.objects.select_related("employee__department")
             .filter(

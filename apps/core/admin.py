@@ -20,7 +20,7 @@ class DemoBaselineSnapshotAdmin(admin.ModelAdmin):
 
 @admin.register(DemoDataResetJob)
 class DemoDataResetJobAdmin(admin.ModelAdmin):
-    list_display = ("id", "status", "seed_value", "progress_percent", "process_id", "created_at", "updated_at")
-    list_filter = ("status",)
+    list_display = ("id", "status", "preset", "employee_count", "history_years", "seed_value", "progress_percent", "process_id", "created_at", "updated_at")
+    list_filter = ("status", "preset")
     search_fields = ("id", "token", "seed_value", "stage_label", "message", "error_message")
     readonly_fields = ("created_at", "updated_at", "started_at", "finished_at")
