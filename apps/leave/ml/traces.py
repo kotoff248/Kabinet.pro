@@ -830,32 +830,47 @@ def _selected_assessment(item, year, placements, *, risk_context=None):
         return {
             **assessment,
             "can_place": True,
-            "has_conflict": bool(assessment.get("has_conflict")),
+            "has_conflict": False,
             "chargeable_days": assessment.get("chargeable_days") or item.chargeable_days,
+            "risk_payload": _selected_risk_payload(item, assessment),
             "reason": {"kind": "historical_selected", "text": "Исторически выбранный вариант."},
             "historical_assessment_can_place": bool(assessment.get("can_place")),
             "historical_assessment_reason_key": reason.get("kind", ""),
         }
 
-    risk_payload = {
-        "risk_score": item.risk_score,
-        "risk_level": item.risk_level,
-        "balance_after_request": Decimal("0.00"),
-        "risk_explanation": {
-            "is_conflict": False,
-            "details": [],
-            "short_reason": "Исторически принятое решение графика.",
-        },
-    }
     return {
         "can_place": True,
         "has_conflict": False,
         "chargeable_days": item.chargeable_days,
-        "risk_payload": risk_payload,
+        "risk_payload": _selected_risk_payload(item, {}),
         "reason": {"kind": "historical_selected", "text": "Исторически выбранный вариант."},
         "historical_assessment_can_place": True,
         "historical_assessment_reason_key": "historical_selected",
     }
+
+
+def _selected_risk_payload(item, assessment):
+    source_payload = dict((assessment or {}).get("risk_payload") or {})
+    source_explanation = source_payload.get("risk_explanation") or {}
+    explanation_details = [
+        detail
+        for detail in list(source_explanation.get("details") or [])
+        if detail.get("severity") != "conflict"
+    ]
+    source_payload.update(
+        {
+            "risk_score": int(item.risk_score or 0),
+            "risk_level": item.risk_level or VacationScheduleItem.RISK_LOW,
+            "balance_after_request": source_payload.get("balance_after_request", Decimal("0.00")),
+            "risk_explanation": {
+                **source_explanation,
+                "is_conflict": False,
+                "details": explanation_details,
+                "short_reason": "Исторически принятое HR-решение графика.",
+            },
+        }
+    )
+    return source_payload
 
 
 def _apply_selected_assessment_metadata(candidate, item):

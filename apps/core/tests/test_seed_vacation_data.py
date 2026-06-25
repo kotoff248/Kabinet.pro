@@ -332,6 +332,11 @@ class SeedVacationDataCommandTests(TestCase):
         self.assertFalse(historical_trace_items.filter(selected_candidate__isnull=True).exists())
         self.assertFalse(historical_trace_items.filter(generation_run__isnull=True).exists())
         self.assertFalse(historical_trace_items.filter(ai_score__isnull=True).exists())
+        for item in historical_trace_items.select_related("selected_candidate")[:120]:
+            with self.subTest(selected_risk_item=item.id):
+                self.assertEqual(item.selected_candidate.risk_level, item.risk_level)
+                self.assertEqual(item.selected_candidate.risk_score, item.risk_score)
+                self.assertFalse(item.selected_candidate.features.get("risk_is_conflict", False))
         candidate_decisions = set(
             VacationScheduleCandidate.objects.filter(schedule__year__lte=current_year).values_list("decision", flat=True)
         )
@@ -413,6 +418,8 @@ class SeedVacationDataCommandTests(TestCase):
         )
         planning_deadline = date(current_year + 1, 12, 31)
         generated_history_start_year = VacationSchedule.objects.order_by("year").values_list("year", flat=True).first()
+        self.assertFalse(VacationRequest.objects.filter(start_date__year__lt=generated_history_start_year).exists())
+        self.assertFalse(VacationEntitlementPeriod.objects.filter(period_start__year__lt=generated_history_start_year).exists())
         due_by_employee = {}
         for period in VacationEntitlementPeriod.objects.filter(
             employee__role=Employees.ROLE_EMPLOYEE,

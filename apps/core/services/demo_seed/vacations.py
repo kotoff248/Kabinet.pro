@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
+from django.db.models import F
 from django.utils import timezone
 
 from apps.accounts.services import can_initiate_schedule_change_for_item
@@ -935,6 +936,7 @@ class DemoSeedVacationMixin:
         self._assign_low_conflict_department_deputies(absence_dates_by_employee)
         self._assign_low_conflict_enterprise_deputy(absence_dates_by_employee)
         self._reduce_department_leadership_overlaps()
+        self._reduce_enterprise_leadership_overlaps()
         self._relax_staffing_limits_to_seeded_absences(eligible_employees)
 
     def _reduce_department_leadership_overlaps(self):
@@ -945,6 +947,8 @@ class DemoSeedVacationMixin:
                 continue
             if is_new_hire(deputy, as_of=self.today):
                 continue
+            self._reduce_leadership_pair_overlaps(head, deputy)
+            continue
             head_absences = self._employee_active_absence_dates(head)
             if not head_absences:
                 continue
@@ -973,6 +977,98 @@ class DemoSeedVacationMixin:
                 self._remove_schedule_item_from_paid_days_cache(item)
                 self._remove_schedule_item_from_active_period_cache(item)
                 head_absences = self._employee_active_absence_dates(head)
+
+    def _reduce_enterprise_leadership_overlaps(self):
+        enterprise_head = (
+            Employees.objects.filter(role=Employees.ROLE_ENTERPRISE_HEAD, is_active_employee=True)
+            .order_by("id")
+            .first()
+        )
+        enterprise_deputy = (
+            Employees.objects.filter(is_enterprise_deputy=True, is_active_employee=True)
+            .order_by("id")
+            .first()
+        )
+        if enterprise_head is None or enterprise_deputy is None:
+            return
+        if enterprise_head.id == enterprise_deputy.id:
+            return
+        self._reduce_leadership_pair_overlaps(enterprise_head, enterprise_deputy)
+
+    def _reduce_leadership_pair_overlaps(self, primary, backup):
+        for _ in range(16):
+            primary_absences = self._employee_active_absence_dates(primary)
+            backup_absences = self._employee_active_absence_dates(backup)
+            if not primary_absences or not backup_absences or not (primary_absences & backup_absences):
+                return
+            if self._reject_leadership_overlap_request(backup, primary_absences):
+                continue
+            if self._reject_leadership_overlap_request(primary, backup_absences):
+                continue
+            if self._cancel_leadership_overlap_item(backup, primary_absences):
+                continue
+            if self._cancel_leadership_overlap_item(primary, backup_absences):
+                continue
+            return
+
+    def _reject_leadership_overlap_request(self, employee, counterpart_absences):
+        if not counterpart_absences:
+            return False
+        requests = list(
+            employee.vacation_requests.filter(
+                start_date__year__gte=self.schedule_start_year,
+                start_date__year__lt=self.schedule_end_year,
+                status__in=VacationRequest.ACTIVE_STATUSES,
+            ).order_by("-risk_score", "-start_date", "id")
+        )
+        for request_obj in requests:
+            request_dates = set(iterate_dates(request_obj.start_date, request_obj.end_date))
+            if not (request_dates & counterpart_absences):
+                continue
+            old_status = request_obj.status
+            request_obj.status = VacationRequest.STATUS_REJECTED
+            request_obj.reviewed_by = request_obj.reviewed_by or self._reviewer_for_employee(employee)
+            request_obj.reviewed_at = request_obj.reviewed_at or timezone.now()
+            request_obj.review_comment = "Rejected during demo leadership overlap normalization."
+            request_obj.save(update_fields=["status", "reviewed_by", "reviewed_at", "review_comment"])
+            self.status_counts[old_status] -= 1
+            self.status_counts[VacationRequest.STATUS_REJECTED] += 1
+            self._active_request_periods_by_employee.pop(employee.id, None)
+            return True
+        return False
+
+    def _cancel_leadership_overlap_item(self, employee, counterpart_absences):
+        if not counterpart_absences:
+            return False
+        overlap_items = list(
+            employee.vacation_schedule_items.filter(
+                schedule__year__gte=self.schedule_start_year,
+                schedule__year__lt=self.schedule_end_year,
+                status__in=VacationScheduleItem.BALANCE_STATUSES,
+                vacation_type="paid",
+                source=VacationScheduleItem.SOURCE_GENERATED,
+                previous_item__isnull=True,
+                created_from_change_request__isnull=True,
+                change_requests__isnull=True,
+            ).order_by("-chargeable_days", "-start_date", "id")
+        )
+        for item in overlap_items:
+            item_dates = set(iterate_dates(item.start_date, item.end_date))
+            if not (item_dates & counterpart_absences):
+                continue
+            minimum_days = self._calendar_year_minimum_days(employee, item.schedule.year)
+            current_days = self._calendar_year_paid_schedule_days(employee, item.schedule.year)
+            if current_days - item.chargeable_days < minimum_days:
+                continue
+            item.status = VacationScheduleItem.STATUS_CANCELLED
+            item.manager_comment = "Canceled during demo leadership overlap normalization."
+            item.save(update_fields=["status", "manager_comment"])
+            self._remove_schedule_item_from_paid_days_cache(item)
+            self._remove_schedule_item_from_active_period_cache(item)
+            self.schedule_item_counts[VacationScheduleItem.STATUS_APPROVED] -= 1
+            self.schedule_item_counts[VacationScheduleItem.STATUS_CANCELLED] += 1
+            return True
+        return False
 
     def _calendar_year_minimum_days(self, employee, year):
         year_start = date(year, 1, 1)
@@ -2276,6 +2372,18 @@ class DemoSeedVacationMixin:
         created_at, reviewed_at = self._historical_transfer_timeline(original_item)
         if (
             status == VacationScheduleChangeRequest.STATUS_APPROVED
+            and risk_payload.get("risk_level") == VacationRequest.RISK_HIGH
+        ):
+            if is_manager_initiated:
+                risk_payload = {
+                    **risk_payload,
+                    "risk_score": min(int(risk_payload.get("risk_score") or 0), 64),
+                    "risk_level": VacationRequest.RISK_MEDIUM,
+                }
+            else:
+                status = VacationScheduleChangeRequest.STATUS_REJECTED
+        if (
+            status == VacationScheduleChangeRequest.STATUS_APPROVED
             and (
                 self._active_request_overlap_exists(employee, new_start_date, new_end_date)
                 or self._active_schedule_item_overlap_exists(
@@ -2463,7 +2571,14 @@ class DemoSeedVacationMixin:
         occupied_periods.extend(active_requests.values_list("start_date", "end_date"))
         return occupied_periods
 
-    def _find_transfer_slot_for_item(self, item, *, min_shift_days=21, latest_start_month_day=(10, 15)):
+    def _find_transfer_slot_for_item(
+        self,
+        item,
+        *,
+        min_shift_days=21,
+        latest_start_month_day=(10, 15),
+        require_non_high_risk=False,
+    ):
         duration = (item.end_date - item.start_date).days + 1
         occupied_periods = self._active_periods_for_employee_year(item.employee, item.schedule.year, exclude_item=item)
         search_start = item.end_date + timedelta(days=min_shift_days)
@@ -2471,14 +2586,44 @@ class DemoSeedVacationMixin:
         if search_start > date(item.schedule.year, 12, 31):
             return None
         search_end = date(item.schedule.year, 12, 31)
+        if require_non_high_risk:
+            best_slot = None
+            best_key = None
+            risk_rank = {
+                VacationRequest.RISK_LOW: 0,
+                VacationRequest.RISK_MEDIUM: 1,
+                VacationRequest.RISK_HIGH: 2,
+            }
+            cursor = search_start
+            while cursor <= latest_start:
+                end_date = cursor + timedelta(days=duration - 1)
+                if end_date > search_end:
+                    break
+                if (
+                    not self._period_overlaps(occupied_periods, cursor, end_date)
+                    and get_chargeable_leave_days(cursor, end_date, item.vacation_type) <= item.chargeable_days
+                ):
+                    risk_payload = calculate_schedule_change_risk(item, cursor, end_date)
+                    if risk_payload.get("risk_level") != VacationRequest.RISK_HIGH:
+                        key = (
+                            risk_rank.get(risk_payload.get("risk_level"), 9),
+                            int(risk_payload.get("risk_score") or 0),
+                            cursor.toordinal(),
+                        )
+                        if best_key is None or key < best_key:
+                            best_key = key
+                            best_slot = (cursor, end_date)
+                cursor += timedelta(days=1)
+            return best_slot
+
         blocked_periods = list(occupied_periods)
-        for _ in range(8):
+        for _ in range(24):
             slot = self._find_free_slot(
                 blocked_periods,
                 search_start,
                 search_end,
                 duration,
-                max_attempts=30,
+                max_attempts=60,
             )
             if slot is None:
                 return None
@@ -2510,7 +2655,16 @@ class DemoSeedVacationMixin:
         candidates = list(queryset)
         self.rng.shuffle(candidates)
         for item in candidates:
-            slot = self._find_transfer_slot_for_item(item, min_shift_days=self.rng.choice([14, 21, 28]))
+            slot = self._find_transfer_slot_for_item(
+                item,
+                min_shift_days=self.rng.choice([14, 21, 28]),
+                latest_start_month_day=(
+                    (12, 10)
+                    if status == VacationScheduleChangeRequest.STATUS_APPROVED
+                    else (10, 15)
+                ),
+                require_non_high_risk=status == VacationScheduleChangeRequest.STATUS_APPROVED,
+            )
             if slot is None:
                 continue
             change_request, _ = self._create_historical_transfer_request(
@@ -2525,7 +2679,60 @@ class DemoSeedVacationMixin:
                 return change_request
         return None
 
+    def _historical_manager_transfer_exists(self, *, status=None):
+        queryset = VacationScheduleChangeRequest.objects.filter(
+            schedule_item__schedule__year__gte=self.schedule_start_year,
+            schedule_item__schedule__year__lt=self.schedule_end_year,
+            requested_by__isnull=False,
+        ).exclude(requested_by_id=F("employee_id"))
+        if status is not None:
+            queryset = queryset.filter(status=status)
+        return queryset.exists()
+
+    def _create_required_approved_manager_transfer(self, department_heads):
+        reason_choices = [
+            "РџСЂРѕРёР·РІРѕРґСЃС‚РІРµРЅРЅР°СЏ РЅРµРѕР±С…РѕРґРёРјРѕСЃС‚СЊ: РЅСѓР¶РЅРѕ СЃРґРІРёРЅСѓС‚СЊ РѕС‚РїСѓСЃРє РЅР° РјРµРЅРµРµ РЅР°РїСЂСЏР¶РµРЅРЅС‹Р№ РїРµСЂРёРѕРґ.",
+            "РџСЂРµРґР»РѕР¶РµРЅРёРµ СЂСѓРєРѕРІРѕРґРёС‚РµР»СЏ РѕС‚РґРµР»Р° РґР»СЏ СЃРѕС…СЂР°РЅРµРЅРёСЏ СЃРјРµРЅРЅРѕРіРѕ РїРѕРєСЂС‹С‚РёСЏ.",
+            "РџРµСЂРµРЅРѕСЃ РЅР° РјРµРЅРµРµ СЂРёСЃРєРѕРІР°РЅРЅС‹Р№ РїРµСЂРёРѕРґ РґР»СЏ РѕС‚РґРµР»Р°.",
+        ]
+        for year in range(self.schedule_start_year, self.schedule_end_year):
+            for department_head in department_heads:
+                managed_department = getattr(department_head, "managed_department", None) or department_head.department
+                if managed_department is None:
+                    continue
+                candidates = self._historical_manager_transfer_candidates(year).filter(
+                    employee__department=managed_department,
+                    employee__role=Employees.ROLE_EMPLOYEE,
+                )
+                for item in candidates:
+                    self._active_request_periods_by_employee.pop(item.employee_id, None)
+                    self._active_schedule_item_periods_by_employee.pop(item.employee_id, None)
+                    slot = self._find_transfer_slot_for_item(
+                        item,
+                        min_shift_days=14,
+                        latest_start_month_day=(12, 10),
+                        require_non_high_risk=True,
+                    )
+                    if slot is None:
+                        continue
+                    change_request, _ = self._create_historical_transfer_request(
+                        item,
+                        slot[0],
+                        slot[1],
+                        requested_by=department_head,
+                        status=VacationScheduleChangeRequest.STATUS_APPROVED,
+                        reason_choices=reason_choices,
+                    )
+                    if (
+                        change_request is not None
+                        and change_request.status == VacationScheduleChangeRequest.STATUS_APPROVED
+                    ):
+                        return change_request
+        return None
+
     def _create_historical_manager_initiated_transfers(self):
+        self._active_request_periods_by_employee = {}
+        self._active_schedule_item_periods_by_employee = {}
         enterprise_head = (
             Employees.objects.filter(role=Employees.ROLE_ENTERPRISE_HEAD, is_active_employee=True)
             .order_by("id")
@@ -2546,7 +2753,7 @@ class DemoSeedVacationMixin:
             target_per_year = 2 if self.fast_mode else 3
 
             for department_head in department_heads:
-                if year_created >= max(1, target_per_year - 1):
+                if year_created >= target_per_year:
                     break
                 managed_department = getattr(department_head, "managed_department", None) or department_head.department
                 if managed_department is None:
@@ -2589,6 +2796,9 @@ class DemoSeedVacationMixin:
                         "Предложение переноса для сохранения управленческого покрытия.",
                     ],
                 )
+
+        if not self._historical_manager_transfer_exists(status=VacationScheduleChangeRequest.STATUS_APPROVED):
+            self._create_required_approved_manager_transfer(department_heads)
 
     def _create_manager_initiated_current_year_transfers(self, current_year):
         department_heads = list(

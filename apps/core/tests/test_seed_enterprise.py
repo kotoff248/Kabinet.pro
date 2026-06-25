@@ -110,7 +110,7 @@ class SeedEnterpriseCommandTests(TestCase):
         self.assertTrue(Employees.objects.get(login="manager_1").user.check_password("1234"))
         self.assertTrue(Employees.objects.get(login="employ_1").user.check_password("1234"))
         current_year = timezone.localdate().year
-        enterprise_start_year = current_year - 5
+        enterprise_start_year = current_year - history_years
         expected_schedule_years = list(range(current_year - history_years, current_year + 1))
         expected_department_formation_dates = {
             "Производство": date(enterprise_start_year, 1, 11),
@@ -123,7 +123,7 @@ class SeedEnterpriseCommandTests(TestCase):
             list(VacationSchedule.objects.order_by("year").values_list("year", flat=True)),
             expected_schedule_years,
         )
-        self.assertFalse(VacationSchedule.objects.filter(year__lt=current_year - 5).exists())
+        self.assertFalse(VacationSchedule.objects.filter(year__lt=enterprise_start_year).exists())
         self.assertEqual(VacationSchedule.objects.get(year=current_year).status, VacationSchedule.STATUS_APPROVED)
         self.assertFalse(VacationSchedule.objects.filter(year__lt=current_year).exclude(status=VacationSchedule.STATUS_ARCHIVED).exists())
         self.assertEqual(DepartmentStaffingRule.objects.count(), 5)

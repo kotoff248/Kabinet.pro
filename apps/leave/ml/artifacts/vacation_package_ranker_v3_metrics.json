@@ -1,11 +1,12 @@
 {
   "class_balance": {
-    "blocked": 94,
-    "rejected_package": 61,
-    "selected_package_agree": 82,
-    "selected_package_reject": 12
+    "blocked": 136,
+    "rejected_package": 60,
+    "selected_package_agree": 131,
+    "selected_package_needs_change": 2,
+    "selected_package_reject": 3
   },
-  "examples_count": 249,
+  "examples_count": 332,
   "feature_schema_version": 1,
   "input_names": [
     "auto_source",
@@ -46,45 +47,45 @@
   "kind": "package_tabular_mlp",
   "metrics": {
     "test": {
-      "avoid_accuracy": 0.810811,
-      "count": 37,
-      "prefer_accuracy": 0.783784,
-      "score_accuracy_0_5": 0.918919,
-      "score_mae": 0.06635,
-      "score_rmse": 0.09333
+      "avoid_accuracy": 0.962264,
+      "count": 53,
+      "prefer_accuracy": 0.962264,
+      "score_accuracy_0_5": 0.962264,
+      "score_mae": 0.028303,
+      "score_rmse": 0.048156
     },
     "train": {
-      "avoid_accuracy": 0.760234,
-      "count": 171,
-      "prefer_accuracy": 0.77193,
-      "score_accuracy_0_5": 0.812865,
-      "score_mae": 0.071467,
-      "score_rmse": 0.096705
+      "avoid_accuracy": 0.983122,
+      "count": 237,
+      "prefer_accuracy": 0.978903,
+      "score_accuracy_0_5": 0.974684,
+      "score_mae": 0.028629,
+      "score_rmse": 0.03837
     },
     "training_loss": {
-      "best": 0.493953,
-      "first": 0.687177,
-      "last": 0.493953
+      "best": 0.352925,
+      "first": 0.675544,
+      "last": 0.352925
     },
     "val": {
-      "avoid_accuracy": 0.707317,
-      "count": 41,
-      "prefer_accuracy": 0.682927,
-      "score_accuracy_0_5": 0.780488,
-      "score_mae": 0.093232,
-      "score_rmse": 0.131398
+      "avoid_accuracy": 0.928571,
+      "count": 42,
+      "prefer_accuracy": 0.928571,
+      "score_accuracy_0_5": 0.928571,
+      "score_mae": 0.03653,
+      "score_rmse": 0.072542
     }
   },
-  "source_fingerprint": "3dff46db911e8ad3697f5f1d6352d3a6e9890bf36e50131844eb5462c6fdbe7b",
+  "source_fingerprint": "ae4c6e1f33562b43828fbeb3553278085f2bec7bc7f600da9fe812d911fee1fd",
   "source_schedule_ids": [
     1,
     2,
     3
   ],
   "split_counts": {
-    "test": 37,
-    "train": 171,
-    "val": 41
+    "test": 53,
+    "train": 237,
+    "val": 42
   },
   "target_heads": [
     "score",
@@ -92,7 +93,7 @@
     "prefer",
     "avoid"
   ],
-  "trained_at": "2026-06-25T06:51:26.372531+00:00",
+  "trained_at": "2026-06-25T10:48:06.698660+00:00",
   "training": {
     "epochs": 250,
     "lr": 0.01,

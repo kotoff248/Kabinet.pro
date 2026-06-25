@@ -11,6 +11,7 @@ from apps.core.services.demo_reset_jobs import update_demo_data_reset_job_progre
 from apps.core.services.demo_seed.audit import DemoSeedAuditMixin
 from apps.core.services.demo_seed.constants import (
     DEFAULT_SCHEDULE_HISTORY_YEARS,
+    DEMO_SEED_PRESET_FULL,
     ENTERPRISE_HEAD_COUNT,
     FAST_SCHEDULE_HISTORY_YEARS,
 )
@@ -67,7 +68,12 @@ class DemoVacationSeedRunner(
         )
         self.schedule_end_year = self.today.year
         self.schedule_start_year = self.schedule_end_year - history_years
-        self.enterprise_start_year = self.schedule_end_year - DEFAULT_SCHEDULE_HISTORY_YEARS
+        enterprise_history_years = (
+            DEFAULT_SCHEDULE_HISTORY_YEARS
+            if self.demo_preset == DEMO_SEED_PRESET_FULL
+            else history_years
+        )
+        self.enterprise_start_year = self.schedule_end_year - enterprise_history_years
         self.schedule_approval_cutoff = date(self.schedule_end_year - 1, 12, 31)
         self.department_specs = self._build_department_specs()
         self.department_spec_by_name = {spec["name"]: spec for spec in self.department_specs}
@@ -178,6 +184,8 @@ class DemoVacationSeedRunner(
             self._normalize_historical_schedule_risk_levels()
             self._normalize_demo_historical_staffing_pressure(everyone)
             self._normalize_pre_planning_deadline_leftovers(everyone)
+            if not self._historical_manager_transfer_exists(status="approved"):
+                self._create_required_approved_manager_transfer(department_heads)
             self.manual_draft_case_stats = create_manual_draft_cases(
                 planning_year=self.schedule_end_year + 1,
                 employees=everyone,
