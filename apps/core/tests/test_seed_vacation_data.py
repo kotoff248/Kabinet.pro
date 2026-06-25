@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 from io import StringIO
@@ -14,7 +15,7 @@ from apps.core.services.demo_urgent_closure_cases import (
     URGENT_CLOSURE_DEMO_TARGET_COUNT,
 )
 from apps.core.services.demo_baseline import INITIAL_DEMO_STATE_KEY, reset_demo_to_baseline
-from apps.employees.models import Employees
+from apps.employees.models import Departments, Employees
 from apps.leave.models import (
     VacationEntitlementAllocation,
     VacationEntitlementPeriod,
@@ -52,7 +53,7 @@ class SeedVacationDataCommandTests(TestCase):
         call_command(
             "seed_vacation_requests",
             seed_value=17,
-            history_years=2,
+            history_years=3,
             fast=True,
             confirm_reset=True,
             progress_job_id=cls.progress_job.id,
@@ -596,6 +597,45 @@ class SeedVacationDataCommandTests(TestCase):
         )
         allocated_days = sum(allocation.allocated_days for allocation in VacationEntitlementAllocation.objects.all())
         self.assertEqual(allocated_days, active_schedule_days + active_paid_request_days)
+
+    def test_command_avoids_department_leadership_pair_absences(self):
+        intervals_by_employee = defaultdict(list)
+        for item in VacationScheduleItem.objects.select_related("schedule").filter(
+            status__in=VacationScheduleItem.ACTIVE_STATUSES,
+        ):
+            intervals_by_employee[item.employee_id].append(
+                ("schedule", item.schedule.year, item.id, item.start_date, item.end_date)
+            )
+
+        active_requests = VacationRequest.objects.filter(status__in=VacationRequest.ACTIVE_STATUSES)
+        active_requests = exclude_converted_paid_requests(active_requests)
+        for request_obj in active_requests:
+            intervals_by_employee[request_obj.employee_id].append(
+                ("request", request_obj.status, request_obj.id, request_obj.start_date, request_obj.end_date)
+            )
+
+        conflicts = []
+        for department in Departments.objects.select_related("head", "deputy"):
+            if not department.head_id or not department.deputy_id:
+                continue
+            for head_interval in intervals_by_employee.get(department.head_id, []):
+                for deputy_interval in intervals_by_employee.get(department.deputy_id, []):
+                    overlap_start = max(head_interval[3], deputy_interval[3])
+                    overlap_end = min(head_interval[4], deputy_interval[4])
+                    if overlap_start <= overlap_end:
+                        conflicts.append(
+                            (
+                                department.name,
+                                department.head_id,
+                                department.deputy_id,
+                                overlap_start,
+                                overlap_end,
+                                head_interval[:3],
+                                deputy_interval[:3],
+                            )
+                        )
+
+        self.assertEqual(conflicts, [])
 
     def test_command_generates_realistic_leave_patterns_and_types(self):
         self.assertTrue(VacationRequest.objects.filter(vacation_type="unpaid").exists())

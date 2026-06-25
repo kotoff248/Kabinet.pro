@@ -97,6 +97,12 @@ VACATION_REQUEST_MODEL_FIELDS = {
     for field in VacationRequest._meta.concrete_fields
 }
 
+HR_POLICY_NEAR_BEST_GAP = 8.0
+HR_POLICY_CLOSE_BEST_GAP = 4.0
+HR_POLICY_MIN_LIVE_CHOICE_SCORE = 70.0
+HR_POLICY_LIVE_CHOICE_PROBABILITY = 0.42
+HR_POLICY_MAX_LIVE_CANDIDATES = 4
+
 
 def _vacation_request_model_fields(payload):
     return {
@@ -1017,7 +1023,7 @@ class DemoSeedVacationMixin:
         requests = list(
             employee.vacation_requests.filter(
                 start_date__year__gte=self.schedule_start_year,
-                start_date__year__lt=self.schedule_end_year,
+                start_date__year__lte=self.schedule_end_year,
                 status__in=VacationRequest.ACTIVE_STATUSES,
             ).order_by("-risk_score", "-start_date", "id")
         )
@@ -1026,11 +1032,38 @@ class DemoSeedVacationMixin:
             if not (request_dates & counterpart_absences):
                 continue
             old_status = request_obj.status
+            reviewed_at = request_obj.reviewed_at or timezone.now()
+            risk_payload = calculate_vacation_request_risk(
+                employee,
+                request_obj.start_date,
+                request_obj.end_date,
+                request_obj.vacation_type,
+            )
+            ai_support = build_vacation_request_ai_support(
+                employee,
+                request_obj.start_date,
+                request_obj.end_date,
+                request_obj.vacation_type,
+                risk_payload=risk_payload,
+                include_alternatives=False,
+            )
+            decision_ai_fields = vacation_request_decision_ai_model_fields(ai_support, evaluated_at=reviewed_at)
             request_obj.status = VacationRequest.STATUS_REJECTED
             request_obj.reviewed_by = request_obj.reviewed_by or self._reviewer_for_employee(employee)
-            request_obj.reviewed_at = request_obj.reviewed_at or timezone.now()
+            request_obj.reviewed_at = reviewed_at
             request_obj.review_comment = "Rejected during demo leadership overlap normalization."
-            request_obj.save(update_fields=["status", "reviewed_by", "reviewed_at", "review_comment"])
+            for field_name, value in decision_ai_fields.items():
+                setattr(request_obj, field_name, value)
+            request_obj.save(
+                update_fields=[
+                    "status",
+                    "reviewed_by",
+                    "reviewed_at",
+                    "review_comment",
+                    *decision_ai_fields.keys(),
+                ]
+            )
+            record_vacation_request_reviewed(request_obj)
             self.status_counts[old_status] -= 1
             self.status_counts[VacationRequest.STATUS_REJECTED] += 1
             self._active_request_periods_by_employee.pop(employee.id, None)
@@ -1043,7 +1076,7 @@ class DemoSeedVacationMixin:
         overlap_items = list(
             employee.vacation_schedule_items.filter(
                 schedule__year__gte=self.schedule_start_year,
-                schedule__year__lt=self.schedule_end_year,
+                schedule__year__lte=self.schedule_end_year,
                 status__in=VacationScheduleItem.BALANCE_STATUSES,
                 vacation_type="paid",
                 source=VacationScheduleItem.SOURCE_GENERATED,
@@ -1056,6 +1089,8 @@ class DemoSeedVacationMixin:
             item_dates = set(iterate_dates(item.start_date, item.end_date))
             if not (item_dates & counterpart_absences):
                 continue
+            if self._move_leadership_overlap_item(employee, item, counterpart_absences):
+                return True
             minimum_days = self._calendar_year_minimum_days(employee, item.schedule.year)
             current_days = self._calendar_year_paid_schedule_days(employee, item.schedule.year)
             if current_days - item.chargeable_days < minimum_days:
@@ -1069,6 +1104,79 @@ class DemoSeedVacationMixin:
             self.schedule_item_counts[VacationScheduleItem.STATUS_CANCELLED] += 1
             return True
         return False
+
+    def _move_leadership_overlap_item(self, employee, item, counterpart_absences):
+        if item.source != VacationScheduleItem.SOURCE_GENERATED:
+            return False
+
+        year = item.schedule.year
+        window_start = max(date(year, 1, 1), add_months_safe(employee.date_joined, 6))
+        if year == self.schedule_end_year:
+            window_start = max(window_start, self.today + timedelta(days=14))
+        window_end = min(date(year, 12, 20), item.end_date)
+        if window_start > window_end:
+            return False
+
+        occupied_periods = self._active_periods_for_employee_window(
+            employee,
+            window_start,
+            window_end,
+            exclude_schedule_item=item,
+        )
+        occupied_periods.extend((absence_date, absence_date) for absence_date in counterpart_absences)
+        paid_periods = list(
+            employee.vacation_schedule_items.filter(
+                vacation_type="paid",
+                status__in=VacationScheduleItem.BALANCE_STATUSES,
+                start_date__lte=window_end,
+                end_date__gte=window_start,
+            )
+            .exclude(id=item.id)
+            .values_list("start_date", "end_date")
+        )
+        slot = self._find_free_chargeable_paid_slot(
+            occupied_periods,
+            window_start,
+            window_end,
+            item.chargeable_days,
+            gap_periods=paid_periods,
+            min_gap_days=0,
+        )
+        if slot is None:
+            return False
+
+        start_date, end_date = slot
+        risk_payload = calculate_vacation_request_risk(employee, start_date, end_date, "paid")
+        ai_support = build_vacation_request_ai_support(
+            employee,
+            start_date,
+            end_date,
+            "paid",
+            risk_payload=risk_payload,
+            include_alternatives=False,
+        )
+        self._remove_schedule_item_from_active_period_cache(item)
+        item.start_date = start_date
+        item.end_date = end_date
+        item.chargeable_days = get_chargeable_leave_days(start_date, end_date, "paid")
+        item.risk_score = risk_payload["risk_score"]
+        item.risk_level = risk_payload["risk_level"]
+        item.manager_comment = "Moved during demo leadership overlap normalization."
+        update_fields = [
+            "start_date",
+            "end_date",
+            "chargeable_days",
+            "risk_score",
+            "risk_level",
+            "manager_comment",
+        ]
+        for field_name, value in vacation_request_ai_model_fields(ai_support).items():
+            if hasattr(item, field_name):
+                setattr(item, field_name, value)
+                update_fields.append(field_name)
+        item.save(update_fields=update_fields)
+        self._add_schedule_item_to_active_period_cache(item)
+        return True
 
     def _calendar_year_minimum_days(self, employee, year):
         year_start = date(year, 1, 1)
@@ -1327,12 +1435,14 @@ class DemoSeedVacationMixin:
             self.calendar_leave_adjustments["trimmed_days"] += int(item.chargeable_days)
             self.calendar_leave_adjustments["trimmed_items"] += 1
 
-    def _active_periods_for_employee_window(self, employee, window_start, window_end):
+    def _active_periods_for_employee_window(self, employee, window_start, window_end, *, exclude_schedule_item=None):
         schedule_items = employee.vacation_schedule_items.filter(
             status__in=VacationScheduleItem.ACTIVE_STATUSES,
             start_date__lte=window_end,
             end_date__gte=window_start,
         )
+        if exclude_schedule_item is not None:
+            schedule_items = schedule_items.exclude(id=exclude_schedule_item.id)
         occupied_periods = list(schedule_items.values_list("start_date", "end_date"))
         active_requests = employee.vacation_requests.filter(
             status__in=VacationRequest.ACTIVE_STATUSES,
@@ -1828,11 +1938,58 @@ class DemoSeedVacationMixin:
         if not candidates:
             return None
 
-        _, start_date, end_date = max(
+        score, start_date, end_date = self._choose_hr_policy_candidate(candidates)
+        self._record_hr_policy_selection(candidates, score)
+        return start_date, end_date
+
+    def _choose_hr_policy_candidate(self, candidates):
+        ordered = sorted(
             candidates,
             key=lambda item: (item[0], -item[1].toordinal(), -item[2].toordinal()),
+            reverse=True,
         )
-        return start_date, end_date
+        best = ordered[0]
+        best_score = float(best[0])
+        near_best = [
+            item
+            for item in ordered[: max(HR_POLICY_MAX_LIVE_CANDIDATES, 1)]
+            if best_score - float(item[0]) <= HR_POLICY_NEAR_BEST_GAP
+            and float(item[0]) >= HR_POLICY_MIN_LIVE_CHOICE_SCORE
+        ]
+        close_best = [
+            item
+            for item in near_best
+            if best_score - float(item[0]) <= HR_POLICY_CLOSE_BEST_GAP
+        ]
+        live_pool = close_best if len(close_best) >= 2 else near_best
+        if len(live_pool) < 2 or self.rng.random() >= HR_POLICY_LIVE_CHOICE_PROBABILITY:
+            return best
+
+        weights = []
+        for index, item in enumerate(live_pool):
+            score_gap = max(best_score - float(item[0]), 0.0)
+            weights.append(max(0.15, 1.0 - score_gap / (HR_POLICY_NEAR_BEST_GAP + 1.0)) / (index + 1))
+        return self.rng.choices(live_pool, weights=weights, k=1)[0]
+
+    def _record_hr_policy_selection(self, candidates, selected_score):
+        stats = getattr(self, "hr_policy_selection_stats", None)
+        if stats is None:
+            self.hr_policy_selection_stats = Counter()
+            stats = self.hr_policy_selection_stats
+        best_score = max(float(item[0]) for item in candidates)
+        selected_score = float(selected_score)
+        gap = max(best_score - selected_score, 0.0)
+        stats["events"] += 1
+        if len(candidates) > 1:
+            stats["events_with_alternatives"] += 1
+        if gap <= 0.0001:
+            stats["top_selected"] += 1
+        elif gap <= HR_POLICY_CLOSE_BEST_GAP:
+            stats["close_alternative_selected"] += 1
+        elif gap <= HR_POLICY_NEAR_BEST_GAP:
+            stats["near_alternative_selected"] += 1
+        else:
+            stats["far_alternative_selected"] += 1
 
     def _iter_hr_policy_candidate_periods(
         self,

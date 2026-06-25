@@ -36,6 +36,19 @@ class DemoSeedAuditMixin:
         self.stdout.write("Аудит календарных отпусков:")
         if adjustment_bits:
             self.stdout.write("  нормализация: " + ", ".join(adjustment_bits))
+        if getattr(self, "hr_policy_selection_stats", None):
+            stats = self.hr_policy_selection_stats
+            events = max(stats.get("events", 0), 1)
+            top_selected = stats.get("top_selected", 0)
+            close_selected = stats.get("close_alternative_selected", 0)
+            near_selected = stats.get("near_alternative_selected", 0)
+            self.stdout.write(
+                "  HR-policy: "
+                f"событий={stats.get('events', 0)}, "
+                f"лучший={top_selected} ({top_selected / events * 100:.1f}%), "
+                f"близкая_альтернатива={close_selected + near_selected} "
+                f"({(close_selected + near_selected) / events * 100:.1f}%)"
+            )
         for row in rows:
             self.stdout.write(
                 "  "

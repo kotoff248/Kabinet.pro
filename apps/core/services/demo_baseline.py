@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from apps.core.models import DemoBaselineSnapshot, DemoDataResetJob, Notification
+from apps.core.services.demo_reset_jobs import mark_stale_demo_data_reset_jobs_failed
 from apps.core.services.demo_urgent_closure_cases import ensure_demo_urgent_closure_cases
 from apps.core.services.demo_locks import try_demo_data_mutation_lock
 from apps.employees.models import (
@@ -433,12 +434,16 @@ def _restore_urgent_closures(planning_year, payload):
 
 
 @transaction.atomic
-def reset_demo_to_baseline(*, actor=None):
+def reset_demo_to_baseline(*, actor=None, ignore_reset_job_id=None):
     if not try_demo_data_mutation_lock():
         raise DemoBaselineResetInProgressError
-    if DemoDataResetJob.objects.filter(
+    mark_stale_demo_data_reset_jobs_failed()
+    active_jobs = DemoDataResetJob.objects.filter(
         status__in=[DemoDataResetJob.STATUS_QUEUED, DemoDataResetJob.STATUS_RUNNING]
-    ).exists():
+    )
+    if ignore_reset_job_id is not None:
+        active_jobs = active_jobs.exclude(id=ignore_reset_job_id)
+    if active_jobs.exists():
         raise DemoBaselineResetInProgressError
 
     try:

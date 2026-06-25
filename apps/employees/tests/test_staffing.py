@@ -215,10 +215,10 @@ class StaffingRulesPageTests(EmployeeTestCase):
         self.assertEqual(job.token, payload["token"])
         self.assertEqual(job.preset, DemoDataResetJob.PRESET_STANDARD)
         self.assertEqual(job.employee_count, 50)
-        self.assertEqual(job.history_years, 2)
+        self.assertEqual(job.history_years, 3)
         self.assertEqual(payload["preset"], DemoDataResetJob.PRESET_STANDARD)
         self.assertEqual(payload["employee_count"], 50)
-        self.assertEqual(payload["calendar_years"], 3)
+        self.assertEqual(payload["calendar_years"], 4)
         start_process_mock.assert_called_once_with(job)
         self.assertNotIn(SESSION_KEY, self.client.session)
         randbelow_mock.assert_called_once()
@@ -236,10 +236,10 @@ class StaffingRulesPageTests(EmployeeTestCase):
         job = DemoDataResetJob.objects.get(id=payload["job_id"])
         self.assertEqual(job.preset, DemoDataResetJob.PRESET_FAST)
         self.assertEqual(job.employee_count, 25)
-        self.assertEqual(job.history_years, 2)
+        self.assertEqual(job.history_years, 3)
         self.assertEqual(payload["preset"], DemoDataResetJob.PRESET_FAST)
         self.assertEqual(payload["employee_count"], 25)
-        self.assertEqual(payload["calendar_years"], 3)
+        self.assertEqual(payload["calendar_years"], 4)
         start_process_mock.assert_called_once_with(job)
         randbelow_mock.assert_called_once()
 
@@ -257,7 +257,8 @@ class StaffingRulesPageTests(EmployeeTestCase):
         )
         self.client.force_login(self.enterprise_head.user)
 
-        response = self.client.post(reverse("reset_demo_data"))
+        with patch("apps.core.services.demo_reset_jobs._demo_seed_process_is_active", return_value=True):
+            response = self.client.post(reverse("reset_demo_data"))
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -375,7 +376,8 @@ class StaffingRulesPageTests(EmployeeTestCase):
         )
         self.client.force_login(self.enterprise_head.user)
 
-        response = self.client.post(reverse("restore_demo_initial_state"), follow=True)
+        with patch("apps.core.services.demo_reset_jobs._demo_seed_process_is_active", return_value=True):
+            response = self.client.post(reverse("restore_demo_initial_state"), follow=True)
 
         self.assertRedirects(response, reverse("staffing_rules"))
         self.assertContains(response, "Сброс демо-данных уже выполняется")

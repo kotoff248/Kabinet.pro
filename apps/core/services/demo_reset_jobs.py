@@ -13,18 +13,20 @@ from apps.core.services.demo_locks import try_demo_data_mutation_lock
 
 
 RESET_JOB_TOKEN_BYTES = 32
+STALE_QUEUED_JOB_SECONDS = 300
+STALE_RUNNING_JOB_SECONDS = 60
 DEMO_SEED_PRESET_STANDARD = "standard"
 DEMO_SEED_PRESET_FAST = "fast"
 DEMO_SEED_PRESET_FULL = "full"
 DEMO_RESET_PRESETS = {
     DEMO_SEED_PRESET_STANDARD: {
         "label": "Обычная демо-база",
-        "history_years": 2,
+        "history_years": 3,
         "employee_count": 50,
     },
     DEMO_SEED_PRESET_FAST: {
         "label": "Быстрая демо-база",
-        "history_years": 2,
+        "history_years": 3,
         "employee_count": 25,
     },
     DEMO_SEED_PRESET_FULL: {
@@ -41,6 +43,95 @@ ACTIVE_DEMO_RESET_JOB_STATUSES = (
 
 class DemoDataResetInProgressError(Exception):
     pass
+
+
+def _demo_seed_process_is_active(process_id):
+    if not process_id:
+        return False
+
+    try:
+        process_id = int(process_id)
+    except (TypeError, ValueError):
+        return False
+
+    if process_id <= 0:
+        return False
+
+    if os.name != "nt":
+        cmdline_path = f"/proc/{process_id}/cmdline"
+        if os.path.exists(cmdline_path):
+            try:
+                with open(cmdline_path, "rb") as cmdline_file:
+                    cmdline = cmdline_file.read().replace(b"\x00", b" ").decode("utf-8", errors="ignore")
+            except PermissionError:
+                return True
+            except OSError:
+                cmdline = ""
+            return "manage.py" in cmdline and "seed_vacation_requests" in cmdline
+
+    try:
+        os.kill(process_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _stale_demo_reset_job_message(job):
+    if job.status == DemoDataResetJob.STATUS_QUEUED:
+        return "Задание пересоздания демо-данных не было запущено. Можно повторить сброс."
+    return "Фоновый процесс пересоздания демо-данных больше не выполняется. Можно повторить сброс."
+
+
+def _is_stale_demo_reset_job(job, *, now=None):
+    if job.status not in ACTIVE_DEMO_RESET_JOB_STATUSES:
+        return False
+
+    now = now or timezone.now()
+    reference_time = job.started_at or job.updated_at or job.created_at
+    age_seconds = (now - reference_time).total_seconds() if reference_time else 0
+
+    if job.status == DemoDataResetJob.STATUS_QUEUED:
+        return not job.process_id and age_seconds >= STALE_QUEUED_JOB_SECONDS
+
+    if not job.process_id:
+        return age_seconds >= STALE_RUNNING_JOB_SECONDS
+
+    return not _demo_seed_process_is_active(job.process_id)
+
+
+def mark_stale_demo_data_reset_jobs_failed():
+    now = timezone.now()
+    stale_jobs = [
+        job
+        for job in DemoDataResetJob.objects.filter(status__in=ACTIVE_DEMO_RESET_JOB_STATUSES)
+        if _is_stale_demo_reset_job(job, now=now)
+    ]
+    for job in stale_jobs:
+        message = _stale_demo_reset_job_message(job)
+        DemoDataResetJob.objects.filter(id=job.id, status__in=ACTIVE_DEMO_RESET_JOB_STATUSES).update(
+            status=DemoDataResetJob.STATUS_FAILED,
+            error_message=message,
+            message=message,
+            finished_at=now,
+            updated_at=now,
+        )
+        job.status = DemoDataResetJob.STATUS_FAILED
+        job.error_message = message
+        job.message = message
+        job.finished_at = now
+        job.updated_at = now
+    return stale_jobs
+
+
+def refresh_demo_data_reset_job_state(job):
+    if _is_stale_demo_reset_job(job):
+        mark_stale_demo_data_reset_jobs_failed()
+        job.refresh_from_db()
+    return job
 
 
 def _demo_data_reset_preset_meta(preset):
@@ -89,6 +180,7 @@ def get_or_create_demo_data_reset_job(*, seed_value, preset=DEMO_SEED_PRESET_STA
     if not try_demo_data_mutation_lock():
         raise DemoDataResetInProgressError
 
+    mark_stale_demo_data_reset_jobs_failed()
     active_job = (
         DemoDataResetJob.objects.filter(status__in=ACTIVE_DEMO_RESET_JOB_STATUSES)
         .order_by("-created_at", "-id")
@@ -244,6 +336,7 @@ def _job_timing_payload(job):
 
 
 def demo_data_reset_job_payload(job):
+    job = refresh_demo_data_reset_job_state(job)
     preset_meta = _demo_data_reset_preset_meta(job.preset)
     status_url = f"{reverse('reset_demo_data_status', args=[job.id])}?token={job.token}"
     return {

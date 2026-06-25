@@ -207,7 +207,7 @@ class DemoDataResetJob(models.Model):
     status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_QUEUED, verbose_name="Статус")
     seed_value = models.PositiveIntegerField(verbose_name="Seed")
     preset = models.CharField(max_length=24, choices=PRESET_CHOICES, default=PRESET_STANDARD, verbose_name="Режим")
-    history_years = models.PositiveSmallIntegerField(default=2, verbose_name="Лет истории")
+    history_years = models.PositiveSmallIntegerField(default=3, verbose_name="Лет истории")
     employee_count = models.PositiveSmallIntegerField(default=50, verbose_name="Сотрудников")
     progress_percent = models.PositiveSmallIntegerField(default=0, verbose_name="Прогресс")
     stage_label = models.CharField(max_length=180, blank=True, default="", verbose_name="Текущий этап")
